@@ -403,6 +403,8 @@ const {
     processTrainingSample,
     getTrainingAnalytics
 } = require('./src/visualTraining/unifiedTrainingSystem');
+// Visual annotation callable (used by VisualAnnotationTrainer)
+const { processVisualTrainingSample } = require('./src/visualTraining/visualAnnotationProcessor');
 const { deleteAPUpload } = require('./src/deleteAPUpload');
 
 exports.analyzeInvoiceWithVision = analyzeInvoiceWithVision;
@@ -418,6 +420,7 @@ exports.getUnifiedTrainingCarriers = getUnifiedTrainingCarriers;
 exports.addTrainingSample = addTrainingSample;
 exports.processTrainingSample = processTrainingSample;
 exports.getTrainingAnalytics = getTrainingAnalytics;
+exports.processVisualTrainingSample = processVisualTrainingSample;
 exports.deleteAPUpload = deleteAPUpload;
 
 // AP Processing functions
@@ -807,6 +810,11 @@ exports.getHistoryEShipPlus = onRequest(
 // Add the QuickShip email diagnostic function
 const { quickShipEmailDiagnostic } = require('./src/quickShipEmailDiagnostic');
 exports.quickShipEmailDiagnostic = quickShipEmailDiagnostic;
+
+// Training functions
+const { getTrainingSample, listTrainingSamples } = require('./src/visualTraining/unifiedTrainingSystem');
+exports.getTrainingSample = getTrainingSample;
+exports.listTrainingSamples = listTrainingSamples;
 
 // Test Functions
 const { testSendGridEmail } = require('./src/testSendGridEmail');

@@ -15,6 +15,76 @@ const {
 function toBool(v) { return !!v; }
 function normalizeStatus(s) { return String(s || '').toLowerCase(); }
 
+/**
+ * COMPREHENSIVE ACTUAL CHARGES VALIDATION
+ * Checks all possible storage formats for actual charges:
+ * 1. actualRates.charges (AI/AP processing)
+ * 2. manualRates (QuickShip shipments)
+ * 3. updatedCharges/chargesBreakdown (inline editing)
+ * 4. markupRates.charges (dual rate system)
+ */
+function checkForActualCharges(shipment) {
+  // 1. Check actualRates.charges (AI/AP processing format)
+  if (shipment.actualRates?.totalCharges) {
+    const actualTotal = parseFloat(shipment.actualRates.totalCharges) || 0;
+    if (actualTotal > 0) {
+      const actualChargesArray = shipment.actualRates.charges || [];
+      const actualAmounts = actualChargesArray.map(c => parseFloat(c.amount) || parseFloat(c.actualCharge) || 0);
+      if (actualAmounts.some(a => a > 0)) return true;
+    }
+  }
+
+  // 2. Check manualRates (QuickShip format)
+  if (shipment.manualRates && Array.isArray(shipment.manualRates)) {
+    const manualAmounts = shipment.manualRates.map(r => {
+      // Check both actualCharge and charge/cost fields
+      return parseFloat(r.actualCharge) || parseFloat(r.charge) || parseFloat(r.cost) || 0;
+    });
+    if (manualAmounts.some(a => a > 0)) return true;
+  }
+
+  // 3. Check updatedCharges/chargesBreakdown (inline editing format)
+  const chargesArrays = [
+    shipment.updatedCharges,
+    shipment.chargesBreakdown,
+    shipment.charges
+  ].filter(arr => Array.isArray(arr));
+  
+  for (const chargesArray of chargesArrays) {
+    const amounts = chargesArray.map(c => {
+      // Check multiple possible actual charge fields
+      return parseFloat(c.actualCharge) || parseFloat(c.actualCost) || 
+             parseFloat(c.amount) || parseFloat(c.charge) || 0;
+    });
+    if (amounts.some(a => a > 0)) return true;
+  }
+
+  // 4. Check markupRates.charges (dual rate system)
+  if (shipment.markupRates?.totalCharges) {
+    const markupTotal = parseFloat(shipment.markupRates.totalCharges) || 0;
+    if (markupTotal > 0) {
+      const markupChargesArray = shipment.markupRates.charges || [];
+      const markupAmounts = markupChargesArray.map(c => parseFloat(c.amount) || parseFloat(c.actualCharge) || 0);
+      if (markupAmounts.some(a => a > 0)) return true;
+    }
+  }
+
+  // 5. Check legacy format totalCharges fields
+  const legacyTotals = [
+    shipment.totalCharges,
+    shipment.totalActualCharges,
+    shipment.actualTotalCharges
+  ];
+  for (const total of legacyTotals) {
+    if (parseFloat(total) > 0) return true;
+  }
+
+  // 6. Check if shipment has been marked as having actual costs
+  if (shipment.hasActualCosts === true) return true;
+
+  return false;
+}
+
 exports.preflightInvoiceReview = onRequest({ cors: true, timeoutSeconds: 300 }, async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -76,17 +146,14 @@ exports.preflightInvoiceReview = onRequest({ cors: true, timeoutSeconds: 300 }, 
         chargesOk = amounts.some(a => a > 0) || Number(totalCharges) > 0;
         allChargesHaveAmount = breakdown.every(b => b.hasOwnProperty('amount'));
         
-        // ✅ NEW: Check for actual charges (not just quoted)
-        const actualTotal = shipment.actualRates?.totalCharges ? parseFloat(shipment.actualRates.totalCharges) : 0;
-        const actualChargesArray = shipment.actualRates?.charges || [];
-        const actualAmounts = actualChargesArray.map(c => parseFloat(c.amount) || 0);
-        actualChargesOk = actualTotal > 0 && actualAmounts.some(a => a > 0);
+        // ✅ ENHANCED: Check for actual charges across ALL possible storage formats
+        actualChargesOk = checkForActualCharges(shipment);
       } catch (e) {
         reasons.push('CHARGES_PARSE_ERROR');
       }
       if (!chargesOk) reasons.push('NO_POSITIVE_CHARGE');
       if (!allChargesHaveAmount) reasons.push('MISSING_ACTUAL_CHARGE_FIELD');
-      // ✅ NEW: Block invoicing if no actual charges set
+      // ✅ ENHANCED: Block invoicing only if NO actual charges found in ANY format
       if (!actualChargesOk) reasons.push('NO_ACTUAL_CHARGES_SET');
 
       // 4: BILL TO completeness

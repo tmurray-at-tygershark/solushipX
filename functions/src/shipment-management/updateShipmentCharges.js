@@ -119,6 +119,11 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
             quotedCharge: charge.quotedCharge != null ? parseFloat(charge.quotedCharge) : 0,
             actualCost: charge.actualCost != null ? parseFloat(charge.actualCost) : 0,
             actualCharge: charge.actualCharge != null ? parseFloat(charge.actualCharge) : 0,
+            // CRITICAL FIX: Support individual currency fields for each monetary amount
+            quotedCostCurrency: charge.quotedCostCurrency || 'CAD',
+            quotedChargeCurrency: charge.quotedChargeCurrency || 'CAD',
+            actualCostCurrency: charge.actualCostCurrency || 'CAD',
+            actualChargeCurrency: charge.actualChargeCurrency || 'CAD',
             invoiceNumber: charge.invoiceNumber || '-',
             ediNumber: charge.ediNumber || '-',
             commissionable: charge.commissionable || false,
@@ -157,9 +162,15 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
             code: charge.code,
             chargeName: charge.description,
             cost: charge.quotedCost.toString(), // Convert to string for QuickShip compatibility
-            costCurrency: shipmentData.currency || 'CAD',
             charge: charge.quotedCharge.toString(), // Convert to string for QuickShip compatibility  
-            chargeCurrency: shipmentData.currency || 'CAD',
+            // CRITICAL FIX: Use individual currency fields instead of hardcoded currency
+            quotedCostCurrency: charge.quotedCostCurrency || 'CAD',
+            quotedChargeCurrency: charge.quotedChargeCurrency || 'CAD',
+            actualCostCurrency: charge.actualCostCurrency || 'CAD',
+            actualChargeCurrency: charge.actualChargeCurrency || 'CAD',
+            // Legacy fields for backward compatibility
+            costCurrency: charge.quotedCostCurrency || shipmentData.currency || 'CAD',
+            chargeCurrency: charge.quotedChargeCurrency || shipmentData.currency || 'CAD',
             // Include actual cost/charge for inline editing compatibility
             actualCost: charge.actualCost || 0,
             actualCharge: charge.actualCharge || 0,

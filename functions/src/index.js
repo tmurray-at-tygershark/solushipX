@@ -347,6 +347,42 @@ console.log('LOG-MAIN-INDEX: exports.generateInvoicePDFAndEmail defined.');
 exports.getInvoiceRecipients = getInvoiceRecipients;
 console.log('LOG-MAIN-INDEX: exports.getInvoiceRecipients defined.');
 
+// Import and export additional billing functions
+const { preflightInvoiceReview } = require('./billing/preflightInvoiceReview');
+const { sendTestInvoiceEmail } = require('./billing/sendTestInvoiceEmail');
+const { markShipmentsReadyToInvoice } = require('./billing/markShipmentsReadyToInvoice');
+const { emailBulkInvoices } = require('./billing/emailBulkInvoices');
+const { generateBulkInvoices } = require('./billing/bulkInvoiceGenerator');
+const { previewBulkInvoices } = require('./billing/previewBulkInvoices');
+const { overrideApprovedCharges } = require('./billing/overrideApprovedCharges');
+
+exports.preflightInvoiceReview = preflightInvoiceReview;
+console.log('LOG-MAIN-INDEX: exports.preflightInvoiceReview defined.');
+
+exports.sendTestInvoiceEmail = sendTestInvoiceEmail;
+console.log('LOG-MAIN-INDEX: exports.sendTestInvoiceEmail defined.');
+
+exports.markShipmentsReadyToInvoice = markShipmentsReadyToInvoice;
+console.log('LOG-MAIN-INDEX: exports.markShipmentsReadyToInvoice defined.');
+
+exports.emailBulkInvoices = emailBulkInvoices;
+console.log('LOG-MAIN-INDEX: exports.emailBulkInvoices defined.');
+
+exports.generateBulkInvoices = generateBulkInvoices;
+console.log('LOG-MAIN-INDEX: exports.generateBulkInvoices defined.');
+
+exports.previewBulkInvoices = previewBulkInvoices;
+console.log('LOG-MAIN-INDEX: exports.previewBulkInvoices defined.');
+
+exports.overrideApprovedCharges = overrideApprovedCharges;
+console.log('LOG-MAIN-INDEX: exports.overrideApprovedCharges defined.');
+
+// Import and export AP processing functions
+const { deleteAPUpload } = require('./deleteAPUpload');
+
+exports.deleteAPUpload = deleteAPUpload;
+console.log('LOG-MAIN-INDEX: exports.deleteAPUpload defined.');
+
 // Export file upload functions
 if (fileUploadFunctions && fileUploadFunctions.uploadFile) {
     exports.uploadFile = fileUploadFunctions.uploadFile;
@@ -446,10 +482,10 @@ console.log('LOG-MAIN-INDEX: exports.updateShipmentField defined.');
 exports.uploadShipmentDocument = uploadShipmentDocument;
 console.log('LOG-MAIN-INDEX: exports.uploadShipmentDocument defined.');
 
-// Import and export test follow-up function
-const { testFollowUp } = require('./testFollowUp');
-exports.testFollowUp = testFollowUp;
-console.log('LOG-MAIN-INDEX: exports.testFollowUp defined.');
+// Import and export test follow-up function (COMMENTED OUT - FILE MISSING)
+// const { testFollowUp } = require('./testFollowUp');
+// exports.testFollowUp = testFollowUp;
+// console.log('LOG-MAIN-INDEX: exports.testFollowUp defined.');
 
 // Import and export follow-up engine functions
 const followUpFunctions = require('./followUps/followUpEngine');
@@ -531,8 +567,13 @@ const {
     getUnifiedTrainingCarriers,
     addTrainingSample,
     processTrainingSample,
-    getTrainingAnalytics
+    getTrainingAnalytics,
+    getTrainingSample,
+    listTrainingSamples
 } = require('./visualTraining/unifiedTrainingSystem');
+
+// Import visual annotation processor
+const { processVisualTrainingSample } = require('./visualTraining/visualAnnotationProcessor');
 
 exports.getUnifiedTrainingCarriers = getUnifiedTrainingCarriers;
 console.log('LOG-MAIN-INDEX: exports.getUnifiedTrainingCarriers defined.');
@@ -545,5 +586,33 @@ console.log('LOG-MAIN-INDEX: exports.processTrainingSample defined.');
 
 exports.getTrainingAnalytics = getTrainingAnalytics;
 console.log('LOG-MAIN-INDEX: exports.getTrainingAnalytics defined.');
+
+exports.getTrainingSample = getTrainingSample;
+console.log('LOG-MAIN-INDEX: exports.getTrainingSample defined.');
+
+exports.listTrainingSamples = listTrainingSamples;
+console.log('LOG-MAIN-INDEX: exports.listTrainingSamples defined.');
+
+exports.processVisualTrainingSample = processVisualTrainingSample;
+console.log('LOG-MAIN-INDEX: exports.processVisualTrainingSample defined.');
+
+// Import and export enhanced AI processing functions
+const { processInvoiceUnified, learnFromCorrections } = require('./ai/unifiedProcessingOrchestrator');
+const { getUnifiedTrainingCarriers: getCarrierManagementCarriers, addUnifiedTrainingCarrier, deleteUnifiedTrainingCarrier } = require('./ai/carrierManagement');
+
+exports.processInvoiceUnified = processInvoiceUnified;
+console.log('LOG-MAIN-INDEX: exports.processInvoiceUnified defined.');
+
+exports.learnFromCorrections = learnFromCorrections;
+console.log('LOG-MAIN-INDEX: exports.learnFromCorrections defined.');
+
+exports.getCarrierManagementCarriers = getCarrierManagementCarriers;
+console.log('LOG-MAIN-INDEX: exports.getCarrierManagementCarriers defined.');
+
+exports.addUnifiedTrainingCarrier = addUnifiedTrainingCarrier;
+console.log('LOG-MAIN-INDEX: exports.addUnifiedTrainingCarrier defined.');
+
+exports.deleteUnifiedTrainingCarrier = deleteUnifiedTrainingCarrier;
+console.log('LOG-MAIN-INDEX: exports.deleteUnifiedTrainingCarrier defined.');
 
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');

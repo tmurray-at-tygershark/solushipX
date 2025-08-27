@@ -1318,6 +1318,11 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     quotedCharge: charge.quotedCharge != null ? (isNaN(parseFloat(charge.quotedCharge)) ? 0 : parseFloat(charge.quotedCharge)) : 0,
                     actualCost: charge.actualCost != null ? (isNaN(parseFloat(charge.actualCost)) ? 0 : parseFloat(charge.actualCost)) : 0,
                     actualCharge: charge.actualCharge != null ? (isNaN(parseFloat(charge.actualCharge)) ? 0 : parseFloat(charge.actualCharge)) : 0,
+                    // CRITICAL FIX: Include individual currency fields for each monetary amount
+                    quotedCostCurrency: charge.quotedCostCurrency || 'CAD',
+                    quotedChargeCurrency: charge.quotedChargeCurrency || 'CAD',
+                    actualCostCurrency: charge.actualCostCurrency || 'CAD',
+                    actualChargeCurrency: charge.actualChargeCurrency || 'CAD',
                     invoiceNumber: charge.invoiceNumber != null ? charge.invoiceNumber : '-',
                     ediNumber: charge.ediNumber != null ? charge.ediNumber : '-',
                     commissionable: charge.commissionable != null ? charge.commissionable : false,
@@ -1368,8 +1373,13 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                                     charge: charge.quotedCharge || 0,
                                     actualCost: charge.actualCost || 0,
                                     actualCharge: charge.actualCharge || 0,
-                                    costCurrency: charge.currency || 'CAD',
-                                    chargeCurrency: charge.currency || 'CAD',
+                                    // CRITICAL FIX: Use individual currency fields instead of single currency
+                                    quotedCostCurrency: charge.quotedCostCurrency || 'CAD',
+                                    quotedChargeCurrency: charge.quotedChargeCurrency || 'CAD',
+                                    actualCostCurrency: charge.actualCostCurrency || 'CAD',
+                                    actualChargeCurrency: charge.actualChargeCurrency || 'CAD',
+                                    costCurrency: charge.quotedCostCurrency || charge.currency || 'CAD', // Backward compatibility
+                                    chargeCurrency: charge.quotedChargeCurrency || charge.currency || 'CAD', // Backward compatibility
                                     invoiceNumber: charge.invoiceNumber || '-',
                                     ediNumber: charge.ediNumber || '-',
                                     commissionable: charge.commissionable || false
@@ -1418,10 +1428,15 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                                     quotedCharge: charge.quotedCharge || 0,
                                     actualCost: charge.actualCost || 0,
                                     actualCharge: charge.actualCharge || 0,
+                                    // CRITICAL FIX: Include individual currency fields for each monetary amount
+                                    quotedCostCurrency: charge.quotedCostCurrency || 'CAD',
+                                    quotedChargeCurrency: charge.quotedChargeCurrency || 'CAD',
+                                    actualCostCurrency: charge.actualCostCurrency || 'CAD',
+                                    actualChargeCurrency: charge.actualChargeCurrency || 'CAD',
                                     invoiceNumber: charge.invoiceNumber || '-',
                                     ediNumber: charge.ediNumber || '-',
                                     commissionable: charge.commissionable || false,
-                                    currency: charge.currency || 'CAD'
+                                    currency: charge.currency || 'CAD' // Backward compatibility
                                 })),
                                 // 🧹 CRITICAL: Clear conflicting fields to prevent duplication  
                                 manualRates: null,

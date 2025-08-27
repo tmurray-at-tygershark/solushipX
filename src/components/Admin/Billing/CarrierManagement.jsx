@@ -108,7 +108,7 @@ const CarrierManagement = () => {
     const deleteTrainingCarrier = httpsCallable(functions, 'deleteTrainingCarrier');
     const getCarrierDetails = httpsCallable(functions, 'getCarrierDetails');
     const retrainCarrier = httpsCallable(functions, 'retrainCarrier');
-    const getCarrierCategories = httpsCallable(functions, 'getCarrierCategories');
+    // const getCarrierCategories = httpsCallable(functions, 'getCarrierCategories'); // Temporarily unused
 
     // Load carriers
     const loadCarriers = useCallback(async () => {
@@ -142,16 +142,17 @@ const CarrierManagement = () => {
     }, [page, rowsPerPage, searchTerm, categoryFilter, statusFilter, sortBy, sortOrder]);
 
     // Load categories
-    const loadCategories = useCallback(async () => {
+    const loadCategories = useCallback(() => {
         try {
-            const result = await getCarrierCategories();
-            if (result.data.success) {
-                setCategories(result.data.categories);
-            }
+            const base = new Set(['general', 'courier', 'freight', 'ltl', 'postal']);
+            (carriers || []).forEach(c => {
+                if (c?.category) base.add(c.category);
+            });
+            setCategories(Array.from(base).sort());
         } catch (error) {
             console.error('Load categories error:', error);
         }
-    }, []);
+    }, [carriers]);
 
     // Effects
     useEffect(() => {

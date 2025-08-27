@@ -39,6 +39,9 @@ exports.emailBulkInvoices = onRequest(
             return;
         }
 
+        console.log('🔥 emailBulkInvoices FUNCTION CALLED - STARTING EXECUTION');
+        console.log('🔥 Request body received:', JSON.stringify(req.body, null, 2));
+
         try {
             console.log('Starting bulk invoice email generation...');
 
@@ -53,9 +56,12 @@ exports.emailBulkInvoices = onRequest(
             console.log(`Applied filters:`, filters);
 
             // 1. FETCH SHIPMENTS USING SAME LOGIC AS BULK GENERATOR
+            console.log('🔍 About to fetch shipments with:', { companyId, filters });
             const shipments = await fetchFilteredShipments(companyId, filters);
+            console.log(`📋 Fetch result: Found ${shipments.length} shipments`);
 
             if (shipments.length === 0) {
+                console.log('❌ No shipments found - returning early');
                 return res.json({
                     success: true,
                     successCount: 0,
@@ -80,21 +86,51 @@ exports.emailBulkInvoices = onRequest(
 
             // Official send: deliver to provided recipients if present, otherwise to customer billing via helper
             const { emailRecipients } = req.body;
+            
+            console.log('📧 Email recipients debug:', {
+                emailRecipients,
+                hasTo: emailRecipients?.to?.length > 0,
+                hasCc: emailRecipients?.cc?.length > 0,
+                hasBcc: emailRecipients?.bcc?.length > 0,
+                toCount: emailRecipients?.to?.length || 0,
+                ccCount: emailRecipients?.cc?.length || 0,
+                bccCount: emailRecipients?.bcc?.length || 0
+            });
+            
             if (emailRecipients && (emailRecipients.to?.length || emailRecipients.cc?.length || emailRecipients.bcc?.length)) {
-                await orchestrator.deliverInvoices({ companyId, recipients: emailRecipients, attachments, invoiceMode });
+                console.log('✅ Using provided email recipients for delivery');
+                console.log('📧 DELIVERY DEBUG - About to send via orchestrator.deliverInvoices:', {
+                    attachmentCount: attachments.length,
+                    invoiceCount: invoiceDatas.length,
+                    recipientEmails: emailRecipients,
+                    invoiceNumbers: invoiceDatas.map(inv => inv.invoiceNumber)
+                });
+                
+                try {
+                    await orchestrator.deliverInvoices({ companyId, recipients: emailRecipients, attachments, invoiceMode });
+                    console.log('🎉 orchestrator.deliverInvoices completed - email should be sent');
+                } catch (deliveryError) {
+                    console.error('❌ orchestrator.deliverInvoices FAILED:', deliveryError.message);
+                    throw deliveryError;
+                }
             } else {
+                console.log('⚠️ No email recipients provided, falling back to customer delivery');
                 // Fallback: send each invoice via existing helper (customer delivery)
                 let successCount = 0;
                 let errorCount = 0;
                 for (const inv of invoiceDatas) {
                     try {
+                        console.log(`📧 Attempting customer delivery for invoice ${inv.invoiceNumber}`);
                         await require('../generateInvoicePDFAndEmail').generateInvoicePDFAndEmailHelper(inv, companyId, false, null);
                         successCount++;
+                        console.log(`✅ Customer delivery successful for invoice ${inv.invoiceNumber}`);
                     } catch (e) {
+                        console.error(`❌ Customer delivery failed for invoice ${inv.invoiceNumber}:`, e.message);
                         logger.error('Customer delivery failed', e);
                         errorCount++;
                     }
                 }
+                console.log(`📊 Customer delivery summary: ${successCount} successful, ${errorCount} failed`);
                 return res.json({ success: true, successCount, errorCount, totalShipments: shipments.length, invoiceMode });
             }
 
@@ -114,9 +150,13 @@ exports.emailBulkInvoices = onRequest(
  * Fetch filtered shipments using the same logic as bulk generator
  */
 async function fetchFilteredShipments(companyId, filters) {
+    console.log('🔍 fetchFilteredShipments called with:', { companyId, filters });
+    
     let baseQuery = db.collection('shipments')
         .where('companyID', '==', companyId)
         .where('status', '!=', 'draft');
+    
+    console.log('📊 Base query created for company:', companyId);
 
     // Apply date filters
     if (filters.dateFrom || filters.dateTo) {
@@ -141,31 +181,57 @@ async function fetchFilteredShipments(companyId, filters) {
 
     if (filters.shipmentIds && filters.shipmentIds.length > 0) {
         // Specific shipment IDs mode
+        console.log('🔍 Using specific shipmentIds query mode for:', filters.shipmentIds);
         const batches = [];
         for (let i = 0; i < filters.shipmentIds.length; i += 10) {
             const batch = filters.shipmentIds.slice(i, i + 10);
             batches.push(batch);
         }
+        console.log(`📊 Created ${batches.length} batches for query`);
 
         for (const batch of batches) {
+            console.log('🔍 Querying batch:', batch);
             const batchQuery = baseQuery.where('shipmentID', 'in', batch);
             const batchSnapshot = await batchQuery.get();
+            console.log(`📊 Batch result: ${batchSnapshot.docs.length} docs`);
             shipments.push(...batchSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         }
     } else {
         // Normal filtering mode
+        console.log('🔍 Using normal filtering mode');
         const snapshot = await baseQuery.get();
         shipments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log(`📊 Normal query result: ${shipments.length} shipments`);
     }
 
     // Apply customer filter
     if (filters.customers && filters.customers.length > 0) {
-        shipments = shipments.filter(shipment => {
+        console.log('🔍 Applying customer filter for:', filters.customers);
+        console.log(`📊 Before customer filter: ${shipments.length} shipments`);
+        
+        // DEBUG: Show actual customer IDs in shipments
+        shipments.forEach((shipment, index) => {
             const customerID = shipment.shipTo?.customerID || shipment.customerID;
-            return filters.customers.includes(customerID);
+            console.log(`🔍 Shipment ${index + 1} (${shipment.shipmentID}): customerID = "${customerID}", shipTo.customerID = "${shipment.shipTo?.customerID}", customerID field = "${shipment.customerID}"`);
         });
+        
+        shipments = shipments.filter(shipment => {
+            // Check multiple possible customer ID fields
+            const customerID = shipment.shipTo?.customerID || shipment.customerID;
+            const addressClassID = shipment.shipTo?.addressClassID || shipment.shipFrom?.addressClassID;
+            
+            // Check if any customer ID variant matches the filter
+            const matchesCustomerID = filters.customers.includes(customerID);
+            const matchesAddressClassID = filters.customers.includes(addressClassID);
+            const matches = matchesCustomerID || matchesAddressClassID;
+            
+            console.log(`🔍 Shipment ${shipment.shipmentID}: customerID="${customerID}", addressClassID="${addressClassID}", matches filter? ${matches}`);
+            return matches;
+        });
+        console.log(`📊 After customer filter: ${shipments.length} shipments`);
     }
 
+    console.log(`✅ fetchFilteredShipments final result: ${shipments.length} shipments`);
     return shipments;
 }
 

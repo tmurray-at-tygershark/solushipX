@@ -243,10 +243,25 @@ async function generatePDFs({ invoiceDatas, companyInfo }) {
 
 // Deliver email with all invoices attached to explicit recipients
 async function deliverInvoices({ companyId, recipients, attachments, invoiceMode }) {
+  console.log('🚀 deliverInvoices STARTED with params:', {
+    companyId,
+    recipients,
+    attachmentCount: attachments.length,
+    invoiceMode
+  });
+  
   const companyInfo = await getInvoiceCompanyInfo(companyId);
+  console.log('📂 Company info loaded:', { companyName: companyInfo?.name });
+  
   const sgMail = require('@sendgrid/mail');
   const functions = require('firebase-functions');
   const sendgridApiKey = process.env.SENDGRID_API_KEY || functions.config().sendgrid?.api_key;
+  
+  console.log('🔑 SendGrid API key check:', { 
+    hasApiKey: !!sendgridApiKey,
+    keySource: sendgridApiKey ? (process.env.SENDGRID_API_KEY ? 'env' : 'config') : 'none'
+  });
+  
   if (!sendgridApiKey) throw new Error('SendGrid API key not configured');
   sgMail.setApiKey(sendgridApiKey);
 
@@ -296,9 +311,22 @@ async function deliverInvoices({ companyId, recipients, attachments, invoiceMode
     }))
   });
 
+  console.log('📤 ABOUT TO SEND EMAIL via SendGrid with content:', {
+    to: emailContent.to,
+    cc: emailContent.cc,
+    bcc: emailContent.bcc,
+    from: emailContent.from,
+    subject: emailContent.subject,
+    attachmentCount: emailContent.attachments.length
+  });
+
   try {
     await sgMail.send(emailContent);
-    console.log('✅ Email sent successfully via SendGrid');
+    console.log('✅ EMAIL SENT SUCCESSFULLY via SendGrid to recipients:', {
+      to: emailContent.to,
+      cc: emailContent.cc,
+      bcc: emailContent.bcc
+    });
   } catch (error) {
     console.error('❌ SendGrid error details:', {
       code: error.code,

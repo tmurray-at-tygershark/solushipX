@@ -282,6 +282,10 @@ const RateDetails = ({
             actualCost: item.actualCost?.toString() || '0',
             actualCharge: item.actualCharge?.toString() || '0',
             code: item.code || 'FRT',
+            quotedCostCurrency: item.quotedCostCurrency || 'CAD',
+            quotedChargeCurrency: item.quotedChargeCurrency || 'CAD',
+            actualCostCurrency: item.actualCostCurrency || 'CAD',
+            actualChargeCurrency: item.actualChargeCurrency || 'CAD',
             invoiceNumber: item.invoiceNumber || '-',
             ediNumber: item.ediNumber || '-',
             commissionable: item.commissionable || false
@@ -326,6 +330,10 @@ const RateDetails = ({
             actualCost: parseFloat(editingValues.actualCost) || 0,
             actualCharge: parseFloat(editingValues.actualCharge) || 0,
             code: editingValues.code || 'FRT',
+            quotedCostCurrency: editingValues.quotedCostCurrency || 'CAD',
+            quotedChargeCurrency: editingValues.quotedChargeCurrency || 'CAD',
+            actualCostCurrency: editingValues.actualCostCurrency || 'CAD',
+            actualChargeCurrency: editingValues.actualChargeCurrency || 'CAD',
             invoiceNumber: editingValues.invoiceNumber || '-',
             ediNumber: editingValues.ediNumber || '-',
             commissionable: editingValues.commissionable || false
@@ -411,6 +419,10 @@ const RateDetails = ({
             actualCost: 0,
             actualCharge: 0,
             code: defaultCode,
+            quotedCostCurrency: 'CAD',
+            quotedChargeCurrency: 'CAD',
+            actualCostCurrency: 'CAD',
+            actualChargeCurrency: 'CAD',
             isNew: true,
             invoiceNumber: '-',
             ediNumber: '-',
@@ -447,6 +459,10 @@ const RateDetails = ({
             actualCost: '0',
             actualCharge: '0',
             code: defaultCode,
+            quotedCostCurrency: 'CAD',
+            quotedChargeCurrency: 'CAD',
+            actualCostCurrency: 'CAD',
+            actualChargeCurrency: 'CAD',
             invoiceNumber: '-',
             ediNumber: '-',
             commissionable: defaultCommissionable // Auto-populate based on charge type
@@ -710,6 +726,11 @@ const RateDetails = ({
                 actualCost: charge.actualCost != null ? charge.actualCost : 0,
                 actualCharge: charge.actualCharge != null ? charge.actualCharge : 0,
                 currency: charge.currency || 'CAD',
+                // CRITICAL FIX: Support individual currency fields for each monetary amount
+                quotedCostCurrency: charge.quotedCostCurrency || charge.currency || 'CAD',
+                quotedChargeCurrency: charge.quotedChargeCurrency || charge.currency || 'CAD',
+                actualCostCurrency: charge.actualCostCurrency || charge.currency || 'CAD',
+                actualChargeCurrency: charge.actualChargeCurrency || charge.currency || 'CAD',
                 isTax: charge.isTax || false,
                 taxDetails: charge.taxDetails || null,
                 // Preserve financial identifiers if present in source
@@ -923,15 +944,16 @@ const RateDetails = ({
     const currency = getCurrency();
 
     // Helper function to format currency amounts with thousands separators
-    const formatCurrency = (amount, includeCents = true) => {
+    const formatCurrency = (amount, includeCents = true, itemCurrency = null) => {
         const numAmount = parseFloat(amount) || 0;
+        const displayCurrency = itemCurrency || currency;
         if (includeCents) {
             return `$${numAmount.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
-            })} ${currency}`;
+            })} ${displayCurrency}`;
         } else {
-            return `$${Math.round(numAmount).toLocaleString('en-US')} ${currency}`;
+            return `$${Math.round(numAmount).toLocaleString('en-US')} ${displayCurrency}`;
         }
     };
 
@@ -1179,7 +1201,7 @@ const RateDetails = ({
                                             Description
                                         </TableCell>
                                         {canViewFinancials && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
                                                 Quoted Cost
                                             </TableCell>
                                         )}
@@ -1319,68 +1341,59 @@ const RateDetails = ({
                                             {canViewFinancials && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', color: '#374151', fontWeight: 500, verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
-                                                        <TextField
-                                                            value={editingValues.quotedCost}
-                                                            onChange={(e) => handleInputChange('quotedCost', e.target.value)}
-                                                            size="small"
-                                                            type="number"
-                                                            inputProps={{ step: "0.01", min: "0" }}
-                                                            sx={{
-                                                                width: '100px',
-                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
-                                                                '& .MuiInputBase-root': { height: '32px' },
-                                                                // Hide number input spinners
-                                                                '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
-                                                                    WebkitAppearance: 'none',
-                                                                    margin: 0
-                                                                },
-                                                                '& input[type=number]': {
-                                                                    MozAppearance: 'textfield'
-                                                                }
-                                                            }}
-                                                        />
+                                                        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                                                            <TextField
+                                                                value={editingValues.quotedCost}
+                                                                onChange={(e) => handleInputChange('quotedCost', e.target.value)}
+                                                                size="small"
+                                                                type="number"
+                                                                inputProps={{ step: "0.01", min: "0" }}
+                                                                sx={{
+                                                                    width: '70px',
+                                                                    '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
+                                                                    '& .MuiInputBase-root': { height: '32px' },
+                                                                    // Hide number input spinners
+                                                                    '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
+                                                                        WebkitAppearance: 'none',
+                                                                        margin: 0
+                                                                    },
+                                                                    '& input[type=number]': {
+                                                                        MozAppearance: 'textfield'
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <FormControl size="small" sx={{ width: '50px' }}>
+                                                                <Select
+                                                                    value={editingValues.quotedCostCurrency || 'CAD'}
+                                                                    onChange={(e) => handleInputChange('quotedCostCurrency', e.target.value)}
+                                                                    sx={{
+                                                                        '& .MuiSelect-select': { fontSize: '10px', padding: '4px 6px' },
+                                                                        '& .MuiInputBase-root': { height: '32px' }
+                                                                    }}
+                                                                >
+                                                                    <MenuItem value="CAD" sx={{ fontSize: '10px' }}>CAD</MenuItem>
+                                                                    <MenuItem value="USD" sx={{ fontSize: '10px' }}>USD</MenuItem>
+                                                                    <MenuItem value="EUR" sx={{ fontSize: '10px' }}>EUR</MenuItem>
+                                                                    <MenuItem value="GBP" sx={{ fontSize: '10px' }}>GBP</MenuItem>
+                                                                </Select>
+                                                            </FormControl>
+                                                        </Box>
                                                     ) : (
-                                                        !item.isMarkup ? formatCurrency(item.quotedCost) : '-'
+                                                        !item.isMarkup ? formatCurrency(item.quotedCost, true, item.quotedCostCurrency) : '-'
                                                     )}
                                                 </TableCell>
                                             )}
                                             <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'top' }}>
                                                 {editingIndex === index ? (
-                                                    <TextField
-                                                        value={editingValues.quotedCharge}
-                                                        onChange={(e) => handleInputChange('quotedCharge', e.target.value)}
-                                                        size="small"
-                                                        type="number"
-                                                        inputProps={{ step: "0.01", min: "0" }}
-                                                        sx={{
-                                                            width: '100px',
-                                                            '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
-                                                            '& .MuiInputBase-root': { height: '32px' },
-                                                            // Hide number input spinners
-                                                            '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
-                                                                WebkitAppearance: 'none',
-                                                                margin: 0
-                                                            },
-                                                            '& input[type=number]': {
-                                                                MozAppearance: 'textfield'
-                                                            }
-                                                        }}
-                                                    />
-                                                ) : (
-                                                    formatCurrency(item.quotedCharge)
-                                                )}
-                                            </TableCell>
-                                            {canViewFinancials && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'top' }}>
-                                                    {editingIndex === index ? (
+                                                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
                                                         <TextField
-                                                            value={editingValues.actualCost || ''}
-                                                            onChange={(e) => handleInputChange('actualCost', e.target.value)}
+                                                            value={editingValues.quotedCharge}
+                                                            onChange={(e) => handleInputChange('quotedCharge', e.target.value)}
                                                             size="small"
                                                             type="number"
                                                             inputProps={{ step: "0.01", min: "0" }}
                                                             sx={{
-                                                                width: '100px',
+                                                                width: '70px',
                                                                 '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
                                                                 '& .MuiInputBase-root': { height: '32px' },
                                                                 // Hide number input spinners
@@ -1393,8 +1406,68 @@ const RateDetails = ({
                                                                 }
                                                             }}
                                                         />
+                                                        <FormControl size="small" sx={{ width: '50px' }}>
+                                                            <Select
+                                                                value={editingValues.quotedChargeCurrency || 'CAD'}
+                                                                onChange={(e) => handleInputChange('quotedChargeCurrency', e.target.value)}
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '10px', padding: '4px 6px' },
+                                                                    '& .MuiInputBase-root': { height: '32px' }
+                                                                }}
+                                                            >
+                                                                <MenuItem value="CAD" sx={{ fontSize: '10px' }}>CAD</MenuItem>
+                                                                <MenuItem value="USD" sx={{ fontSize: '10px' }}>USD</MenuItem>
+                                                                <MenuItem value="EUR" sx={{ fontSize: '10px' }}>EUR</MenuItem>
+                                                                <MenuItem value="GBP" sx={{ fontSize: '10px' }}>GBP</MenuItem>
+                                                            </Select>
+                                                        </FormControl>
+                                                    </Box>
+                                                ) : (
+                                                    formatCurrency(item.quotedCharge, true, item.quotedChargeCurrency)
+                                                )}
+                                            </TableCell>
+                                            {canViewFinancials && (
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'top' }}>
+                                                    {editingIndex === index ? (
+                                                        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                                                            <TextField
+                                                                value={editingValues.actualCost || ''}
+                                                                onChange={(e) => handleInputChange('actualCost', e.target.value)}
+                                                                size="small"
+                                                                type="number"
+                                                                inputProps={{ step: "0.01", min: "0" }}
+                                                                sx={{
+                                                                    width: '70px',
+                                                                    '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
+                                                                    '& .MuiInputBase-root': { height: '32px' },
+                                                                    // Hide number input spinners
+                                                                    '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
+                                                                        WebkitAppearance: 'none',
+                                                                        margin: 0
+                                                                    },
+                                                                    '& input[type=number]': {
+                                                                        MozAppearance: 'textfield'
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <FormControl size="small" sx={{ width: '50px' }}>
+                                                                <Select
+                                                                    value={editingValues.actualCostCurrency || 'CAD'}
+                                                                    onChange={(e) => handleInputChange('actualCostCurrency', e.target.value)}
+                                                                    sx={{
+                                                                        '& .MuiSelect-select': { fontSize: '10px', padding: '4px 6px' },
+                                                                        '& .MuiInputBase-root': { height: '32px' }
+                                                                    }}
+                                                                >
+                                                                    <MenuItem value="CAD" sx={{ fontSize: '10px' }}>CAD</MenuItem>
+                                                                    <MenuItem value="USD" sx={{ fontSize: '10px' }}>USD</MenuItem>
+                                                                    <MenuItem value="EUR" sx={{ fontSize: '10px' }}>EUR</MenuItem>
+                                                                    <MenuItem value="GBP" sx={{ fontSize: '10px' }}>GBP</MenuItem>
+                                                                </Select>
+                                                            </FormControl>
+                                                        </Box>
                                                     ) : (
-                                                        (item.actualCost !== null && item.actualCost !== undefined && item.actualCost !== '' && Number(item.actualCost) !== 0) ? formatCurrency(item.actualCost) : (
+                                                        (item.actualCost !== null && item.actualCost !== undefined && item.actualCost !== '' && Number(item.actualCost) !== 0) ? formatCurrency(item.actualCost, true, item.actualCostCurrency) : (
                                                             <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
                                                                 TBD
                                                             </Typography>
@@ -1405,28 +1478,45 @@ const RateDetails = ({
                                             {canViewFinancials && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
-                                                        <TextField
-                                                            value={editingValues.actualCharge || ''}
-                                                            onChange={(e) => handleInputChange('actualCharge', e.target.value)}
-                                                            size="small"
-                                                            type="number"
-                                                            inputProps={{ step: "0.01", min: "0" }}
-                                                            sx={{
-                                                                width: '100px',
-                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
-                                                                '& .MuiInputBase-root': { height: '32px' },
-                                                                // Hide number input spinners
-                                                                '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
-                                                                    WebkitAppearance: 'none',
-                                                                    margin: 0
-                                                                },
-                                                                '& input[type=number]': {
-                                                                    MozAppearance: 'textfield'
-                                                                }
-                                                            }}
-                                                        />
+                                                        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                                                            <TextField
+                                                                value={editingValues.actualCharge || ''}
+                                                                onChange={(e) => handleInputChange('actualCharge', e.target.value)}
+                                                                size="small"
+                                                                type="number"
+                                                                inputProps={{ step: "0.01", min: "0" }}
+                                                                sx={{
+                                                                    width: '70px',
+                                                                    '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
+                                                                    '& .MuiInputBase-root': { height: '32px' },
+                                                                    // Hide number input spinners
+                                                                    '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
+                                                                        WebkitAppearance: 'none',
+                                                                        margin: 0
+                                                                    },
+                                                                    '& input[type=number]': {
+                                                                        MozAppearance: 'textfield'
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <FormControl size="small" sx={{ width: '50px' }}>
+                                                                <Select
+                                                                    value={editingValues.actualChargeCurrency || 'CAD'}
+                                                                    onChange={(e) => handleInputChange('actualChargeCurrency', e.target.value)}
+                                                                    sx={{
+                                                                        '& .MuiSelect-select': { fontSize: '10px', padding: '4px 6px' },
+                                                                        '& .MuiInputBase-root': { height: '32px' }
+                                                                    }}
+                                                                >
+                                                                    <MenuItem value="CAD" sx={{ fontSize: '10px' }}>CAD</MenuItem>
+                                                                    <MenuItem value="USD" sx={{ fontSize: '10px' }}>USD</MenuItem>
+                                                                    <MenuItem value="EUR" sx={{ fontSize: '10px' }}>EUR</MenuItem>
+                                                                    <MenuItem value="GBP" sx={{ fontSize: '10px' }}>GBP</MenuItem>
+                                                                </Select>
+                                                            </FormControl>
+                                                        </Box>
                                                     ) : (
-                                                        (item.actualCharge !== null && item.actualCharge !== undefined && item.actualCharge !== '' && Number(item.actualCharge) !== 0) ? formatCurrency(item.actualCharge) : (
+                                                        (item.actualCharge !== null && item.actualCharge !== undefined && item.actualCharge !== '' && Number(item.actualCharge) !== 0) ? formatCurrency(item.actualCharge, true, item.actualChargeCurrency) : (
                                                             <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
                                                                 TBD
                                                             </Typography>
@@ -1470,7 +1560,7 @@ const RateDetails = ({
                                                                     color: color,
                                                                     fontWeight: 400
                                                                 }}>
-                                                                    {`${prefix}${formatCurrency(absProfit)}`}
+                                                                    {`${prefix}${formatCurrency(absProfit, true, item.currency)}`}
                                                                 </Typography>
                                                             );
                                                         })()
@@ -1504,7 +1594,7 @@ const RateDetails = ({
                                                                     color: color,
                                                                     fontWeight: 400
                                                                 }}>
-                                                                    {`${prefix}${formatCurrency(absProfit)}`}
+                                                                    {`${prefix}${formatCurrency(absProfit, true, item.currency)}`}
                                                                 </Typography>
                                                             );
                                                         })() : (

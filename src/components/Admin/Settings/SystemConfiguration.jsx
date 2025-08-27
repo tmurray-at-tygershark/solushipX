@@ -56,7 +56,10 @@ import {
     Notifications as NotificationsIcon,
     Speed as SpeedIcon,
     Build as ServiceIcon,
-    Assignment as TaskIcon
+    Assignment as TaskIcon,
+    Construction as EquipmentIcon,
+    CloudUpload as UploadIcon,
+    Image as ImageIcon
 } from '@mui/icons-material';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -73,18 +76,21 @@ import {
     getDocs,
     deleteDoc
 } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { app } from '../../../firebase/firebase';
 import { useSnackbar } from 'notistack';
 import InvoiceStatusDialog from '../Configuration/dialogs/InvoiceStatusDialog';
 import NotificationSettings from '../Configuration/NotificationSettings';
 import ChargeTypesConfiguration from '../Configuration/ChargeTypesConfiguration';
 import FollowUpTasksConfiguration from '../Configuration/FollowUpTasksConfiguration';
+import SystemConfigurationSkeleton from './SystemConfigurationSkeleton';
 
 const SystemConfiguration = () => {
     const { enqueueSnackbar } = useSnackbar();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const db = getFirestore(app);
+    const storage = getStorage(app);
     const functions = getFunctions();
 
     // Additional Services State
@@ -154,6 +160,23 @@ const SystemConfiguration = () => {
     const [contextMenuType, setContextMenuType] = useState(null); // 'master' or 'shipment'
     const [contextMenuData, setContextMenuData] = useState(null);
 
+    // Equipment Types State
+    const [equipmentTypes, setEquipmentTypes] = useState([]);
+    const [equipmentLoading, setEquipmentLoading] = useState(false);
+    const [equipmentDialogOpen, setEquipmentDialogOpen] = useState(false);
+    const [editingEquipment, setEditingEquipment] = useState(null);
+    const [equipmentForm, setEquipmentForm] = useState({
+        name: '',
+        category: 'Truck',
+        code: '',
+        description: '',
+        imageUrl: ''
+    });
+    const [equipmentImageFile, setEquipmentImageFile] = useState(null);
+    const [uploadingImage, setUploadingImage] = useState(false);
+    const [equipmentMenuAnchor, setEquipmentMenuAnchor] = useState(null);
+    const [selectedEquipment, setSelectedEquipment] = useState(null);
+
     useEffect(() => {
         loadConfiguration();
     }, []);
@@ -166,7 +189,8 @@ const SystemConfiguration = () => {
                 loadServiceLevels(),
                 loadMasterStatuses(),
                 loadShipmentStatuses(),
-                loadInvoiceStatuses()
+                loadInvoiceStatuses(),
+                loadEquipmentTypes()
             ]);
         } catch (error) {
             console.error('Error loading configuration:', error);
@@ -439,6 +463,209 @@ const SystemConfiguration = () => {
     const handleRefresh = () => {
         loadConfiguration();
         enqueueSnackbar('Configuration refreshed', { variant: 'info' });
+    };
+
+    // Equipment Types Functions
+    const loadEquipmentTypes = async () => {
+        try {
+            setEquipmentLoading(true);
+            const equipmentQuery = query(
+                collection(db, 'equipmentTypes'),
+                orderBy('category'),
+                orderBy('name')
+            );
+
+            const equipmentSnapshot = await getDocs(equipmentQuery);
+            const equipment = equipmentSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            setEquipmentTypes(equipment);
+        } catch (error) {
+            console.error('Error loading equipment types:', error);
+            enqueueSnackbar('Failed to load equipment types', { variant: 'error' });
+        } finally {
+            setEquipmentLoading(false);
+        }
+    };
+
+    const generateEquipmentCode = (name) => {
+        // Remove special characters and spaces, convert to uppercase
+        return name
+            .replace(/[^a-zA-Z0-9\s]/g, '')
+            .replace(/\s+/g, '')
+            .toUpperCase()
+            .substring(0, 10); // Limit to 10 characters
+    };
+
+    const handleEquipmentFormChange = (field, value) => {
+        setEquipmentForm(prev => {
+            const updated = {
+                ...prev,
+                [field]: value
+            };
+
+            // Auto-generate code when name changes
+            if (field === 'name' && value) {
+                updated.code = generateEquipmentCode(value);
+            }
+
+            return updated;
+        });
+    };
+
+    const handleAddEquipment = () => {
+        setEditingEquipment(null);
+        setEquipmentForm({
+            name: '',
+            category: 'Truck',
+            code: '',
+            description: '',
+            imageUrl: ''
+        });
+        setEquipmentImageFile(null);
+        setEquipmentDialogOpen(true);
+    };
+
+    const handleEditEquipment = (equipment) => {
+        setEditingEquipment(equipment);
+        setEquipmentForm({
+            name: equipment.name || '',
+            category: equipment.category || 'Truck',
+            code: equipment.code || '',
+            description: equipment.description || '',
+            imageUrl: equipment.imageUrl || ''
+        });
+        setEquipmentImageFile(null);
+        setEquipmentDialogOpen(true);
+    };
+
+    const handleUploadEquipmentImage = async () => {
+        if (!equipmentImageFile) return null;
+
+        try {
+            setUploadingImage(true);
+            const filename = `equipment-images/${Date.now()}-${equipmentImageFile.name}`;
+            const imageRef = ref(storage, filename);
+
+            await uploadBytes(imageRef, equipmentImageFile);
+            const downloadURL = await getDownloadURL(imageRef);
+
+            return downloadURL;
+        } catch (error) {
+            console.error('Error uploading image:', error);
+            enqueueSnackbar('Failed to upload image', { variant: 'error' });
+            throw error;
+        } finally {
+            setUploadingImage(false);
+        }
+    };
+
+    const handleSaveEquipment = async () => {
+        try {
+            setSaving(true);
+
+            // Validate required fields
+            if (!equipmentForm.name.trim()) {
+                enqueueSnackbar('Equipment name is required', { variant: 'error' });
+                return;
+            }
+
+            // Check for duplicate codes (excluding current equipment if editing)
+            const duplicateEquipment = equipmentTypes.find(equipment =>
+                equipment.code === equipmentForm.code.trim() &&
+                equipment.id !== editingEquipment?.id
+            );
+
+            if (duplicateEquipment) {
+                enqueueSnackbar(`Equipment with code "${equipmentForm.code}" already exists`, { variant: 'error' });
+                return;
+            }
+
+            // Upload image if selected
+            let imageUrl = equipmentForm.imageUrl;
+            if (equipmentImageFile) {
+                imageUrl = await handleUploadEquipmentImage();
+            }
+
+            const equipmentData = {
+                name: equipmentForm.name.trim(),
+                category: equipmentForm.category,
+                code: equipmentForm.code.trim().toUpperCase(),
+                description: equipmentForm.description.trim(),
+                imageUrl: imageUrl || '',
+                updatedAt: serverTimestamp()
+            };
+
+            if (editingEquipment) {
+                // Update existing equipment
+                await updateDoc(doc(db, 'equipmentTypes', editingEquipment.id), equipmentData);
+                enqueueSnackbar('Equipment type updated successfully', { variant: 'success' });
+            } else {
+                // Create new equipment
+                equipmentData.createdAt = serverTimestamp();
+                await addDoc(collection(db, 'equipmentTypes'), equipmentData);
+                enqueueSnackbar('Equipment type created successfully', { variant: 'success' });
+            }
+
+            setEquipmentDialogOpen(false);
+            await loadEquipmentTypes();
+        } catch (error) {
+            console.error('Error saving equipment:', error);
+            enqueueSnackbar('Failed to save equipment type', { variant: 'error' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteEquipment = async (equipment) => {
+        if (!window.confirm(`Are you sure you want to delete "${equipment.name}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            setSaving(true);
+
+            // Delete image from storage if it exists
+            if (equipment.imageUrl) {
+                try {
+                    const imageRef = ref(storage, equipment.imageUrl);
+                    await deleteObject(imageRef);
+                } catch (imageError) {
+                    console.warn('Failed to delete equipment image:', imageError);
+                    // Continue with equipment deletion even if image deletion fails
+                }
+            }
+
+            await deleteDoc(doc(db, 'equipmentTypes', equipment.id));
+            enqueueSnackbar('Equipment type deleted successfully', { variant: 'success' });
+            await loadEquipmentTypes();
+        } catch (error) {
+            console.error('Error deleting equipment:', error);
+            enqueueSnackbar('Failed to delete equipment type', { variant: 'error' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleEquipmentMenuOpen = (event, equipment) => {
+        setEquipmentMenuAnchor(event.currentTarget);
+        setSelectedEquipment(equipment);
+    };
+
+    const handleEquipmentMenuClose = () => {
+        setEquipmentMenuAnchor(null);
+        setSelectedEquipment(null);
+    };
+
+    const handleEquipmentMenuAction = (action) => {
+        if (action === 'edit' && selectedEquipment) {
+            handleEditEquipment(selectedEquipment);
+        } else if (action === 'delete' && selectedEquipment) {
+            handleDeleteEquipment(selectedEquipment);
+        }
+        handleEquipmentMenuClose();
     };
 
     // Shipment Status Functions
@@ -798,11 +1025,7 @@ const SystemConfiguration = () => {
     };
 
     if (loading) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
-                <CircularProgress />
-            </Box>
-        );
+        return <SystemConfigurationSkeleton />;
     }
 
     return (
@@ -1599,6 +1822,137 @@ const SystemConfiguration = () => {
                         </AccordionSummary>
                         <AccordionDetails>
                             <ChargeTypesConfiguration />
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+
+                {/* Equipment Types Section */}
+                <Grid item xs={12}>
+                    <Accordion>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <EquipmentIcon sx={{ color: '#6b7280' }} />
+                                <Typography sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                    Equipment Types
+                                </Typography>
+                            </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            {/* Header with Add Button */}
+                            <Box sx={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                mb: 2
+                            }}>
+                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                    Manage equipment types for courier, shipping, and trucking operations
+                                </Typography>
+                                <Button
+                                    variant="contained"
+                                    startIcon={<AddIcon />}
+                                    onClick={handleAddEquipment}
+                                    size="small"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Equipment
+                                </Button>
+                            </Box>
+
+                            <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Name</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Code</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Category</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Description</TableCell>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '120px' }}>Actions</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {equipmentLoading ? (
+                                            <TableRow>
+                                                <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                                                    <CircularProgress size={20} />
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : equipmentTypes.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell colSpan={5} align="center" sx={{ py: 3, fontSize: '12px', color: '#6b7280' }}>
+                                                    No equipment types configured yet. Click "+ Equipment" to add one.
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : (
+                                            equipmentTypes.map((equipment) => (
+                                                <TableRow key={equipment.id} hover>
+                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            {equipment.imageUrl ? (
+                                                                <img
+                                                                    src={equipment.imageUrl}
+                                                                    alt={equipment.name}
+                                                                    style={{
+                                                                        width: 24,
+                                                                        height: 24,
+                                                                        borderRadius: '4px',
+                                                                        objectFit: 'cover'
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <EquipmentIcon sx={{ fontSize: 16, color: '#6b7280' }} />
+                                                            )}
+                                                            {equipment.name}
+                                                        </Box>
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                        <Chip
+                                                            label={equipment.code}
+                                                            size="small"
+                                                            variant="outlined"
+                                                            sx={{ fontSize: '11px' }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                        <Chip
+                                                            label={equipment.category}
+                                                            size="small"
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                bgcolor: equipment.category === 'Truck' ? '#fef3c7' :
+                                                                    equipment.category === 'Air' ? '#dbeafe' :
+                                                                        equipment.category === 'Ocean' ? '#d1fae5' :
+                                                                            equipment.category === 'Rail' ? '#fce7f3' :
+                                                                                equipment.category === 'Courier' ? '#e0f2fe' :
+                                                                                    '#f3f4f6',
+                                                                color: equipment.category === 'Truck' ? '#92400e' :
+                                                                    equipment.category === 'Air' ? '#1e40af' :
+                                                                        equipment.category === 'Ocean' ? '#065f46' :
+                                                                            equipment.category === 'Rail' ? '#be185d' :
+                                                                                equipment.category === 'Courier' ? '#0277bd' :
+                                                                                    '#374151'
+                                                            }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '12px', maxWidth: 200 }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                            {equipment.description || '-'}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => handleEquipmentMenuOpen(e, equipment)}
+                                                        >
+                                                            <MoreVertIcon sx={{ fontSize: 16 }} />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
                         </AccordionDetails>
                     </Accordion>
                 </Grid>
@@ -2465,6 +2819,212 @@ const SystemConfiguration = () => {
                     </MenuItem>
                 </MenuList>
             </Menu>
+
+            {/* Equipment Action Menu */}
+            <Menu
+                anchorEl={equipmentMenuAnchor}
+                open={Boolean(equipmentMenuAnchor)}
+                onClose={handleEquipmentMenuClose}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            minWidth: '140px'
+                        }
+                    }
+                }}
+            >
+                <MenuList sx={{ py: 1 }}>
+                    <MenuItem
+                        onClick={() => handleEquipmentMenuAction('edit')}
+                        sx={{
+                            fontSize: '12px',
+                            py: 1,
+                            px: 2,
+                            '&:hover': { backgroundColor: '#f8fafc' }
+                        }}
+                    >
+                        <EditIcon sx={{ fontSize: 16, mr: 1, color: '#6b7280' }} />
+                        Edit
+                    </MenuItem>
+                    <MenuItem
+                        onClick={() => handleEquipmentMenuAction('delete')}
+                        sx={{
+                            fontSize: '12px',
+                            py: 1,
+                            px: 2,
+                            color: '#ef4444',
+                            '&:hover': { backgroundColor: '#fef2f2' }
+                        }}
+                    >
+                        <DeleteIcon sx={{ fontSize: 16, mr: 1, color: '#ef4444' }} />
+                        Delete
+                    </MenuItem>
+                </MenuList>
+            </Menu>
+
+            {/* Equipment Type Dialog */}
+            <Dialog
+                open={equipmentDialogOpen}
+                onClose={() => setEquipmentDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>
+                    {editingEquipment ? 'Edit Equipment Type' : 'Add Equipment Type'}
+                </DialogTitle>
+                <DialogContent>
+                    <Grid container spacing={2} sx={{ mt: 1 }}>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                label="Equipment Name"
+                                value={equipmentForm.name}
+                                onChange={(e) => handleEquipmentFormChange('name', e.target.value)}
+                                size="small"
+                                required
+                                placeholder="e.g., 53' Truck, Dry Van, Cold Storage"
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                                helperText="Enter the equipment name (required)"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Category</InputLabel>
+                                <Select
+                                    value={equipmentForm.category}
+                                    onChange={(e) => handleEquipmentFormChange('category', e.target.value)}
+                                    label="Category"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    <MenuItem value="Truck" sx={{ fontSize: '12px' }}>Truck</MenuItem>
+                                    <MenuItem value="Air" sx={{ fontSize: '12px' }}>Air</MenuItem>
+                                    <MenuItem value="Ocean" sx={{ fontSize: '12px' }}>Ocean</MenuItem>
+                                    <MenuItem value="Rail" sx={{ fontSize: '12px' }}>Rail</MenuItem>
+                                    <MenuItem value="Courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                label="Equipment Code"
+                                value={equipmentForm.code}
+                                onChange={(e) => handleEquipmentFormChange('code', e.target.value)}
+                                size="small"
+                                required
+                                placeholder="Auto-generated"
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                                helperText="Unique identifier (auto-generated from name)"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                label="Description"
+                                value={equipmentForm.description}
+                                onChange={(e) => handleEquipmentFormChange('description', e.target.value)}
+                                size="small"
+                                multiline
+                                rows={2}
+                                placeholder="Optional description of the equipment type"
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                                helperText="Optional description (e.g., specifications, capacity)"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <Box>
+                                <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, fontWeight: 600 }}>
+                                    Equipment Image (Optional)
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    <Button
+                                        variant="outlined"
+                                        component="label"
+                                        startIcon={<UploadIcon />}
+                                        size="small"
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        Choose Image
+                                        <input
+                                            type="file"
+                                            hidden
+                                            accept="image/*"
+                                            onChange={(e) => {
+                                                const file = e.target.files[0];
+                                                if (file) {
+                                                    setEquipmentImageFile(file);
+                                                }
+                                            }}
+                                        />
+                                    </Button>
+                                    {equipmentImageFile && (
+                                        <Chip
+                                            label={equipmentImageFile.name}
+                                            size="small"
+                                            onDelete={() => setEquipmentImageFile(null)}
+                                            sx={{ fontSize: '11px' }}
+                                        />
+                                    )}
+                                    {equipmentForm.imageUrl && !equipmentImageFile && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <img
+                                                src={equipmentForm.imageUrl}
+                                                alt="Current image"
+                                                style={{
+                                                    width: 32,
+                                                    height: 32,
+                                                    borderRadius: '4px',
+                                                    objectFit: 'cover'
+                                                }}
+                                            />
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                Current image
+                                            </Typography>
+                                        </Box>
+                                    )}
+                                </Box>
+                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', mt: 1, display: 'block' }}>
+                                    Upload an image to represent this equipment type (PNG, JPG, GIF)
+                                </Typography>
+                            </Box>
+                        </Grid>
+                    </Grid>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setEquipmentDialogOpen(false)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleSaveEquipment}
+                        variant="contained"
+                        disabled={saving || uploadingImage}
+                        startIcon={saving || uploadingImage ? <CircularProgress size={16} /> : <SaveIcon />}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {saving ? 'Saving...' : uploadingImage ? 'Uploading...' : 'Save Equipment'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Invoice Status Dialog */}
             <InvoiceStatusDialog

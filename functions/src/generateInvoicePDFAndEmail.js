@@ -80,9 +80,10 @@ const functions = require('firebase-functions');
 const sendgridApiKey = process.env.SENDGRID_API_KEY || functions.config().sendgrid?.api_key;
 
 if (!sendgridApiKey) {
-    throw new Error('SendGrid API key not found in environment variables or Firebase config');
+    console.warn('SendGrid API key not found in environment variables or Firebase config - email functions will be disabled');
+} else {
+    sgMail.setApiKey(sendgridApiKey);
 }
-sgMail.setApiKey(sendgridApiKey);
 
 // Email configuration constants - Updated per billing requirements
 // Note: These are now fallbacks - dynamic company data is used when available
