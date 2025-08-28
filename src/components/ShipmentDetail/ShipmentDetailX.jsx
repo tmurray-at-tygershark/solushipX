@@ -123,18 +123,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         const computed = window.getComputedStyle(track);
         const firstSlide = slideRefs.current['shipment-detail'];
         const secondSlide = slideRefs.current['follow-ups'];
-        console.log('[FollowUps Slide]', reason, {
-            outerWidth: newOuterWidth,
-            outerClientWidth: outer.clientWidth,
-            outerScrollWidth: outer.scrollWidth,
-            trackClientWidth: track.clientWidth,
-            trackScrollWidth: track.scrollWidth,
-            transform: computed?.transform,
-            mountedViews: followUpsMountedViews,
-            stackLen: followUpsNavigationStack.length,
-            firstSlideWidth: firstSlide?.getBoundingClientRect()?.width,
-            secondSlideWidth: secondSlide?.getBoundingClientRect()?.width
-        });
+
     }, [followUpsMountedViews, followUpsNavigationStack.length]);
 
     useEffect(() => {
@@ -1300,6 +1289,10 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     code: charge.code,
                     description: charge.description,
                     quotedCharge: charge.quotedCharge,
+                    quotedCostCurrency: charge.quotedCostCurrency,
+                    quotedChargeCurrency: charge.quotedChargeCurrency,
+                    actualCostCurrency: charge.actualCostCurrency,
+                    actualChargeCurrency: charge.actualChargeCurrency,
                     isTax: charge.isTax || false
                 }))
             });
@@ -1319,10 +1312,11 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     actualCost: charge.actualCost != null ? (isNaN(parseFloat(charge.actualCost)) ? 0 : parseFloat(charge.actualCost)) : 0,
                     actualCharge: charge.actualCharge != null ? (isNaN(parseFloat(charge.actualCharge)) ? 0 : parseFloat(charge.actualCharge)) : 0,
                     // CRITICAL FIX: Include individual currency fields for each monetary amount
-                    quotedCostCurrency: charge.quotedCostCurrency || 'CAD',
-                    quotedChargeCurrency: charge.quotedChargeCurrency || 'CAD',
-                    actualCostCurrency: charge.actualCostCurrency || 'CAD',
-                    actualChargeCurrency: charge.actualChargeCurrency || 'CAD',
+                    // Preserve individual currencies - don't fall back to hardcoded CAD
+                    quotedCostCurrency: charge.quotedCostCurrency || charge.currency || shipment.currency || 'CAD',
+                    quotedChargeCurrency: charge.quotedChargeCurrency || charge.currency || shipment.currency || 'CAD',
+                    actualCostCurrency: charge.actualCostCurrency || charge.currency || shipment.currency || 'CAD',
+                    actualChargeCurrency: charge.actualChargeCurrency || charge.currency || shipment.currency || 'CAD',
                     invoiceNumber: charge.invoiceNumber != null ? charge.invoiceNumber : '-',
                     ediNumber: charge.ediNumber != null ? charge.ediNumber : '-',
                     commissionable: charge.commissionable != null ? charge.commissionable : false,
@@ -1331,6 +1325,17 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     isMarkup: charge.isMarkup || false
                 }))
             };
+
+            console.log('💱 Currency Debug: Data being sent to cloud function', {
+                chargesData: chargesData.charges.map(charge => ({
+                    id: charge.id,
+                    description: charge.description,
+                    quotedCostCurrency: charge.quotedCostCurrency,
+                    quotedChargeCurrency: charge.quotedChargeCurrency,
+                    actualCostCurrency: charge.actualCostCurrency,
+                    actualChargeCurrency: charge.actualChargeCurrency
+                }))
+            });
 
             const result = await updateShipmentCharges(chargesData);
 

@@ -110,6 +110,18 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
             throw new Error(`Charge ${index + 1}: Description is required`);
         }
 
+        console.log('💱 Cloud Function Debug: Processing charge', {
+            chargeId: charge.id,
+            receivedCurrencies: {
+                quotedCostCurrency: charge.quotedCostCurrency,
+                quotedChargeCurrency: charge.quotedChargeCurrency,
+                actualCostCurrency: charge.actualCostCurrency,
+                actualChargeCurrency: charge.actualChargeCurrency,
+                globalCurrency: charge.currency,
+                shipmentCurrency: shipmentData.currency
+            }
+        });
+
         const validatedCharge = {
             id: charge.id || `${shipmentData.id}_charge_${index}`, // Preserve existing ID or create deterministic fallback matching frontend pattern
             code: charge.code || 'FRT',
@@ -120,10 +132,11 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
             actualCost: charge.actualCost != null ? parseFloat(charge.actualCost) : 0,
             actualCharge: charge.actualCharge != null ? parseFloat(charge.actualCharge) : 0,
             // CRITICAL FIX: Support individual currency fields for each monetary amount
-            quotedCostCurrency: charge.quotedCostCurrency || 'CAD',
-            quotedChargeCurrency: charge.quotedChargeCurrency || 'CAD',
-            actualCostCurrency: charge.actualCostCurrency || 'CAD',
-            actualChargeCurrency: charge.actualChargeCurrency || 'CAD',
+            // Preserve individual currencies - don't fall back to shipment currency if explicitly set
+            quotedCostCurrency: charge.quotedCostCurrency || charge.currency || shipmentData.currency || 'CAD',
+            quotedChargeCurrency: charge.quotedChargeCurrency || charge.currency || shipmentData.currency || 'CAD',
+            actualCostCurrency: charge.actualCostCurrency || charge.currency || shipmentData.currency || 'CAD',
+            actualChargeCurrency: charge.actualChargeCurrency || charge.currency || shipmentData.currency || 'CAD',
             invoiceNumber: charge.invoiceNumber || '-',
             ediNumber: charge.ediNumber || '-',
             commissionable: charge.commissionable || false,
@@ -134,6 +147,16 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
             updatedAt: new Date(),
             updatedBy: userEmail || 'system'
         };
+
+        console.log('💱 Cloud Function Debug: Validated charge', {
+            chargeId: validatedCharge.id,
+            finalCurrencies: {
+                quotedCostCurrency: validatedCharge.quotedCostCurrency,
+                quotedChargeCurrency: validatedCharge.quotedChargeCurrency,
+                actualCostCurrency: validatedCharge.actualCostCurrency,
+                actualChargeCurrency: validatedCharge.actualChargeCurrency
+            }
+        });
 
         // Validate numeric values
         if (validatedCharge.quotedCost < 0 || validatedCharge.quotedCharge < 0 || 

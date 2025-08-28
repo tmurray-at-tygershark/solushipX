@@ -4564,7 +4564,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     </Box >
                 );
             case 'shipment-detail':
-                console.log('📋 Rendering shipment detail view with shipmentId:', view.props?.shipmentId);
+
                 return (
                     <Suspense fallback={<CircularProgress />}>
                         <ShipmentDetailX

@@ -2534,11 +2534,8 @@ const Dashboard = () => {
 
         // Start loading immediately for snappy UX
         setLoading(false); // Show content immediately, load data in background
-        console.log('Dashboard: Fetching shipments for company:', companyIdForAddress);
-
         // Function to process and combine shipment results
         const processShipments = (normalDocs, quickShipDocs, draftDocs = []) => {
-            console.log(`Dashboard: Processing ${normalDocs.length} normal + ${quickShipDocs.length} QuickShip + ${draftDocs.length} draft shipments`);
 
             // Combine all three sets of documents, removing duplicates
             const allDocs = [...normalDocs];
@@ -2681,24 +2678,15 @@ const Dashboard = () => {
 
                 // EXCLUDE ALL CANCELLED/CANCELED AND ARCHIVED SHIPMENTS COMPLETELY
                 if (status === 'cancelled' || status === 'canceled' || status === 'cancelled' || status === 'cancelled' || status === 'void' || status === 'voided' || status === 'archived') {
-                    console.log(`❌ Excluding ${status} shipment ${shipment.shipmentID} with status ${shipment.status}`);
                     return false;
                 }
 
-                // Special debugging for QuickShip shipments
-                if (shipment.creationMethod === 'quickship') {
-                    console.log(`🚛 QuickShip shipment found: ${shipment.shipmentID} - status: ${shipment.status} - isDraft: ${shipment.isDraft}`);
-                }
+
 
                 // More lenient filtering for QuickShip shipments
                 if (shipment.creationMethod === 'quickship') {
                     // Keep QuickShip shipments if they're booked, pending, or have any valid status (not draft, cancelled, or archived)
                     const keepShipment = shipment.status && status !== 'draft' && status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided' && status !== 'archived';
-                    if (keepShipment) {
-                        console.log(`✅ Keeping QuickShip shipment ${shipment.shipmentID} with status ${shipment.status}`);
-                    } else {
-                        console.log(`❌ Excluding QuickShip shipment ${shipment.shipmentID} with status ${shipment.status}`);
-                    }
                     return keepShipment;
                 }
 
@@ -2718,13 +2706,12 @@ const Dashboard = () => {
                 return true; // Include all other shipments including drafts
             });
 
-            console.log('Dashboard: Processed shipments data:', displayShipments.length, 'shipments for display (excluding drafts)');
-            console.log('🔍 Dashboard: Processed shipments data for search:', allShipmentsForSearch.length, 'shipments (including drafts)');
+
 
             setShipments(displayShipments);
             setAllShipmentsIncludingDrafts(allShipmentsForSearch);
 
-            console.log('🔍 Dashboard: Setting shipments for enterprise search with drafts enabled:', allShipmentsForSearch.length);
+
 
             // Data loaded - UI already showing for optimistic loading
         };
@@ -2757,15 +2744,10 @@ const Dashboard = () => {
 
         // Subscribe to all three queries
         const unsubscribeNormal = onSnapshot(normalShipmentsQuery, (normalSnapshot) => {
-            console.log('Dashboard: Received normal shipments snapshot with', normalSnapshot.docs.length, 'documents');
-
             // Get QuickShip shipments separately
             onSnapshot(quickShipQuery, (quickShipSnapshot) => {
-                console.log('Dashboard: Received QuickShip shipments snapshot with', quickShipSnapshot.docs.length, 'documents');
-
                 // Get draft shipments separately
                 onSnapshot(draftShipmentsQuery, (draftSnapshot) => {
-                    console.log('Dashboard: Received draft shipments snapshot with', draftSnapshot.docs.length, 'documents');
 
                     // Process all three sets of results
                     processShipments(normalSnapshot.docs, quickShipSnapshot.docs, draftSnapshot.docs);

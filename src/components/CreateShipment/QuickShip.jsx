@@ -1766,10 +1766,35 @@ const QuickShip = ({
     };
 
     const updateRateLineItem = (id, field, value) => {
+        console.log('💱 Currency Debug: updateRateLineItem called', {
+            rateId: id,
+            field: field,
+            value: value,
+            timestamp: new Date().toISOString()
+        });
+
         setManualRates(prev => {
             const updatedRates = prev.map(rate => {
                 if (rate.id === id) {
                     const updatedRate = { ...rate, [field]: value };
+
+                    console.log('💱 Currency Debug: Rate being updated', {
+                        rateId: id,
+                        beforeUpdate: {
+                            costCurrency: rate.costCurrency,
+                            chargeCurrency: rate.chargeCurrency,
+                            actualCostCurrency: rate.actualCostCurrency,
+                            actualChargeCurrency: rate.actualChargeCurrency
+                        },
+                        afterUpdate: {
+                            costCurrency: updatedRate.costCurrency,
+                            chargeCurrency: updatedRate.chargeCurrency,
+                            actualCostCurrency: updatedRate.actualCostCurrency,
+                            actualChargeCurrency: updatedRate.actualChargeCurrency
+                        },
+                        fieldChanged: field,
+                        newValue: value
+                    });
 
                     // Auto-populate charge name when code is selected using dynamic charge types
                     if (field === 'code' && value) {
@@ -1829,10 +1854,12 @@ const QuickShip = ({
             });
 
             // Recalculate taxes when non-tax lines change for CA domestic shipments
+            // 🔧 NEW: Skip tax recalculation when only updating currency fields to preserve individual currencies
+            const isCurrencyFieldUpdate = field === 'costCurrency' || field === 'chargeCurrency';
             if (availableChargeTypes && availableChargeTypes.length > 0 &&
                 shipFromAddress && shipToAddress &&
                 isCanadianDomesticShipment(shipFromAddress, shipToAddress) &&
-                !isUpdatingTaxCharge) { // 🔧 NEW: Don't recalculate when updating tax charges
+                !isUpdatingTaxCharge && !isCurrencyFieldUpdate) { // 🔧 Skip recalc for currency updates
                 const province = shipToAddress?.state;
                 if (province) {
                     console.log('🍁 HST: Recalculating taxes for rate update', {
@@ -1843,14 +1870,26 @@ const QuickShip = ({
                     });
                     return updateRateAndRecalculateTaxes(updatedRates, { id, [field]: value }, province, availableChargeTypes);
                 }
-            } else if (isUpdatingTaxCharge) {
-                console.log('🍁 HST: Preserving manual tax charge update', {
+            } else if (isUpdatingTaxCharge || isCurrencyFieldUpdate) {
+                console.log(isCurrencyFieldUpdate ? '💱 Currency: Preserving currency field update without tax recalculation' : '🍁 HST: Preserving manual tax charge update', {
                     rateId: id,
                     field: field,
                     value: value,
-                    rateCode: updatedRate?.code
+                    rateCode: updatedRate?.code,
+                    isCurrencyUpdate: isCurrencyFieldUpdate
                 });
             }
+
+            console.log('💱 Currency Debug: Final updated rates array', {
+                updatedRates: updatedRates.map(r => ({
+                    id: r.id,
+                    code: r.code,
+                    costCurrency: r.costCurrency,
+                    chargeCurrency: r.chargeCurrency,
+                    actualCostCurrency: r.actualCostCurrency,
+                    actualChargeCurrency: r.actualChargeCurrency
+                }))
+            });
 
             return updatedRates;
         });
@@ -2143,12 +2182,31 @@ const QuickShip = ({
         return counts;
     };
 
-    // Calculate total rate cost with formatting
+    // Calculate total rate cost with currency separation
     const totalCost = useMemo(() => {
-        return manualRates.reduce((total, rate) => {
+        const totals = { CAD: 0, USD: 0 };
+
+        manualRates.forEach(rate => {
             const charge = parseFloat(rate.charge) || 0;
-            return total + charge;
-        }, 0);
+            const currency = rate.chargeCurrency || 'CAD';
+            totals[currency] = (totals[currency] || 0) + charge;
+        });
+
+        // Return primary total (CAD if exists, otherwise first currency)
+        return totals.CAD || totals.USD || 0;
+    }, [manualRates]);
+
+    // Calculate currency-separated totals for display
+    const totalsByCurrency = useMemo(() => {
+        const totals = {};
+
+        manualRates.forEach(rate => {
+            const charge = parseFloat(rate.charge) || 0;
+            const currency = rate.chargeCurrency || 'CAD';
+            totals[currency] = (totals[currency] || 0) + charge;
+        });
+
+        return totals;
     }, [manualRates]);
 
     // Format number with thousands separators
@@ -8467,7 +8525,12 @@ const QuickShip = ({
                                                     color: '#1f2937',
                                                     mb: 0.5
                                                 }}>
-                                                    Total: {formatCurrency(totalCost, 'CAD')}
+                                                    Total: {Object.keys(totalsByCurrency).length > 1
+                                                        ? Object.entries(totalsByCurrency)
+                                                            .filter(([currency, amount]) => amount > 0)
+                                                            .map(([currency, amount]) => formatCurrency(amount, currency))
+                                                            .join(' + ')
+                                                        : formatCurrency(totalCost, Object.keys(totalsByCurrency)[0] || 'CAD')}
                                                 </Typography>
                                                 <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
                                                     Total

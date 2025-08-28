@@ -274,6 +274,19 @@ const RateDetails = ({
 
     // Inline editing functions - moved above early return to satisfy React hooks rules
     const handleEditStart = useCallback((index, item) => {
+        console.log('💱 RateDetails Debug: handleEditStart called', {
+            index,
+            item: item,
+            itemKeys: Object.keys(item),
+            currencyFields: {
+                quotedCostCurrency: item.quotedCostCurrency,
+                quotedChargeCurrency: item.quotedChargeCurrency,
+                actualCostCurrency: item.actualCostCurrency,
+                actualChargeCurrency: item.actualChargeCurrency,
+                currency: item.currency
+            }
+        });
+
         setEditingIndex(index);
         setEditingValues({
             description: item.description,
@@ -289,6 +302,13 @@ const RateDetails = ({
             invoiceNumber: item.invoiceNumber || '-',
             ediNumber: item.ediNumber || '-',
             commissionable: item.commissionable || false
+        });
+
+        console.log('💱 RateDetails Debug: editingValues set to', {
+            quotedCostCurrency: item.quotedCostCurrency || 'CAD',
+            quotedChargeCurrency: item.quotedChargeCurrency || 'CAD',
+            actualCostCurrency: item.actualCostCurrency || 'CAD',
+            actualChargeCurrency: item.actualChargeCurrency || 'CAD'
         });
     }, []);
 
@@ -344,6 +364,24 @@ const RateDetails = ({
         // Always recalc Canadian taxes after any non-tax line change (freight, fuel, etc.)
         // If a tax line itself is edited, skip recalculation to respect manual tax edits
         const isEditingTaxCharge = updatedItem.isTax || isTaxCharge(updatedItem.code);
+
+        console.log('💱 RateDetails Debug: Before tax recalculation', {
+            isEditingTaxCharge,
+            beforeTaxRecalc: updatedBreakdown[index],
+            currencies: {
+                quotedCostCurrency: updatedBreakdown[index].quotedCostCurrency,
+                quotedChargeCurrency: updatedBreakdown[index].quotedChargeCurrency,
+                actualCostCurrency: updatedBreakdown[index].actualCostCurrency,
+                actualChargeCurrency: updatedBreakdown[index].actualChargeCurrency
+            },
+            editingValues: {
+                quotedCostCurrency: editingValues.quotedCostCurrency,
+                quotedChargeCurrency: editingValues.quotedChargeCurrency,
+                actualCostCurrency: editingValues.actualCostCurrency,
+                actualChargeCurrency: editingValues.actualChargeCurrency
+            }
+        });
+
         if (
             shipment?.shipFrom && shipment?.shipTo &&
             isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo) &&
@@ -351,6 +389,16 @@ const RateDetails = ({
             const province = shipment.shipTo?.state;
             if (province) {
                 updatedBreakdown = updateRateAndRecalculateTaxes(updatedBreakdown, updatedItem, province, availableChargeTypes || [], shipment?.id);
+
+                console.log('💱 RateDetails Debug: After tax recalculation', {
+                    afterTaxRecalc: updatedBreakdown[index],
+                    currencies: {
+                        quotedCostCurrency: updatedBreakdown[index].quotedCostCurrency,
+                        quotedChargeCurrency: updatedBreakdown[index].quotedChargeCurrency,
+                        actualCostCurrency: updatedBreakdown[index].actualCostCurrency,
+                        actualChargeCurrency: updatedBreakdown[index].actualChargeCurrency
+                    }
+                });
             }
         }
 

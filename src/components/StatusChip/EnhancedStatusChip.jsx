@@ -31,15 +31,15 @@ const EnhancedStatusChip = ({
                 setLoading(true);
                 setError(null);
 
-                console.log(`[EnhancedStatusChip] Initializing for status: "${status}"`);
+
 
                 // 🐛 DRAFT STATUS FIX: Handle draft status with hard-coded chip
                 if (status === 'draft' || (typeof status === 'string' && status.toLowerCase() === 'draft')) {
-                    console.log('[EnhancedStatusChip] Draft status detected - checking for pending_review flag');
+
 
                     // Check if this is a pending review draft
                     const isPendingReview = shipment?.pending_review === true;
-                    console.log('[EnhancedStatusChip] isPendingReview:', isPendingReview);
+
 
                     const draftDisplay = {
                         masterStatus: {
@@ -58,7 +58,7 @@ const EnhancedStatusChip = ({
 
                 // Check if status is already an enhanced status object
                 if (typeof status === 'object' && status.masterStatus) {
-                    console.log('[EnhancedStatusChip] Status is already an enhanced status object:', status);
+
 
                     // Use the provided enhanced status directly
                     const display = {
@@ -73,19 +73,14 @@ const EnhancedStatusChip = ({
 
                 // Initialize service if not already done
                 await dynamicStatusService.initialize();
-                console.log('[EnhancedStatusChip] Service initialized successfully');
+
 
                 // Get status display configuration
                 const display = dynamicStatusService.getStatusDisplay(status);
-                console.log(`[EnhancedStatusChip] Status display result:`, display);
+
 
                 if (display && display.masterStatus) {
-                    console.log(`[EnhancedStatusChip] Master status found:`, {
-                        label: display.masterStatus.label,
-                        displayLabel: display.masterStatus.displayLabel,
-                        color: display.masterStatus.color,
-                        fontColor: display.masterStatus.fontColor
-                    });
+
                 } else {
                     console.warn(`[EnhancedStatusChip] No valid status display found for: "${status}"`);
                 }
@@ -192,16 +187,7 @@ const EnhancedStatusChip = ({
         lightBorder: masterStatus.color + '40'
     };
 
-    // DEBUG: Log the actual styling values
-    const statusString = typeof status === 'object' ? JSON.stringify(status) : String(status);
-    console.log(`[EnhancedStatusChip] Styling for "${statusString}":`, {
-        masterStatusLabel: masterStatus.label,
-        masterStatusDisplayLabel: masterStatus.displayLabel,
-        backgroundColor: styling.backgroundColor,
-        fontColor: styling.color,
-        variant: variant,
-        finalDisplayMode: finalDisplayMode
-    });
+
 
     // Render master status only
     const renderMasterOnly = () => {

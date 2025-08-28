@@ -123,6 +123,11 @@ export function convertToUniversalFormat(shipment) {
                 actualCost: rate.actualCost != null ? parseFloat(rate.actualCost) : 0,
                 actualCharge: rate.actualCharge != null ? parseFloat(rate.actualCharge) : 0,
                 currency: rate.chargeCurrency || rate.costCurrency || 'CAD',
+                // CRITICAL FIX: Preserve individual currency fields
+                quotedCostCurrency: rate.quotedCostCurrency || rate.costCurrency || rate.chargeCurrency || 'CAD',
+                quotedChargeCurrency: rate.quotedChargeCurrency || rate.chargeCurrency || rate.costCurrency || 'CAD',
+                actualCostCurrency: rate.actualCostCurrency || rate.costCurrency || rate.chargeCurrency || 'CAD',
+                actualChargeCurrency: rate.actualChargeCurrency || rate.chargeCurrency || rate.costCurrency || 'CAD',
                 invoiceNumber: rate.invoiceNumber || '-',
                 ediNumber: rate.ediNumber || '-',
                 commissionable: rate.commissionable || false,
@@ -152,6 +157,11 @@ export function convertToUniversalFormat(shipment) {
                 actualCost: charge.actualCost != null ? parseFloat(charge.actualCost) : (charge.cost != null ? parseFloat(charge.cost) : 0),
                 actualCharge: charge.actualCharge != null ? parseFloat(charge.actualCharge) : (charge.charge != null ? parseFloat(charge.charge) : 0),
                 currency: charge.currency || 'CAD',
+                // CRITICAL FIX: Preserve individual currency fields  
+                quotedCostCurrency: charge.quotedCostCurrency || charge.currency || 'CAD',
+                quotedChargeCurrency: charge.quotedChargeCurrency || charge.currency || 'CAD',
+                actualCostCurrency: charge.actualCostCurrency || charge.currency || 'CAD',
+                actualChargeCurrency: charge.actualChargeCurrency || charge.currency || 'CAD',
                 invoiceNumber: charge.invoiceNumber || '-',
                 ediNumber: charge.ediNumber || '-',
                 commissionable: charge.commissionable || false,
@@ -231,16 +241,16 @@ export async function saveRateData(shipmentId, rateData, user) {
         };
         
         if (isQuickShip) {
-            // QuickShip: Save to manualRates
+            // QuickShip: Save to manualRates - preserve separate cost and charge currencies
             updateData.manualRates = rateData.charges.map((charge, index) => ({
                 id: index + 1,
                 carrier: rateData.carrier.name,
                 code: charge.code,
                 chargeName: charge.name,
                 cost: charge.cost.toString(),
-                costCurrency: charge.currency,
+                costCurrency: charge.costCurrency || charge.currency || 'CAD',
                 charge: charge.charge.toString(),
-                chargeCurrency: charge.currency,
+                chargeCurrency: charge.chargeCurrency || charge.currency || 'CAD',
                 invoiceNumber: charge.invoiceNumber,
                 ediNumber: charge.ediNumber,
                 commissionable: charge.commissionable
