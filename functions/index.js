@@ -819,3 +819,241 @@ exports.listTrainingSamples = listTrainingSamples;
 // Test Functions
 const { testSendGridEmail } = require('./src/testSendGridEmail');
 exports.testSendGridEmail = testSendGridEmail;
+
+// Rate Calculation Functions
+const { calculateCarrierRates } = require('./src/rates/calculateCarrierRates');
+const {
+    createCarrierRateCard,
+    updateCarrierRateCard,
+    deleteCarrierRateCard,
+    getCarrierRateCards,
+    manageDIMFactor
+} = require('./src/rates/carrierRateCardManagement');
+const {
+    createConnectedCarrier,
+    updateQuickShipCarrier,
+    getConversionCandidates
+} = require('./src/rates/carrierConversionService');
+const {
+    generateRateCardTemplate,
+    importRateCards
+} = require('./src/rates/rateCardImportService');
+
+exports.calculateCarrierRates = calculateCarrierRates;
+exports.createCarrierRateCard = createCarrierRateCard;
+exports.updateCarrierRateCard = updateCarrierRateCard;
+exports.deleteCarrierRateCard = deleteCarrierRateCard;
+exports.getCarrierRateCards = getCarrierRateCards;
+exports.manageDIMFactor = manageDIMFactor;
+exports.createConnectedCarrier = createConnectedCarrier;
+exports.updateQuickShipCarrier = updateQuickShipCarrier;
+exports.getConversionCandidates = getConversionCandidates;
+exports.generateRateCardTemplate = generateRateCardTemplate;
+exports.importRateCards = importRateCards;
+
+// Shipping Zones Management Functions
+const {
+    getShippingZones,
+    createShippingZone,
+    updateShippingZone,
+    deleteShippingZone
+} = require('./src/configuration/shippingZonesManagement');
+
+exports.getShippingZones = getShippingZones;
+exports.createShippingZone = createShippingZone;
+exports.updateShippingZone = updateShippingZone;
+exports.deleteShippingZone = deleteShippingZone;
+
+// Carrier Eligibility Management Functions
+const {
+    getCarrierEligibilityRules,
+    createCarrierEligibilityRule,
+    updateCarrierEligibilityRule,
+    deleteCarrierEligibilityRule,
+    getCarriers
+} = require('./src/routing/carrierEligibilityManagement');
+
+exports.getCarrierEligibilityRules = getCarrierEligibilityRules;
+exports.createCarrierEligibilityRule = createCarrierEligibilityRule;
+exports.updateCarrierEligibilityRule = updateCarrierEligibilityRule;
+exports.deleteCarrierEligibilityRule = deleteCarrierEligibilityRule;
+
+// Enterprise Zone Management Functions
+const {
+    getRegions,
+    createRegion,
+    getZoneSets,
+    createZoneSet,
+    getZoneMaps,
+    resolveZone
+} = require('./src/configuration/enterpriseZoneManagement');
+
+exports.getRegions = getRegions;
+exports.createRegion = createRegion;
+exports.getZoneSets = getZoneSets;
+exports.createZoneSet = createZoneSet;
+exports.getZoneMaps = getZoneMaps;
+exports.resolveZone = resolveZone;
+
+// Rating Break Sets Functions
+const {
+    getRatingBreakSets,
+    createRatingBreakSet,
+    getRatingBreaks,
+    createRatingBreaks,
+    calculateRating
+} = require('./src/configuration/ratingBreakSets');
+
+exports.getRatingBreakSets = getRatingBreakSets;
+exports.createRatingBreakSet = createRatingBreakSet;
+exports.getRatingBreaks = getRatingBreaks;
+exports.createRatingBreaks = createRatingBreaks;
+exports.calculateRating = calculateRating;
+
+// Zone Population Function
+const { populateNorthAmericanZones } = require('./src/configuration/populateNorthAmericanZones');
+exports.populateNorthAmericanZones = populateNorthAmericanZones;
+
+// Carrier Weight Eligibility Functions
+const {
+    getCarrierWeightRules,
+    createCarrierWeightRule,
+    updateCarrierWeightRule,
+    deleteCarrierWeightRule
+} = require('./src/carriers/carrierWeightEligibility');
+
+exports.getCarrierWeightRules = getCarrierWeightRules;
+exports.createCarrierWeightRule = createCarrierWeightRule;
+exports.updateCarrierWeightRule = updateCarrierWeightRule;
+exports.deleteCarrierWeightRule = deleteCarrierWeightRule;
+
+// Carrier Dimension Eligibility Functions
+const {
+    getCarrierDimensionRules,
+    createCarrierDimensionRule,
+    updateCarrierDimensionRule,
+    deleteCarrierDimensionRule
+} = require('./src/carriers/carrierDimensionEligibility');
+
+exports.getCarrierDimensionRules = getCarrierDimensionRules;
+exports.createCarrierDimensionRule = createCarrierDimensionRule;
+exports.updateCarrierDimensionRule = updateCarrierDimensionRule;
+exports.deleteCarrierDimensionRule = deleteCarrierDimensionRule;
+
+// Universal Rating Engine Functions
+const { calculateUniversalRates } = require('./src/rates/universalRatingEngine');
+const { generateRateTemplate, importRateCard, getRateTemplates } = require('./src/rates/rateTemplateManager');
+
+exports.calculateUniversalRates = calculateUniversalRates;
+exports.generateRateTemplate = generateRateTemplate;
+exports.importRateCard = importRateCard;
+exports.getRateTemplates = getRateTemplates;
+
+// Normalized Carrier Import & Rating Functions  
+const { getCarrierImportFormats, generateNormalizedTemplate, importNormalizedCarrierConfig } = require('./src/rates/normalizedCarrierImporter');
+const { calculateNormalizedRates } = require('./src/rates/normalizedRatingEngine');
+
+exports.getCarrierImportFormats = getCarrierImportFormats;
+exports.generateNormalizedTemplate = generateNormalizedTemplate;
+exports.importNormalizedCarrierConfig = importNormalizedCarrierConfig;
+exports.calculateNormalizedRates = calculateNormalizedRates;
+
+// Enhanced Zone Management Functions
+const { 
+    getCarrierZoneOverrides, 
+    createCarrierZoneOverride, 
+    resolveZoneWithOverrides 
+} = require('./src/configuration/enhancedZoneManagement');
+
+exports.getCarrierZoneOverrides = getCarrierZoneOverrides;
+exports.createCarrierZoneOverride = createCarrierZoneOverride;
+exports.resolveZoneWithOverrides = resolveZoneWithOverrides;
+
+// NMFC Class System Functions
+const { 
+    calculateLTLWithClass, 
+    getFreightClasses, 
+    createFAKMapping, 
+    initializeFreightClasses 
+} = require('./src/rates/nmfcClassSystem');
+
+exports.calculateLTLWithClass = calculateLTLWithClass;
+exports.getFreightClasses = getFreightClasses;
+exports.createFAKMapping = createFAKMapping;
+exports.initializeFreightClasses = initializeFreightClasses;
+
+// Unified Break Sets Functions
+const { 
+    calculateUnifiedRates, 
+    createUnifiedBreakSet, 
+    addUnifiedBreaks 
+} = require('./src/rates/unifiedBreakSets');
+
+exports.calculateUnifiedRates = calculateUnifiedRates;
+exports.createUnifiedBreakSet = createUnifiedBreakSet;
+exports.addUnifiedBreaks = addUnifiedBreaks;
+
+// Enterprise Caching Functions
+const { 
+    getCachedZoneResolution, 
+    getCachedRateCalculation, 
+    getCacheStatistics, 
+    clearCache, 
+    prewarmCache 
+} = require('./src/utils/enterpriseCaching');
+
+exports.getCachedZoneResolution = getCachedZoneResolution;
+exports.getCachedRateCalculation = getCachedRateCalculation;
+exports.getCacheStatistics = getCacheStatistics;
+exports.clearCache = clearCache;
+exports.prewarmCache = prewarmCache;
+
+// Custom Carrier Template System Functions
+const { 
+    createCarrierTemplateMapping, 
+    autoDetectCarrierCSV, 
+    importWithCustomTemplate,
+    getCarrierTemplateMappings 
+} = require('./src/rates/carrierTemplateSystem');
+
+exports.createCarrierTemplateMapping = createCarrierTemplateMapping;
+exports.autoDetectCarrierCSV = autoDetectCarrierCSV;
+exports.importWithCustomTemplate = importWithCustomTemplate;
+exports.getCarrierTemplateMappings = getCarrierTemplateMappings;
+
+// Simple Carrier Import Functions (Real-World Solution)
+const {
+    generateSimpleCarrierTemplate,
+    importSimpleCarrierRates,
+    getSimpleCarrierRates
+} = require('./src/rates/simpleCarrierImporter');
+
+exports.generateSimpleCarrierTemplate = generateSimpleCarrierTemplate;
+exports.importSimpleCarrierRates = importSimpleCarrierRates;
+exports.getSimpleCarrierRates = getSimpleCarrierRates;
+
+// DIM Factor Management Functions
+const {
+    createDimFactor,
+    getDimFactors,
+    updateDimFactor,
+    deleteDimFactor,
+    calculateVolumetricWeight,
+    createCustomerDimFactorOverride
+} = require('./src/rates/dimFactorSystem');
+
+exports.createDimFactor = createDimFactor;
+exports.getDimFactors = getDimFactors;
+exports.updateDimFactor = updateDimFactor;
+exports.deleteDimFactor = deleteDimFactor;
+exports.calculateVolumetricWeight = calculateVolumetricWeight;
+exports.createCustomerDimFactorOverride = createCustomerDimFactorOverride;
+
+// Enhanced Rating Engine Functions
+const {
+    calculateEnhancedRates,
+    testDimWeight
+} = require('./src/rates/enhancedRatingEngine');
+
+exports.calculateEnhancedRates = calculateEnhancedRates;
+exports.testDimWeight = testDimWeight;

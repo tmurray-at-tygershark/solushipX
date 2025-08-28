@@ -20,7 +20,6 @@ import {
     TableHead,
     TableRow,
     IconButton,
-    Chip,
     Alert,
     CircularProgress,
     Dialog,
@@ -37,7 +36,8 @@ import {
     AlertTitle,
     Snackbar,
     Avatar,
-    Collapse
+    Collapse,
+    Chip
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -58,14 +58,17 @@ import {
     Map as MapIcon,
     Save as SaveIcon,
     TrendingUp as TrendingUpIcon,
-    RateReview as ReviewIcon
+    RateReview as ReviewIcon,
+    Info as InfoIcon
 } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { getAvailableServiceLevels, getAvailableAdditionalServices, getCompanyAdditionalServices } from '../../utils/serviceLevelUtils';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSnackbar } from 'notistack';
 import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { functions } from '../../firebase';
 import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, increment, limit, deleteDoc, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
@@ -371,6 +374,7 @@ const QuickShip = ({
 }) => {
     const { currentUser, userRole } = useAuth();
     const { companyData, companyIdForAddress, setCompanyContext } = useCompany();
+    const { enqueueSnackbar } = useSnackbar();
 
     // DEBUG: Log initial values
     console.log('🚀 QuickShip Component Initial Values:', {
@@ -489,6 +493,14 @@ const QuickShip = ({
             chargeCurrency: 'CAD'
         }
     ]);
+
+    // Auto-rate calculation state
+    const [autoRateCalculation, setAutoRateCalculation] = useState(null);
+    const [rateCalculationLoading, setRateCalculationLoading] = useState(false);
+    const [rateCalculationError, setRateCalculationError] = useState(null);
+    const [showAlternateCarriers, setShowAlternateCarriers] = useState(false);
+    const [alternateCarriers, setAlternateCarriers] = useState([]);
+    const [showVolumetricInfo, setShowVolumetricInfo] = useState(false);
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -1548,6 +1560,143 @@ const QuickShip = ({
             pkg.id === id ? { ...pkg, [field]: value } : pkg
         ));
     };
+
+    // Auto-rate calculation functions
+    const calculateAutomaticRates = useCallback(async () => {
+        if (!selectedCarrier || !packages.length || !shipFromAddress || !shipToAddress) {
+            console.log('🤖 Auto-rate: Missing required data for calculation');
+            return;
+        }
+
+        console.log('🤖 Starting auto-rate calculation for carrier:', selectedCarrier);
+        setRateCalculationLoading(true);
+        setRateCalculationError(null);
+
+        try {
+            // Find the selected carrier object to get its ID
+            const selectedCarrierObject = quickShipCarriers.find(carrier =>
+                carrier.name === selectedCarrier || carrier.id === selectedCarrier
+            );
+
+            if (!selectedCarrierObject) {
+                console.log('⚠️ Auto-rate: Carrier object not found for:', selectedCarrier);
+                setRateCalculationError('Carrier configuration not found');
+                return;
+            }
+
+            // Prepare shipment data for rate calculation
+            const shipmentData = {
+                packages: packages.map(pkg => ({
+                    ...pkg,
+                    weight: parseFloat(pkg.weight) || 0,
+                    quantity: parseInt(pkg.quantity) || 1,
+                    length: parseFloat(pkg.length) || 0,
+                    width: parseFloat(pkg.width) || 0,
+                    height: parseFloat(pkg.height) || 0,
+                    packagingType: pkg.packagingType
+                })),
+                origin: {
+                    postalCode: shipFromAddress.postalCode,
+                    city: shipFromAddress.city,
+                    state: shipFromAddress.state,
+                    country: shipFromAddress.country
+                },
+                destination: {
+                    postalCode: shipToAddress.postalCode,
+                    city: shipToAddress.city,
+                    state: shipToAddress.state,
+                    country: shipToAddress.country
+                },
+                additionalServices: additionalServices || [],
+                unitSystem: unitSystem,
+                isRushService: shipmentInfo.serviceLevel === 'rush'
+            };
+
+            console.log('📦 Shipment data for auto-rate:', shipmentData);
+
+            // Call the rate calculation cloud function
+            const calculateCarrierRates = httpsCallable(functions, 'calculateCarrierRates');
+            const result = await calculateCarrierRates({
+                carrierId: selectedCarrierObject.id,
+                shipmentData
+            });
+
+            console.log('💰 Auto-rate calculation result:', result.data);
+
+            if (result.data.success) {
+                setAutoRateCalculation(result.data);
+
+                // Auto-populate manual rates with calculated rates
+                if (result.data.rateBreakdown && result.data.rateBreakdown.length > 0) {
+                    const autoRates = result.data.rateBreakdown.map((rate, index) => ({
+                        ...rate,
+                        id: rate.id || (index + 1),
+                        isAutoCalculated: true,
+                        source: 'auto_calculated'
+                    }));
+
+                    setManualRates(autoRates);
+                    console.log('✅ Auto-populated rates:', autoRates);
+
+                    // Show success message
+                    enqueueSnackbar(`Auto-calculated ${autoRates.length} rate(s) for ${selectedCarrier}`, {
+                        variant: 'success'
+                    });
+                }
+
+                // Show alternate carriers if available
+                if (result.data.alternateCarriers && result.data.alternateCarriers.length > 0) {
+                    setAlternateCarriers(result.data.alternateCarriers);
+                    setShowAlternateCarriers(true);
+                }
+
+                // Show volumetric weight info if applicable
+                if (result.data.weightCalculation && result.data.weightCalculation.usingVolumetricWeight) {
+                    setShowVolumetricInfo(true);
+                }
+
+            } else {
+                console.log('⚠️ Auto-rate calculation failed:', result.data.error);
+                setRateCalculationError(result.data.error || 'Rate calculation failed');
+                enqueueSnackbar(`Auto-rate calculation failed: ${result.data.error}`, {
+                    variant: 'warning'
+                });
+            }
+
+        } catch (error) {
+            console.error('❌ Auto-rate calculation error:', error);
+            setRateCalculationError(error.message);
+            enqueueSnackbar('Auto-rate calculation error', { variant: 'error' });
+        } finally {
+            setRateCalculationLoading(false);
+        }
+    }, [selectedCarrier, packages, shipFromAddress, shipToAddress, quickShipCarriers, additionalServices, unitSystem, shipmentInfo.serviceLevel, enqueueSnackbar]);
+
+    // Check if shipment data is complete for auto-rate calculation
+    const isShipmentDataComplete = useCallback(() => {
+        return selectedCarrier &&
+            packages.length > 0 &&
+            shipFromAddress &&
+            shipToAddress &&
+            packages.every(pkg => pkg.weight && pkg.quantity);
+    }, [selectedCarrier, packages, shipFromAddress, shipToAddress]);
+
+    // Auto-calculate rates when shipment data is complete
+    useEffect(() => {
+        if (isShipmentDataComplete()) {
+            const timer = setTimeout(() => {
+                calculateAutomaticRates();
+            }, 1000); // Debounce to avoid too frequent calculations
+
+            return () => clearTimeout(timer);
+        } else {
+            // Clear auto-calculation when data is incomplete
+            setAutoRateCalculation(null);
+            setRateCalculationError(null);
+            setShowAlternateCarriers(false);
+            setShowVolumetricInfo(false);
+        }
+    }, [isShipmentDataComplete, calculateAutomaticRates]);
 
     // Rate management functions
     const addRateLineItem = () => {
@@ -8013,20 +8162,106 @@ const QuickShip = ({
                                     <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
                                         <CardContent sx={{ p: 3 }}>
                                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                                    Rates
-                                                </Typography>
-                                                <Button
-                                                    variant="outlined"
-                                                    size="small"
-                                                    startIcon={<AddIcon />}
-                                                    onClick={addRateLineItem}
-                                                    tabIndex={-1}
-                                                    sx={{ fontSize: '12px' }}
-                                                >
-                                                    Add Line Item
-                                                </Button>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                    <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                        Rates
+                                                    </Typography>
+                                                    {rateCalculationLoading && (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <CircularProgress size={16} />
+                                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                                Calculating auto-rates...
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
+                                                    {autoRateCalculation && !rateCalculationLoading && (
+                                                        <Chip
+                                                            label="Auto-Calculated"
+                                                            color="success"
+                                                            size="small"
+                                                            sx={{ fontSize: '11px' }}
+                                                        />
+                                                    )}
+                                                    {rateCalculationError && (
+                                                        <Chip
+                                                            label="Manual Entry Required"
+                                                            color="warning"
+                                                            size="small"
+                                                            sx={{ fontSize: '11px' }}
+                                                        />
+                                                    )}
+                                                </Box>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    {autoRateCalculation && (
+                                                        <Button
+                                                            variant="text"
+                                                            size="small"
+                                                            onClick={calculateAutomaticRates}
+                                                            disabled={rateCalculationLoading}
+                                                            sx={{ fontSize: '11px' }}
+                                                        >
+                                                            Recalculate
+                                                        </Button>
+                                                    )}
+                                                    <Button
+                                                        variant="outlined"
+                                                        size="small"
+                                                        startIcon={<AddIcon />}
+                                                        onClick={addRateLineItem}
+                                                        tabIndex={-1}
+                                                        sx={{ fontSize: '12px' }}
+                                                    >
+                                                        Add Line Item
+                                                    </Button>
+                                                </Box>
                                             </Box>
+
+                                            {/* Auto-rate calculation status */}
+                                            {showVolumetricInfo && autoRateCalculation?.weightCalculation && (
+                                                <Alert
+                                                    severity="info"
+                                                    sx={{ mb: 2, fontSize: '12px' }}
+                                                    icon={<InfoIcon sx={{ fontSize: '16px' }} />}
+                                                >
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                        Volumetric Weight Applied
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '11px' }}>
+                                                        Actual: {autoRateCalculation.weightCalculation.actualWeight} lbs,
+                                                        Volumetric: {autoRateCalculation.weightCalculation.volumetricWeight} lbs
+                                                        (using {autoRateCalculation.weightCalculation.dimFactor} factor)
+                                                    </Typography>
+                                                </Alert>
+                                            )}
+
+                                            {showAlternateCarriers && alternateCarriers.length > 0 && (
+                                                <Alert
+                                                    severity="success"
+                                                    sx={{ mb: 2, fontSize: '12px' }}
+                                                    icon={<InfoIcon sx={{ fontSize: '16px' }} />}
+                                                >
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                        Alternate Carriers Available
+                                                    </Typography>
+                                                    {alternateCarriers.map((alt, index) => (
+                                                        <Typography key={index} sx={{ fontSize: '11px' }}>
+                                                            {alt.name}: ${alt.cost} (Save ${alt.savings})
+                                                        </Typography>
+                                                    ))}
+                                                </Alert>
+                                            )}
+
+                                            {rateCalculationError && (
+                                                <Alert
+                                                    severity="warning"
+                                                    sx={{ mb: 2, fontSize: '12px' }}
+                                                    icon={<InfoIcon sx={{ fontSize: '16px' }} />}
+                                                >
+                                                    <Typography sx={{ fontSize: '12px' }}>
+                                                        {rateCalculationError}
+                                                    </Typography>
+                                                </Alert>
+                                            )}
 
                                             <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
                                                 <Table size="small">

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import RateCardManagement from './components/RateCardManagement';
+import QuickShipConversionWizard from './components/QuickShipConversionWizard';
 import {
     Box,
     Paper,
@@ -37,7 +39,8 @@ import {
     FormControlLabel,
     Checkbox,
     Checkbox as MuiCheckbox,
-    TableContainer
+    TableContainer,
+    Divider
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -55,7 +58,13 @@ import {
     Save as SaveIcon,
     Remove as RemoveIcon,
     Visibility as VisibilityIcon,
-    Business as BusinessIcon
+    Business as BusinessIcon,
+    MonetizationOn as MonetizationOnIcon,
+    Upgrade as UpgradeIcon,
+    Route as RouteIcon,
+    FitnessCenter as WeightIcon,
+    AspectRatio as DimensionIcon,
+    Calculate as CalculateIcon
 } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../../firebase';
@@ -67,6 +76,7 @@ import { useSnackbar } from 'notistack';
 // Import reusable components that match ShipmentsX patterns
 import ModalHeader from '../../common/ModalHeader';
 import AdminBreadcrumb from '../AdminBreadcrumb';
+import DimFactorManagement from './components/DimFactorManagement';
 
 // Import modular carrier components
 import AddCarrier from './AddCarrier';
@@ -79,6 +89,42 @@ try {
 } catch (error) {
     console.error('Error importing QuickShipCarrierDialog:', error);
     QuickShipCarrierDialog = () => <div>QuickShip Carrier Dialog failed to load</div>;
+}
+
+// Import Carrier Routing Dialog
+let CarrierRoutingDialog;
+try {
+    CarrierRoutingDialog = require('../../Carriers/components/CarrierRoutingDialog').default;
+} catch (error) {
+    console.error('Error importing CarrierRoutingDialog:', error);
+    CarrierRoutingDialog = () => <div>Carrier Routing Dialog failed to load</div>;
+}
+
+// Import Carrier Weight Dialog
+let CarrierWeightDialog;
+try {
+    CarrierWeightDialog = require('./components/CarrierWeightDialog').default;
+} catch (error) {
+    console.error('Error importing CarrierWeightDialog:', error);
+    CarrierWeightDialog = () => <div>Carrier Weight Dialog failed to load</div>;
+}
+
+// Import Carrier Dimension Dialog
+let CarrierDimensionDialog;
+try {
+    CarrierDimensionDialog = require('./components/CarrierDimensionDialog').default;
+} catch (error) {
+    console.error('Error importing CarrierDimensionDialog:', error);
+    CarrierDimensionDialog = () => <div>Carrier Dimension Dialog failed to load</div>;
+}
+
+// Import Carrier Rate Upload Dialog
+let CarrierRateUploadDialog;
+try {
+    CarrierRateUploadDialog = require('./components/CarrierRateUploadDialog').default;
+} catch (error) {
+    console.error('Error importing CarrierRateUploadDialog:', error);
+    CarrierRateUploadDialog = () => <div>Carrier Rate Upload Dialog failed to load</div>;
 }
 
 const carrierTypes = [
@@ -322,6 +368,16 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     const [selectedQuickshipCarrier, setSelectedQuickshipCarrier] = useState(null);
     const [quickshipActionMenuAnchor, setQuickshipActionMenuAnchor] = useState(null);
 
+    // NEW: Carrier eligibility states
+    const [showEligibilityDialog, setShowEligibilityDialog] = useState(false);
+
+    // NEW: DIM Factor management states
+    const [showDimFactorDialog, setShowDimFactorDialog] = useState(false);
+    const [dimFactorCarrier, setDimFactorCarrier] = useState(null);
+    const [editingEligibilityRule, setEditingEligibilityRule] = useState(null);
+    const [eligibilityRules, setEligibilityRules] = useState([]);
+    const [eligibilityLoading, setEligibilityLoading] = useState(false);
+
 
     // Filter states
     const [filters, setFilters] = useState({
@@ -354,6 +410,28 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     // Modular dialog states
     const [showEditCarrier, setShowEditCarrier] = useState(false);
     const [editCarrierId, setEditCarrierId] = useState(null);
+
+    // Rate management dialog states
+    const [showRateCardManagement, setShowRateCardManagement] = useState(false);
+    const [rateCardCarrier, setRateCardCarrier] = useState(null);
+
+    // Carrier routing dialog states
+    const [showRoutingDialog, setShowRoutingDialog] = useState(false);
+    const [routingCarrier, setRoutingCarrier] = useState(null);
+
+    // Carrier weight dialog states
+    const [showWeightDialog, setShowWeightDialog] = useState(false);
+    const [weightCarrier, setWeightCarrier] = useState(null);
+
+    // Carrier dimension dialog states
+    const [showDimensionDialog, setShowDimensionDialog] = useState(false);
+    const [dimensionCarrier, setDimensionCarrier] = useState(null);
+    const [showRateUploadDialog, setShowRateUploadDialog] = useState(false);
+    const [rateUploadCarrier, setRateUploadCarrier] = useState(null);
+
+    // Conversion wizard states
+    const [showConversionWizard, setShowConversionWizard] = useState(false);
+    const [conversionCarrier, setConversionCarrier] = useState(null);
 
     // Form states
     const [formData, setFormData] = useState({
@@ -755,6 +833,12 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         setShowQuickshipDialog(true);
     };
 
+    // NEW: Carrier eligibility handlers
+    const handleAddEligibilityRule = () => {
+        setEditingEligibilityRule(null);
+        setShowEligibilityDialog(true);
+    };
+
     const handleEditQuickshipCarrier = (carrier) => {
         setEditingQuickshipCarrier(carrier);
         setShowQuickshipDialog(true);
@@ -775,6 +859,92 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
             showSnackbar('Failed to delete carrier. Please try again.', 'error');
         }
         setQuickshipActionMenuAnchor(null);
+    };
+
+    // NEW: Rate card management handlers
+    const handleManageRateCards = (carrier) => {
+        setRateCardCarrier(carrier);
+        setShowRateCardManagement(true);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleCloseRateCardManagement = () => {
+        setShowRateCardManagement(false);
+        setRateCardCarrier(null);
+    };
+
+    // NEW: Carrier routing handlers
+    const handleManageRoutes = (carrier) => {
+        setRoutingCarrier(carrier);
+        setShowRoutingDialog(true);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleCloseRoutingDialog = () => {
+        setShowRoutingDialog(false);
+        setRoutingCarrier(null);
+    };
+
+    // NEW: Carrier weight handlers
+    const handleManageWeight = (carrier) => {
+        setWeightCarrier(carrier);
+        setShowWeightDialog(true);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleWeightDialogClose = () => {
+        setShowWeightDialog(false);
+        setWeightCarrier(null);
+    };
+
+    // NEW: Carrier dimension handlers
+    const handleManageDimensions = (carrier) => {
+        setDimensionCarrier(carrier);
+        setShowDimensionDialog(true);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    // NEW: DIM Factor management handler
+    const handleManageDimFactors = (carrier) => {
+        setDimFactorCarrier(carrier);
+        setShowDimFactorDialog(true);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleDimensionDialogClose = () => {
+        setShowDimensionDialog(false);
+        setDimensionCarrier(null);
+    };
+
+    const handleUploadRateCard = (carrier) => {
+        setRateUploadCarrier(carrier);
+        setShowRateUploadDialog(true);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleRateUploadDialogClose = () => {
+        setShowRateUploadDialog(false);
+        setRateUploadCarrier(null);
+    };
+
+    // NEW: Conversion wizard handlers
+    const handleConvertToConnected = (carrier) => {
+        setConversionCarrier(carrier);
+        setShowConversionWizard(true);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleCloseConversionWizard = () => {
+        setShowConversionWizard(false);
+        setConversionCarrier(null);
+    };
+
+    const handleConversionComplete = async (result) => {
+        if (result.success) {
+            // Refresh the QuickShip carriers list
+            await fetchQuickshipCarriers();
+            showSnackbar('Carrier converted successfully!', 'success');
+        }
     };
 
     const handleQuickshipCarrierSaved = async () => {
@@ -1730,11 +1900,17 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         variant="contained"
                         size="small"
                         startIcon={<AddIcon />}
-                        onClick={mainTab === 0 ? handleOpenAddCarrier : handleAddQuickshipCarrier}
+                        onClick={
+                            mainTab === 0 ? handleOpenAddCarrier :
+                                mainTab === 1 ? handleAddQuickshipCarrier :
+                                    handleAddEligibilityRule
+                        }
                         disabled={mainTab === 1 && (selectedCompany === 'all' || !selectedCompany)}
                         sx={{ fontSize: '12px' }}
                     >
-                        {mainTab === 0 ? 'Add Connected Carrier' : 'Add Quickship Carrier'}
+                        {mainTab === 0 ? 'Add Connected Carrier' :
+                            mainTab === 1 ? 'Add Quickship Carrier' :
+                                'Add Eligibility Rule'}
                     </Button>
                 </Box>
 
@@ -1760,6 +1936,10 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         <Tab
                             label="Quickship Carriers"
                             value={1}
+                        />
+                        <Tab
+                            label="Carrier Eligibility"
+                            value={2}
                         />
                     </Tabs>
                 </Box>
@@ -3283,6 +3463,73 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         <Typography sx={{ fontSize: '12px' }}>Edit Carrier</Typography>
                     </ListItemText>
                 </MenuItem>
+
+                <MenuItem onClick={() => handleManageRateCards(selectedQuickshipCarrier)}>
+                    <ListItemIcon>
+                        <MonetizationOnIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Manage Rate Cards</Typography>
+                    </ListItemText>
+                </MenuItem>
+
+                <MenuItem onClick={() => handleManageRoutes(selectedQuickshipCarrier)}>
+                    <ListItemIcon>
+                        <RouteIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Carrier Routes</Typography>
+                    </ListItemText>
+                </MenuItem>
+
+                <MenuItem onClick={() => handleManageWeight(selectedQuickshipCarrier)}>
+                    <ListItemIcon>
+                        <WeightIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Weight Eligibility</Typography>
+                    </ListItemText>
+                </MenuItem>
+
+                <MenuItem onClick={() => handleManageDimensions(selectedQuickshipCarrier)}>
+                    <ListItemIcon>
+                        <DimensionIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Dimension Eligibility</Typography>
+                    </ListItemText>
+                </MenuItem>
+
+                <MenuItem onClick={() => handleManageDimFactors(selectedQuickshipCarrier)}>
+                    <ListItemIcon>
+                        <CalculateIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>DIM Factor Management</Typography>
+                    </ListItemText>
+                </MenuItem>
+
+                <Divider />
+
+                <MenuItem onClick={() => handleUploadRateCard(selectedQuickshipCarrier)}>
+                    <ListItemIcon>
+                        <CloudUploadIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Upload Rate Card</Typography>
+                    </ListItemText>
+                </MenuItem>
+
+                <MenuItem onClick={() => handleConvertToConnected(selectedQuickshipCarrier)}>
+                    <ListItemIcon>
+                        <UpgradeIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Convert to Connected</Typography>
+                    </ListItemText>
+                </MenuItem>
+
+                <Divider />
                 <MenuItem onClick={() => handleDeleteQuickshipCarrier(selectedQuickshipCarrier)}>
                     <ListItemIcon>
                         <DeleteIcon fontSize="small" />
@@ -3295,6 +3542,79 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
 
             {/* Snackbar for notifications */}
             <Dialog open={false} />
+
+            {/* Rate Card Management Dialog */}
+            <RateCardManagement
+                isOpen={showRateCardManagement}
+                onClose={handleCloseRateCardManagement}
+                carrierId={rateCardCarrier?.id}
+                carrierName={rateCardCarrier?.name}
+            />
+
+            {/* Carrier Routing Dialog */}
+            <CarrierRoutingDialog
+                open={showRoutingDialog}
+                onClose={handleCloseRoutingDialog}
+                carrier={routingCarrier}
+            />
+
+            {/* Carrier Weight Dialog */}
+            <CarrierWeightDialog
+                open={showWeightDialog}
+                onClose={handleWeightDialogClose}
+                carrier={weightCarrier}
+            />
+
+            {/* Carrier Dimension Dialog */}
+            <CarrierDimensionDialog
+                open={showDimensionDialog}
+                onClose={handleDimensionDialogClose}
+                carrier={dimensionCarrier}
+            />
+
+            <CarrierRateUploadDialog
+                open={showRateUploadDialog}
+                onClose={handleRateUploadDialogClose}
+                carrier={rateUploadCarrier}
+            />
+
+            {/* Conversion Wizard Dialog */}
+            <QuickShipConversionWizard
+                isOpen={showConversionWizard}
+                onClose={handleCloseConversionWizard}
+                quickShipCarrier={conversionCarrier}
+                onConversionComplete={handleConversionComplete}
+            />
+
+            {/* DIM Factor Management Dialog */}
+            <Dialog
+                open={showDimFactorDialog}
+                onClose={() => setShowDimFactorDialog(false)}
+                maxWidth="lg"
+                fullWidth
+                PaperProps={{
+                    sx: { borderRadius: 2 }
+                }}
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    DIM Factor Management - {dimFactorCarrier?.name}
+                </DialogTitle>
+                <DialogContent sx={{ p: 0 }}>
+                    {dimFactorCarrier && (
+                        <DimFactorManagement carrier={dimFactorCarrier} />
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ p: 3 }}>
+                    <Button
+                        onClick={() => setShowDimFactorDialog(false)}
+                        variant="outlined"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Close
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box >
     );
 };

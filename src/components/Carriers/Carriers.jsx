@@ -57,7 +57,10 @@ import {
     Settings as SettingsIcon,
     VpnKey as CredentialsIcon,
     CloudUpload as CloudUploadIcon,
-    Remove as RemoveIcon
+    Remove as RemoveIcon,
+    Route as RouteIcon,
+    MonetizationOn as MonetizationOnIcon,
+
 } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
@@ -67,6 +70,7 @@ import { useCompany } from '../../contexts/CompanyContext';
 // Import components with error boundary protection
 let QuickShipCarrierDialog;
 let ModalHeader;
+let CarrierRoutingDialog;
 
 try {
     QuickShipCarrierDialog = require('../CreateShipment/QuickShipCarrierDialog').default;
@@ -86,6 +90,15 @@ try {
         </Box>
     );
 }
+
+try {
+    CarrierRoutingDialog = require('./components/CarrierRoutingDialog').default;
+} catch (error) {
+    console.error('Error importing CarrierRoutingDialog:', error);
+    CarrierRoutingDialog = () => <div>Carrier Routing Dialog failed to load</div>;
+}
+
+
 
 const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
     console.log('🚢 Carriers component initializing...', { isModal, showCloseButton });
@@ -124,6 +137,12 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         apiKey: '',
         apiSecret: ''
     });
+
+    // Carrier routing dialog states
+    const [showRoutingDialog, setShowRoutingDialog] = useState(false);
+    const [routingCarrier, setRoutingCarrier] = useState(null);
+
+
 
     // Load connected Soluship carriers - ALL HOOKS MUST BE AT TOP LEVEL
     const loadConnectedCarriers = useCallback(async () => {
@@ -456,6 +475,20 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         setCarrierSuccessMessage(`Credentials configured for ${selectedSolushipCarrier?.name}`);
         setTimeout(() => setCarrierSuccessMessage(''), 3000);
     };
+
+    // Carrier routing handlers
+    const handleManageRoutes = (carrier) => {
+        setRoutingCarrier(carrier);
+        setShowRoutingDialog(true);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleRoutingDialogClose = () => {
+        setShowRoutingDialog(false);
+        setRoutingCarrier(null);
+    };
+
+
 
     // Handle activation toggle for Soluship carriers
     const handleToggleActivation = async (carrier) => {
@@ -1132,15 +1165,30 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                     <ListItemIcon>
                         <EditIcon fontSize="small" />
                     </ListItemIcon>
-                    <ListItemText>Edit</ListItemText>
+                    <ListItemText>Edit Carrier</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => handleManageRoutes(selectedCarrier)}>
+                    <ListItemIcon>
+                        <RouteIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>Carrier Routes</ListItemText>
                 </MenuItem>
                 <MenuItem onClick={() => handleDeleteCarrier(selectedCarrier)}>
                     <ListItemIcon>
                         <DeleteIcon fontSize="small" />
                     </ListItemIcon>
-                    <ListItemText>Delete</ListItemText>
+                    <ListItemText>Delete Carrier</ListItemText>
                 </MenuItem>
             </Menu>
+
+            {/* Carrier Routing Dialog */}
+            <CarrierRoutingDialog
+                open={showRoutingDialog}
+                onClose={handleRoutingDialogClose}
+                carrier={routingCarrier}
+            />
+
+
         </Box>
     );
 };

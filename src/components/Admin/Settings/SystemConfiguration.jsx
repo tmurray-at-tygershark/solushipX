@@ -59,7 +59,8 @@ import {
     Assignment as TaskIcon,
     Construction as EquipmentIcon,
     CloudUpload as UploadIcon,
-    Image as ImageIcon
+    Image as ImageIcon,
+    Public as ShippingZoneIcon
 } from '@mui/icons-material';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -83,6 +84,8 @@ import InvoiceStatusDialog from '../Configuration/dialogs/InvoiceStatusDialog';
 import NotificationSettings from '../Configuration/NotificationSettings';
 import ChargeTypesConfiguration from '../Configuration/ChargeTypesConfiguration';
 import FollowUpTasksConfiguration from '../Configuration/FollowUpTasksConfiguration';
+import ShippingZonesConfiguration from '../Configuration/ShippingZonesConfiguration';
+import EnterpriseZoneManagement from '../Configuration/EnterpriseZoneManagement';
 import SystemConfigurationSkeleton from './SystemConfigurationSkeleton';
 
 const SystemConfiguration = () => {
@@ -1953,6 +1956,23 @@ const SystemConfiguration = () => {
                                     </TableBody>
                                 </Table>
                             </TableContainer>
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+
+                {/* Shipping Zones Section */}
+                <Grid item xs={12}>
+                    <Accordion>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <ShippingZoneIcon sx={{ color: '#6b7280' }} />
+                                <Typography sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                    Zone Management
+                                </Typography>
+                            </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            <EnterpriseZoneManagement />
                         </AccordionDetails>
                     </Accordion>
                 </Grid>
