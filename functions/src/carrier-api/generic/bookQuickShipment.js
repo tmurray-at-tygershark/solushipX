@@ -91,11 +91,6 @@ async function bookQuickShipmentInternal(data, auth = null) {
             status: 'pending', // Ensure status is set to pending
             bookingTimestamp: new Date().toISOString(), // Add booking timestamp
             
-            // CRITICAL: Remove pending_review flag when converting to actual booking
-            pending_review: admin.firestore.FieldValue.delete(),
-            submitted_for_review_at: admin.firestore.FieldValue.delete(),
-            submitted_for_review_by: admin.firestore.FieldValue.delete(),
-            
             // CRITICAL: Always set QuickShip shipments to not_invoiced status
             invoiceStatus: 'not_invoiced',
             
@@ -115,6 +110,17 @@ async function bookQuickShipmentInternal(data, auth = null) {
                 }]
             }
         };
+
+        // CRITICAL: Only remove pending_review flags if they exist (for draft conversions)
+        if (existingShipment && existingShipment.pending_review) {
+            completeShipmentData.pending_review = admin.firestore.FieldValue.delete();
+        }
+        if (existingShipment && existingShipment.submitted_for_review_at) {
+            completeShipmentData.submitted_for_review_at = admin.firestore.FieldValue.delete();
+        }
+        if (existingShipment && existingShipment.submitted_for_review_by) {
+            completeShipmentData.submitted_for_review_by = admin.firestore.FieldValue.delete();
+        }
 
         // Save or update the shipment document FIRST
         if (existingShipment) {
