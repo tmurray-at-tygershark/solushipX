@@ -19,7 +19,7 @@ class InvoiceStatusService {
                 return Array.from(this.statusCache.values());
             }
 
-            console.log('Loading invoice statuses from database...');
+            console.log('🔍 Loading invoice statuses from database...');
 
             const statusQuery = query(
                 collection(db, 'invoiceStatuses'),
@@ -39,15 +39,52 @@ class InvoiceStatusService {
                 };
                 statuses.push(status);
                 this.statusCache.set(doc.id, status);
+                
+                // Debug log each status
+                console.log(`📋 Loaded invoice status: ${data.statusCode} -> ${data.statusLabel} (color: ${data.color})`);
             });
 
             this.lastCacheUpdate = now;
-            console.log(`Loaded ${statuses.length} invoice statuses`);
+            console.log(`✅ Successfully loaded ${statuses.length} invoice statuses from database`);
             
             return statuses;
         } catch (error) {
-            console.error('Error loading invoice statuses:', error);
-            // Return default statuses if database fails
+            console.error('❌ Error loading invoice statuses:', error);
+            
+            // Try alternate collection name as fallback
+            try {
+                console.log('🔄 Trying alternate collection name: billingStatuses...');
+                
+                const fallbackQuery = query(
+                    collection(db, 'billingStatuses'),
+                    where('enabled', '==', true),
+                    orderBy('statusLabel')
+                );
+                
+                const fallbackSnapshot = await getDocs(fallbackQuery);
+                const fallbackStatuses = [];
+                
+                fallbackSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    const status = {
+                        id: doc.id,
+                        ...data
+                    };
+                    fallbackStatuses.push(status);
+                    this.statusCache.set(doc.id, status);
+                });
+                
+                if (fallbackStatuses.length > 0) {
+                    console.log(`✅ Loaded ${fallbackStatuses.length} invoice statuses from billingStatuses collection`);
+                    this.lastCacheUpdate = Date.now();
+                    return fallbackStatuses;
+                }
+            } catch (fallbackError) {
+                console.error('❌ Fallback collection also failed:', fallbackError);
+            }
+            
+            // Return default statuses if both attempts fail
+            console.warn('⚠️ Using default hardcoded statuses as final fallback');
             return this.getDefaultStatuses();
         }
     }
@@ -106,9 +143,9 @@ class InvoiceStatusService {
     getDefaultStatuses() {
         return [
             {
-                id: 'default-not-invoiced',
-                statusCode: 'not_invoiced',
-                statusLabel: 'Not Invoiced',
+                id: 'default-uninvoiced',
+                statusCode: 'uninvoiced',
+                statusLabel: 'Uninvoiced',
                 statusDescription: 'Shipment has not been invoiced yet',
                 color: '#f59e0b',
                 fontColor: '#ffffff',
@@ -116,13 +153,33 @@ class InvoiceStatusService {
                 enabled: true
             },
             {
+                id: 'default-ready-to-invoice',
+                statusCode: 'ready_to_invoice',
+                statusLabel: 'Ready to Invoice',
+                statusDescription: 'Shipment is ready to be invoiced',
+                color: '#10b981', // Green color as you mentioned
+                fontColor: '#ffffff',
+                sortOrder: 1,
+                enabled: true
+            },
+            {
+                id: 'default-generated',
+                statusCode: 'generated',
+                statusLabel: 'Generated',
+                statusDescription: 'Invoice PDF has been generated',
+                color: '#3b82f6',
+                fontColor: '#ffffff',
+                sortOrder: 2,
+                enabled: true
+            },
+            {
                 id: 'default-invoiced',
                 statusCode: 'invoiced',
                 statusLabel: 'Invoiced',
                 statusDescription: 'Invoice has been generated and sent',
-                color: '#3b82f6',
+                color: '#6366f1',
                 fontColor: '#ffffff',
-                sortOrder: 1,
+                sortOrder: 3,
                 enabled: true
             },
             {
@@ -130,9 +187,19 @@ class InvoiceStatusService {
                 statusCode: 'paid',
                 statusLabel: 'Paid',
                 statusDescription: 'Invoice has been paid in full',
-                color: '#10b981',
+                color: '#059669',
                 fontColor: '#ffffff',
-                sortOrder: 2,
+                sortOrder: 4,
+                enabled: true
+            },
+            {
+                id: 'default-overdue',
+                statusCode: 'overdue',
+                statusLabel: 'Overdue',
+                statusDescription: 'Invoice payment is overdue',
+                color: '#dc2626',
+                fontColor: '#ffffff',
+                sortOrder: 5,
                 enabled: true
             }
         ];

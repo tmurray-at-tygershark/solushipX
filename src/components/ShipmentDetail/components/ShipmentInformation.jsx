@@ -399,10 +399,14 @@ const ShipmentInformation = ({
     useEffect(() => {
         const loadInvoiceStatuses = async () => {
             try {
+                // Clear cache to force fresh load
+                invoiceStatusService.clearCache();
+
                 const statuses = await invoiceStatusService.loadInvoiceStatuses();
-                setInvoiceStatuses(statuses);
+                console.log('🎯 Invoice statuses loaded for ShipmentInformation:', statuses?.length || 0, statuses);
+                setInvoiceStatuses(statuses || []);
             } catch (error) {
-                console.error('Error loading invoice statuses:', error);
+                console.error('❌ Error loading invoice statuses:', error);
                 setInvoiceStatuses([]);
             }
         };
@@ -1830,10 +1834,29 @@ const ShipmentInformation = ({
                                                     );
                                                 }
 
-                                                // Fallback for unknown status
+                                                // Better fallback - format the status code to human readable
+                                                const formatStatusLabel = (code) => {
+                                                    if (!code) return 'Uninvoiced';
+
+                                                    // Common status code mappings
+                                                    const statusMappings = {
+                                                        'ready_to_invoice': 'Ready to Invoice',
+                                                        'uninvoiced': 'Uninvoiced',
+                                                        'invoiced': 'Invoiced',
+                                                        'paid': 'Paid',
+                                                        'overdue': 'Overdue',
+                                                        'cancelled': 'Cancelled',
+                                                        'draft': 'Draft',
+                                                        'generated': 'Generated',
+                                                        'pending': 'Pending'
+                                                    };
+
+                                                    return statusMappings[code] || code.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                                };
+
                                                 return (
                                                     <Chip
-                                                        label={statusCode}
+                                                        label={formatStatusLabel(statusCode)}
                                                         size="small"
                                                         sx={{
                                                             fontSize: '11px',
