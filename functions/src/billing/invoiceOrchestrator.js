@@ -226,10 +226,38 @@ async function buildInvoiceDatas({ shipments, companyId, invoiceMode = 'separate
 
 // Generate PDFs for all invoice data
 async function generatePDFs({ invoiceDatas, companyInfo }) {
+  const { getStorage } = require('firebase-admin/storage');
+  const storage = getStorage();
+  
   const attachments = [];
   for (const inv of invoiceDatas) {
     const customerBillingInfo = inv.billTo || null;
     const pdfBuffer = await generateInvoicePDF(inv, companyInfo, customerBillingInfo);
+    
+    // 🔥 NEW: Save PDF to Firebase Storage (same as individual invoice system)
+    const fileName = `invoices/${inv.invoiceNumber}.pdf`;
+    const file = storage.bucket().file(fileName);
+    
+    try {
+      await file.save(pdfBuffer, {
+        metadata: {
+          contentType: 'application/pdf',
+          metadata: {
+            invoiceNumber: inv.invoiceNumber,
+            companyId: inv.companyID,
+            generatedAt: new Date().toISOString(),
+            generatedVia: 'orchestrator',
+            invoiceMode: 'bulk_email'
+          }
+        }
+      });
+      
+      console.log(`✅ Invoice PDF saved to storage: ${fileName}`);
+    } catch (storageError) {
+      console.error(`❌ Failed to save invoice ${inv.invoiceNumber} to storage:`, storageError);
+      // Don't fail the whole process if storage fails, just log it
+    }
+    
     attachments.push({
       content: pdfBuffer.toString('base64'),
       filename: `Invoice_${inv.invoiceNumber}.pdf`,

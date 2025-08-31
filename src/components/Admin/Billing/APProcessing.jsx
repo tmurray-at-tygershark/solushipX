@@ -1744,11 +1744,17 @@ const ARProcessing = () => {
         const unsubscribePdf = onSnapshot(pdfQuery, (snapshot) => {
             console.log('📄 PDF uploads real-time update:', snapshot.docs.length, 'documents');
 
-            const pdfUploads = snapshot.docs.map(doc => ({
+            // 🔥 FILTER OUT BACKFILL UPLOADS: Only show legitimate carrier invoice uploads
+            const allPdfUploads = snapshot.docs.map(doc => ({
                 id: doc.id,
                 type: 'pdf',
                 ...doc.data()
             }));
+            
+            const pdfUploads = allPdfUploads.filter(upload => 
+                !upload.isBackfillUpload && // Exclude backfill uploads
+                upload.uploadSource !== 'invoice_backfill' // Exclude backfill source
+            );
 
             updateUploadsData(pdfUploads, 'pdf');
         }, (error) => {
@@ -1925,11 +1931,17 @@ const ARProcessing = () => {
                     type: 'edi',
                     ...doc.data()
                 })),
-                ...pdfSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    type: 'pdf',
-                    ...doc.data()
-                })),
+                // 🔥 FILTER OUT BACKFILL UPLOADS: Only show legitimate carrier invoice uploads
+                ...pdfSnapshot.docs
+                    .map(doc => ({
+                        id: doc.id,
+                        type: 'pdf',
+                        ...doc.data()
+                    }))
+                    .filter(upload => 
+                        !upload.isBackfillUpload && // Exclude backfill uploads
+                        upload.uploadSource !== 'invoice_backfill' // Exclude backfill source
+                    ),
                 ...apSnapshot.docs.map(doc => ({
                     id: doc.id,
                     // Use the type from the document data, fallback to 'pdf' for most AP uploads

@@ -209,7 +209,14 @@ const InvoiceManagement = () => {
 
             let invoiceData = [];
             if (invoicesFromCollection.length > 0) {
-                invoiceData = invoicesFromCollection.map(inv => mapInvoiceRecord(inv));
+                                // 🔥 FILTER OUT BACKFILL INVOICES: Only show multi-modal AI processed invoices
+                const nonBackfillInvoices = invoicesFromCollection.filter(inv => 
+                    !inv.backfillSource || // Include invoices without backfillSource (generated invoices)
+                    (inv.backfillSource !== 'upload_dialog' && // Exclude upload dialog backfills
+                     inv.backfillSource !== 'ap_processing' && // Exclude AP processing backfills
+                     inv.backfillSource !== 'manual_upload') // Exclude manual uploads
+                );
+                invoiceData = nonBackfillInvoices.map(inv => mapInvoiceRecord(inv));
             } else {
                 // No fallback: show a blank table until invoices exist or are manually added
                 invoiceData = [];
@@ -242,7 +249,15 @@ const InvoiceManagement = () => {
     useEffect(() => {
         const qRef = query(collection(db, 'invoices'), orderBy('createdAt', 'desc'));
         const unsub = onSnapshot(qRef, (snap) => {
-            const data = snap.docs.map(d => mapInvoiceRecord({ id: d.id, ...d.data() }));
+                        // 🔥 FILTER OUT BACKFILL INVOICES: Only show multi-modal AI processed invoices
+            const allInvoices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const nonBackfillInvoices = allInvoices.filter(inv => 
+                !inv.backfillSource || // Include invoices without backfillSource (generated invoices)
+                (inv.backfillSource !== 'upload_dialog' && // Exclude upload dialog backfills
+                 inv.backfillSource !== 'ap_processing' && // Exclude AP processing backfills
+                 inv.backfillSource !== 'manual_upload') // Exclude manual uploads
+            );
+            const data = nonBackfillInvoices.map(d => mapInvoiceRecord(d));
             setInvoices(data);
         });
         return () => unsub();
@@ -675,7 +690,7 @@ const InvoiceManagement = () => {
             // Fire off calls, don't block UI on waiting
             uploads.forEach(u => {
                 const isZip = /\.zip$/i.test(u.fileName);
-                const payload = { fileName: u.fileName, uploadUrl: u.url, settings: { apMode: true, extractForBackfill: true, includeRawText: true, useProductionOCR: true, tableDetection: true }, placeholderInvoiceId: u.fileName };
+                const payload = { fileName: u.fileName, uploadUrl: u.url, settings: { apMode: true, extractForBackfill: true, includeRawText: true, useProductionOCR: true, tableDetection: true, isBackfillUpload: true }, placeholderInvoiceId: u.fileName };
                 (isZip ? callBatch : callPdf)(payload).catch(() => { });
             });
 

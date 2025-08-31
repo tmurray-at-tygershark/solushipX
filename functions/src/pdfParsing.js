@@ -1010,6 +1010,9 @@ const processPdfFile = onCall(async (request) => {
             stepDescription: 'Initializing PDF processing...',
             uploadDate: admin.firestore.FieldValue.serverTimestamp(),
             userId: request.auth.uid,
+            // 🔥 ADD BACKFILL MARKER: Mark uploads from backfill system
+            isBackfillUpload: settings.isBackfillUpload === true,
+            uploadSource: settings.isBackfillUpload === true ? 'invoice_backfill' : 'ap_processing',
             settings: {
                 ocrEnabled: settings.ocrEnabled !== false, // Default to true unless explicitly disabled
                 useProductionOCR: settings.useProductionOCR !== false, // Use real OCR by default

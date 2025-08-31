@@ -541,6 +541,33 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
 
                 console.log(`Generated PDF for ${shipmentId} - Size: ${pdfBuffer.length} bytes`);
 
+                // 🔥 NEW: Save PDF to Firebase Storage (same as individual invoice system)
+                const { getStorage } = require('firebase-admin/storage');
+                const storage = getStorage();
+                const storageFileName = `invoices/${sequentialInvoiceNumber}.pdf`;
+                const file = storage.bucket().file(storageFileName);
+                
+                try {
+                    await file.save(pdfBuffer, {
+                        metadata: {
+                            contentType: 'application/pdf',
+                            metadata: {
+                                invoiceNumber: sequentialInvoiceNumber,
+                                companyId: companyId,
+                                generatedAt: new Date().toISOString(),
+                                generatedVia: 'unified_processor',
+                                customerName: customerName,
+                                shipmentId: shipmentId
+                            }
+                        }
+                    });
+                    
+                    console.log(`✅ Invoice PDF saved to storage: ${storageFileName}`);
+                } catch (storageError) {
+                    console.error(`❌ Failed to save invoice ${sequentialInvoiceNumber} to storage:`, storageError);
+                    // Don't fail the whole process if storage fails, just log it
+                }
+
                 // Add PDF to archive in customer folder
                 const filename = `${customerName}/Invoice-${sequentialInvoiceNumber}.pdf`; // ✅ CHANGED: From shipmentId to sequentialInvoiceNumber
                 archive.append(pdfBuffer, { name: filename });
