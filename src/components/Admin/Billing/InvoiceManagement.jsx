@@ -209,12 +209,12 @@ const InvoiceManagement = () => {
 
             let invoiceData = [];
             if (invoicesFromCollection.length > 0) {
-                                // 🔥 FILTER OUT BACKFILL INVOICES: Only show multi-modal AI processed invoices
-                const nonBackfillInvoices = invoicesFromCollection.filter(inv => 
+                // 🔥 FILTER OUT BACKFILL INVOICES: Only show multi-modal AI processed invoices
+                const nonBackfillInvoices = invoicesFromCollection.filter(inv =>
                     !inv.backfillSource || // Include invoices without backfillSource (generated invoices)
                     (inv.backfillSource !== 'upload_dialog' && // Exclude upload dialog backfills
-                     inv.backfillSource !== 'ap_processing' && // Exclude AP processing backfills
-                     inv.backfillSource !== 'manual_upload') // Exclude manual uploads
+                        inv.backfillSource !== 'ap_processing' && // Exclude AP processing backfills
+                        inv.backfillSource !== 'manual_upload') // Exclude manual uploads
                 );
                 invoiceData = nonBackfillInvoices.map(inv => mapInvoiceRecord(inv));
             } else {
@@ -249,13 +249,13 @@ const InvoiceManagement = () => {
     useEffect(() => {
         const qRef = query(collection(db, 'invoices'), orderBy('createdAt', 'desc'));
         const unsub = onSnapshot(qRef, (snap) => {
-                        // 🔥 FILTER OUT BACKFILL INVOICES: Only show multi-modal AI processed invoices
+            // 🔥 FILTER OUT BACKFILL INVOICES: Only show multi-modal AI processed invoices
             const allInvoices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const nonBackfillInvoices = allInvoices.filter(inv => 
+            const nonBackfillInvoices = allInvoices.filter(inv =>
                 !inv.backfillSource || // Include invoices without backfillSource (generated invoices)
                 (inv.backfillSource !== 'upload_dialog' && // Exclude upload dialog backfills
-                 inv.backfillSource !== 'ap_processing' && // Exclude AP processing backfills
-                 inv.backfillSource !== 'manual_upload') // Exclude manual uploads
+                    inv.backfillSource !== 'ap_processing' && // Exclude AP processing backfills
+                    inv.backfillSource !== 'manual_upload') // Exclude manual uploads
             );
             const data = nonBackfillInvoices.map(d => mapInvoiceRecord(d));
             setInvoices(data);

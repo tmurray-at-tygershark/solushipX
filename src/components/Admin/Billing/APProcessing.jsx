@@ -1750,8 +1750,8 @@ const ARProcessing = () => {
                 type: 'pdf',
                 ...doc.data()
             }));
-            
-            const pdfUploads = allPdfUploads.filter(upload => 
+
+            const pdfUploads = allPdfUploads.filter(upload =>
                 !upload.isBackfillUpload && // Exclude backfill uploads
                 upload.uploadSource !== 'invoice_backfill' // Exclude backfill source
             );
@@ -1938,7 +1938,7 @@ const ARProcessing = () => {
                         type: 'pdf',
                         ...doc.data()
                     }))
-                    .filter(upload => 
+                    .filter(upload =>
                         !upload.isBackfillUpload && // Exclude backfill uploads
                         upload.uploadSource !== 'invoice_backfill' // Exclude backfill source
                     ),
