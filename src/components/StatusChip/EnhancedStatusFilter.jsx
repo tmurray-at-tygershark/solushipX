@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     FormControl,
     InputLabel,
@@ -16,12 +16,8 @@ import {
     Search as SearchIcon,
     Clear as ClearIcon
 } from '@mui/icons-material';
-import {
-    ENHANCED_STATUSES,
-    STATUS_GROUPS,
-    getEnhancedStatus,
-    getEnhancedStatusColor
-} from '../../utils/enhancedStatusModel';
+
+import shipmentStatusService from '../../services/shipmentStatusService';
 
 /**
  * Enhanced Status Filter Component
@@ -40,16 +36,57 @@ const EnhancedStatusFilter = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [open, setOpen] = useState(false);
 
+    // Dynamic status states
+    const [dynamicStatuses, setDynamicStatuses] = useState({});
+    const [dynamicGroups, setDynamicGroups] = useState({});
+    const [loading, setLoading] = useState(true);
+
+    // Load dynamic master statuses from Firebase
+    useEffect(() => {
+        const loadDynamicStatuses = async () => {
+            try {
+                setLoading(true);
+                const masterStatuses = await shipmentStatusService.loadMasterStatuses();
+                const formattedStatuses = shipmentStatusService.formatMasterStatusesForDropdown(masterStatuses);
+                const masterGroups = shipmentStatusService.getMasterStatusGroups();
+
+                setDynamicStatuses(formattedStatuses);
+                setDynamicGroups(masterGroups);
+
+                console.log('✅ Loaded dynamic shipment statuses:', Object.keys(formattedStatuses).length);
+            } catch (error) {
+                console.error('❌ Error loading dynamic statuses:', error);
+                // Keep empty statuses on error - don't show hardcoded fallbacks
+                setDynamicStatuses({});
+                setDynamicGroups({});
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadDynamicStatuses();
+    }, []);
+
+    // Use only dynamic master statuses from Firebase
+    const allStatuses = useMemo(() => {
+        return dynamicStatuses;
+    }, [dynamicStatuses]);
+
+    // Use only dynamic groups from Firebase  
+    const allGroups = useMemo(() => {
+        return dynamicGroups;
+    }, [dynamicGroups]);
+
     // Filter statuses based on search term
     const filteredStatuses = useMemo(() => {
         if (!searchTerm.trim()) {
-            return ENHANCED_STATUSES;
+            return allStatuses;
         }
 
         const filtered = {};
         const searchLower = searchTerm.toLowerCase();
 
-        Object.entries(ENHANCED_STATUSES).forEach(([id, status]) => {
+        Object.entries(allStatuses).forEach(([id, status]) => {
             const matchesSearch =
                 status.name.toLowerCase().includes(searchLower) ||
                 status.description.toLowerCase().includes(searchLower) ||
@@ -63,13 +100,13 @@ const EnhancedStatusFilter = ({
         });
 
         return filtered;
-    }, [searchTerm]);
+    }, [searchTerm, allStatuses]);
 
-    // Group filtered statuses by STATUS_GROUPS
+    // Group filtered statuses by all groups (static + dynamic)
     const groupedStatuses = useMemo(() => {
         const grouped = {};
 
-        Object.entries(STATUS_GROUPS).forEach(([groupKey, groupInfo]) => {
+        Object.entries(allGroups).forEach(([groupKey, groupInfo]) => {
             grouped[groupKey] = {
                 ...groupInfo,
                 statuses: []
@@ -97,10 +134,20 @@ const EnhancedStatusFilter = ({
         });
 
         return grouped;
-    }, [filteredStatuses]);
+    }, [filteredStatuses, allGroups]);
+
+    // Helpers to find status objects
+    const findStatusByCode = (code) => {
+        if (!code) return null;
+        return Object.values(allStatuses).find(s => s.statusCode === code) || null;
+    };
+    const findStatusById = (id) => {
+        return allStatuses[id] || null;
+    };
 
     const handleStatusChange = (event) => {
         const selectedValue = event.target.value;
+        // selectedValue will be the statusCode (e.g., 'delivered')
         onChange(selectedValue);
     };
 
@@ -108,16 +155,25 @@ const EnhancedStatusFilter = ({
         onChange(multiple ? [] : '');
     };
 
-    const renderStatusChip = (statusId) => {
-        const status = getEnhancedStatus(statusId);
+    const renderStatusChip = (statusCodeOrId) => {
+        // Support either statusCode (string) or internal numeric id
+        const status = typeof statusCodeOrId === 'string'
+            ? findStatusByCode(statusCodeOrId)
+            : findStatusById(statusCodeOrId);
         if (!status) return null;
 
-        const colorConfig = getEnhancedStatusColor(statusId);
+        const colorConfig = status.color ? {
+            color: status.fontColor || '#ffffff',
+            bgcolor: status.color
+        } : {
+            color: '#6b7280',
+            bgcolor: '#f3f4f6'
+        };
 
         return (
             <Chip
-                key={statusId}
-                label={`${status.name} (${statusId})`}
+                key={status.statusCode || status.id}
+                label={status.name}
                 size="small"
                 sx={{
                     color: colorConfig.color,
@@ -134,7 +190,7 @@ const EnhancedStatusFilter = ({
                 onDelete={() => {
                     if (multiple) {
                         const newValue = Array.isArray(value)
-                            ? value.filter(id => id !== statusId)
+                            ? value.filter(v => v !== statusCodeOrId)
                             : [];
                         onChange(newValue);
                     }
@@ -157,8 +213,8 @@ const EnhancedStatusFilter = ({
                 );
             }
         } else {
-            const status = getEnhancedStatus(selected);
-            return status ? `${status.name} (${selected})` : `Status ${selected}`;
+            const status = findStatusByCode(selected) || findStatusById(selected);
+            return status ? `${status.name}` : `Status ${selected}`;
         }
 
         return <em>Select Status</em>;
@@ -178,6 +234,7 @@ const EnhancedStatusFilter = ({
                 onOpen={() => setOpen(true)}
                 onClose={() => setOpen(false)}
                 renderValue={renderValue}
+                disabled={loading}
                 MenuProps={{
                     PaperProps: {
                         sx: {
@@ -233,30 +290,26 @@ const EnhancedStatusFilter = ({
                     </ListSubheader>
                 )}
 
-                {/* Quick Options */}
-                <MenuItem value="" sx={{ fontSize: '12px' }}>
-                    <em>All Statuses</em>
-                </MenuItem>
-                <MenuItem value={230} sx={{ fontSize: '12px' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip
-                            label="Any"
-                            size="small"
-                            sx={{
-                                bgcolor: '#64748b20',
-                                color: '#64748b',
-                                fontWeight: 500,
-                                fontSize: '0.75rem'
-                            }}
-                        />
-                        <Typography variant="body2" sx={{ fontSize: '12px' }}>System Filter</Typography>
-                    </Box>
-                </MenuItem>
+                {/* Loading state */}
+                {loading && (
+                    <MenuItem disabled sx={{ fontSize: '12px' }}>
+                        <em>Loading statuses...</em>
+                    </MenuItem>
+                )}
 
-                <Divider />
+                {/* Quick Options */}
+                {!loading && (
+                    <MenuItem value="" sx={{ fontSize: '12px' }}>
+                        <em>All Statuses</em>
+                    </MenuItem>
+                )}
+
+
+
+                {!loading && <Divider />}
 
                 {/* Grouped Status Options */}
-                {showGroups ? (
+                {!loading && showGroups ? (
                     Object.entries(groupedStatuses).flatMap(([groupKey, group]) => [
                         <ListSubheader key={`header-${groupKey}`} sx={{ bgcolor: 'background.default', fontSize: '12px' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -277,7 +330,7 @@ const EnhancedStatusFilter = ({
                             </Box>
                         </ListSubheader>,
                         ...group.statuses.map(status => (
-                            <MenuItem key={status.id} value={status.id} sx={{ fontSize: '12px' }}>
+                            <MenuItem key={status.statusCode || status.id} value={status.statusCode} sx={{ fontSize: '12px' }}>
                                 <Chip
                                     label={status.name}
                                     size="small"
@@ -291,10 +344,10 @@ const EnhancedStatusFilter = ({
                             </MenuItem>
                         ))
                     ])
-                ) : (
+                ) : !loading ? (
                     // Flat list without groups
                     Object.entries(filteredStatuses).map(([id, status]) => (
-                        <MenuItem key={id} value={parseInt(id)} sx={{ fontSize: '12px' }}>
+                        <MenuItem key={status.statusCode || id} value={status.statusCode} sx={{ fontSize: '12px' }}>
                             <Chip
                                 label={status.name}
                                 size="small"
@@ -307,7 +360,7 @@ const EnhancedStatusFilter = ({
                             />
                         </MenuItem>
                     ))
-                )}
+                ) : null}
             </Select>
         </FormControl>
     );

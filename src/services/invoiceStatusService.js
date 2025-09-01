@@ -1,4 +1,4 @@
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 class InvoiceStatusService {
@@ -13,39 +13,47 @@ class InvoiceStatusService {
      */
     async loadInvoiceStatuses() {
         try {
-            // Check cache first
-            const now = Date.now();
-            if (this.statusCache.size > 0 && (now - this.lastCacheUpdate) < this.cacheExpiry) {
-                return Array.from(this.statusCache.values());
-            }
+            // Check cache first (disabled for now to ensure fresh data)
+            // const now = Date.now();
+            // if (this.statusCache.size > 0 && (now - this.lastCacheUpdate) < this.cacheExpiry) {
+            //     return Array.from(this.statusCache.values());
+            // }
 
-            console.log('🔍 Loading invoice statuses from database...');
-
+            // Load ALL invoice statuses from Firebase - no filtering
             const statusQuery = query(
                 collection(db, 'invoiceStatuses'),
-                where('enabled', '==', true),
                 orderBy('sortOrder'),
                 orderBy('statusLabel')
             );
 
             const snapshot = await getDocs(statusQuery);
+
+            if (snapshot.empty) {
+                return await this.createDefaultStatusesInDatabase();
+            }
+
             const statuses = [];
+            this.statusCache.clear();
 
             snapshot.forEach(doc => {
                 const data = doc.data();
+                
                 const status = {
                     id: doc.id,
-                    ...data
+                    statusCode: data.statusCode,
+                    statusLabel: data.statusLabel,
+                    statusDescription: data.statusDescription || '',
+                    color: data.color || '#6b7280',
+                    fontColor: data.fontColor || '#ffffff',
+                    sortOrder: data.sortOrder || 0,
+                    enabled: data.enabled
                 };
                 statuses.push(status);
                 this.statusCache.set(doc.id, status);
-                
-                // Debug log each status
-                console.log(`📋 Loaded invoice status: ${data.statusCode} -> ${data.statusLabel} (color: ${data.color})`);
             });
 
-            this.lastCacheUpdate = now;
-            console.log(`✅ Successfully loaded ${statuses.length} invoice statuses from database`);
+            // Caching disabled for now to ensure fresh data loads
+            // this.lastCacheUpdate = now;
             
             return statuses;
         } catch (error) {
@@ -138,6 +146,44 @@ class InvoiceStatusService {
     }
 
     /**
+     * Create default invoice statuses in the database
+     */
+    async createDefaultStatusesInDatabase() {
+        try {
+            console.log('🔧 Creating default invoice statuses in system configuration...');
+            const defaultStatuses = this.getDefaultStatuses();
+            const invoiceStatusesRef = collection(db, 'invoiceStatuses');
+            
+            const createdStatuses = [];
+            
+            for (const status of defaultStatuses) {
+                // Remove the 'id' field before adding to Firestore
+                const { id, ...statusData } = status;
+                const docRef = await addDoc(invoiceStatusesRef, statusData);
+                
+                const createdStatus = {
+                    id: docRef.id,
+                    ...statusData
+                };
+                
+                createdStatuses.push(createdStatus);
+                this.statusCache.set(docRef.id, createdStatus);
+                
+                console.log(`✅ Created invoice status: ${statusData.statusCode} -> ${statusData.statusLabel}`);
+            }
+            
+            this.lastCacheUpdate = Date.now();
+            console.log(`✅ Successfully created ${createdStatuses.length} default invoice statuses in system configuration`);
+            
+            return createdStatuses;
+        } catch (error) {
+            console.error('❌ Error creating default invoice statuses:', error);
+            // Fall back to hardcoded defaults if database creation fails
+            return this.getDefaultStatuses();
+        }
+    }
+
+    /**
      * Default invoice statuses for fallback
      */
     getDefaultStatuses() {
@@ -201,6 +247,16 @@ class InvoiceStatusService {
                 fontColor: '#ffffff',
                 sortOrder: 5,
                 enabled: true
+            },
+            {
+                id: 'default-exception',
+                statusCode: 'exception',
+                statusLabel: 'Exception',
+                statusDescription: 'Invoice has issues or exceptions that need attention',
+                color: '#f97316', // Orange color for exceptions
+                fontColor: '#ffffff',
+                sortOrder: 6,
+                enabled: true
             }
         ];
     }
@@ -222,7 +278,8 @@ class InvoiceStatusService {
             all: { label: 'All Statuses', codes: [] },
             uninvoiced: { label: 'Uninvoiced', codes: [] },
             invoiced: { label: 'Invoiced', codes: [] },
-            paid: { label: 'Paid', codes: [] }
+            paid: { label: 'Paid', codes: [] },
+            exception: { label: 'Exception', codes: [] }
         };
 
         // Map statuses to categories
@@ -234,6 +291,8 @@ class InvoiceStatusService {
                 mapping.uninvoiced.codes.push(status.statusCode);
             } else if (code.includes('paid') || label.includes('paid') || code.includes('completed')) {
                 mapping.paid.codes.push(status.statusCode);
+            } else if (code.includes('exception') || label.includes('exception') || code.includes('issue') || code.includes('problem')) {
+                mapping.exception.codes.push(status.statusCode);
             } else if (code.includes('invoiced') || label.includes('invoiced') || code.includes('billed')) {
                 mapping.invoiced.codes.push(status.statusCode);
             }

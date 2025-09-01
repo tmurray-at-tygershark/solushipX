@@ -205,15 +205,7 @@ const ShipmentTableRow = ({
                 return;
             }
 
-            console.log('🔍 [ShipmentTableRow] Customer ID lookup:', {
-                shipmentCustomerId: shipment?.customerId,
-                shipmentCustomerID: shipment?.customerID,
-                customerIdField: shipment?.customer?.id,
-                shipFromCustomerID: shipment?.shipFrom?.customerID,
-                shipFromCustomerId: shipment?.shipFrom?.customerId,
-                shipFromAddressClassID: shipment?.shipFrom?.addressClassID,
-                resolvedCustomerId: customerId
-            });
+            // Removed noisy debug log
 
             setLoadingExpandedCustomerData(true);
             try {
@@ -225,7 +217,6 @@ const ShipmentTableRow = ({
 
                 if (customerDoc.exists()) {
                     const customerData = { id: customerDoc.id, ...customerDoc.data() };
-                    console.log('✅ Found customer by document ID:', customerData);
                     setExpandedCustomerData(customerData);
                 } else {
                     // Try to find by customerID field
@@ -239,7 +230,6 @@ const ShipmentTableRow = ({
                     if (!customerSnapshot.empty) {
                         const customerDocFromQuery = customerSnapshot.docs[0];
                         const customerData = { id: customerDocFromQuery.id, ...customerDocFromQuery.data() };
-                        console.log('✅ Found customer by customerID field:', customerData);
                         setExpandedCustomerData(customerData);
                     } else {
                         console.warn('❌ Customer not found for expanded view:', customerId);
@@ -293,15 +283,7 @@ const ShipmentTableRow = ({
                 return;
             }
 
-            console.log('🔍 [ShipmentTableRow] Customer ID lookup for main table:', {
-                shipmentCustomerId: shipment?.customerId,
-                shipmentCustomerID: shipment?.customerID,
-                customerIdField: shipment?.customer?.id,
-                shipFromCustomerID: shipment?.shipFrom?.customerID,
-                shipFromCustomerId: shipment?.shipFrom?.customerId,
-                shipFromAddressClassID: shipment?.shipFrom?.addressClassID,
-                resolvedCustomerId: customerId
-            });
+            // Removed noisy debug log for main table
 
             setLoadingMainCustomerData(true);
             try {
@@ -326,16 +308,14 @@ const ShipmentTableRow = ({
 
                         if (customerDoc.exists()) {
                             customerData = { id: customerDoc.id, ...customerDoc.data() };
-                            console.log(`📋 Found customer by document ID: ${customerId} -> ${customerData.name}`);
                         }
                     } catch (docError) {
                         // Not a valid document ID, that's fine
-                        console.log(`📋 Customer ID ${customerId} is not a valid document ID`);
+                        // removed verbose log
                     }
                 }
 
                 if (customerData) {
-                    console.log(`✅ [ShipmentTableRow] Found customer for main table: ${customerId} -> ${customerData.name || customerData.companyName}`);
                     setMainCustomerData(customerData);
                 } else {
                     console.warn(`⚠️ [ShipmentTableRow] No customer found with ID: ${customerId} for shipment ${shipment?.shipmentID}`);
@@ -1311,7 +1291,8 @@ const ShipmentTableRow = ({
 
                                             // If we have a customer ID and it's in our loaded customers, show that
                                             if (customerId && customers[customerId]) {
-                                                return customers[customerId];
+                                                const customerData = customers[customerId];
+                                                return customerData.name || customerData.companyName || customerId;
                                             }
 
                                             // If we have a customer ID but it's not in our mapping, show the ID

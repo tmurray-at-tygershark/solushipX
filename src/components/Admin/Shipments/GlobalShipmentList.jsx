@@ -413,23 +413,24 @@ const GlobalShipmentList = () => {
                     );
                 } else if (userRole === 'admin') {
                     // Admins can see companies they're connected to
-                    const userDoc = await getDocs(
-                        query(collection(db, 'users'), where('uid', '==', user.uid))
-                    );
+                    // Use the user object directly instead of querying again
+                    connectedCompanyIds = user.connectedCompanies || [];
 
-                    if (!userDoc.empty) {
-                        const userData = userDoc.docs[0].data();
-                        connectedCompanyIds = userData.connectedCompanies?.companies || [];
-
-                        if (connectedCompanyIds.length > 0) {
+                    if (connectedCompanyIds.length > 0) {
+                        // Firestore 'in' query supports max 10 items, so batch if needed
+                        if (connectedCompanyIds.length <= 10) {
                             companiesQuery = query(
                                 collection(db, 'companies'),
                                 where('companyID', 'in', connectedCompanyIds)
                             );
                         } else {
-                            setAvailableCompanies([]);
-                            return;
+                            // For more than 10 companies, load all and filter client-side
+                            companiesQuery = query(collection(db, 'companies'));
                         }
+                    } else {
+                        // Admin has no connected companies
+                        setAvailableCompanies([]);
+                        return;
                     }
                 } else {
                     // Regular users shouldn't access this page
@@ -438,15 +439,22 @@ const GlobalShipmentList = () => {
                 }
 
                 const companiesSnapshot = await getDocs(companiesQuery);
-                const companies = companiesSnapshot.docs.map(doc => ({
+                let companies = companiesSnapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data()
                 }));
 
+                // If admin with >10 connected companies, filter client-side
+                if (userRole === 'admin' && connectedCompanyIds.length > 10) {
+                    companies = companies.filter(company =>
+                        connectedCompanyIds.includes(company.companyID)
+                    );
+                }
+
                 // Sort companies by name after fetching
                 companies.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-                console.log('Loaded companies:', companies.length, companies);
+                console.log('Loaded companies for', userRole, ':', companies.length, 'companies');
 
                 setAvailableCompanies(companies);
 

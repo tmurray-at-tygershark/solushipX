@@ -60,6 +60,7 @@ import InvoiceForm from './InvoiceForm';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { getCircleLogo } from '../../../utils/logoUtils';
 import { Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
+import invoiceStatusService from '../../../services/invoiceStatusService';
 
 const InvoiceManagement = () => {
     const { enqueueSnackbar } = useSnackbar();
@@ -81,10 +82,12 @@ const InvoiceManagement = () => {
     const [selectedPaymentStatusFilter, setSelectedPaymentStatusFilter] = useState(null);
     const [metrics, setMetrics] = useState({
         totalInvoices: 0,
+        totalShipments: 0,
         totalOutstanding: 0,
         totalPaid: 0,
         overdue: 0
     });
+    const [metricsLoading, setMetricsLoading] = useState(true);
 
     // Manual invoice creation states
     const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
@@ -94,14 +97,29 @@ const InvoiceManagement = () => {
     const [customersMap, setCustomersMap] = useState({}); // key: customerId → customer doc
     const [loadingCompanies, setLoadingCompanies] = useState(false);
     const [loadingCustomers, setLoadingCustomers] = useState(false);
+
+    // Dynamic invoice statuses
+    const [invoiceStatuses, setInvoiceStatuses] = useState([]);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [selectedUploadFiles, setSelectedUploadFiles] = useState([]);
+
+    // Load invoice statuses from Firebase
+    const loadInvoiceStatuses = async () => {
+        try {
+            const statuses = await invoiceStatusService.loadInvoiceStatuses();
+            setInvoiceStatuses(statuses);
+        } catch (error) {
+            console.error('Error loading invoice statuses:', error);
+            setInvoiceStatuses([]);
+        }
+    };
 
     useEffect(() => {
         // Only fetch if we have a userRole and auth is loaded
         if (userRole && currentUser) {
             fetchInvoices();
             loadCompaniesDirectory();
+            loadInvoiceStatuses();
         }
     }, [userRole, connectedCompanies, currentUser]);
 
@@ -209,14 +227,8 @@ const InvoiceManagement = () => {
 
             let invoiceData = [];
             if (invoicesFromCollection.length > 0) {
-                // 🔥 FILTER OUT BACKFILL INVOICES: Only show multi-modal AI processed invoices
-                const nonBackfillInvoices = invoicesFromCollection.filter(inv =>
-                    !inv.backfillSource || // Include invoices without backfillSource (generated invoices)
-                    (inv.backfillSource !== 'upload_dialog' && // Exclude upload dialog backfills
-                        inv.backfillSource !== 'ap_processing' && // Exclude AP processing backfills
-                        inv.backfillSource !== 'manual_upload') // Exclude manual uploads
-                );
-                invoiceData = nonBackfillInvoices.map(inv => mapInvoiceRecord(inv));
+                // Show ALL invoices in the main invoice management section
+                invoiceData = invoicesFromCollection.map(inv => mapInvoiceRecord(inv));
             } else {
                 // No fallback: show a blank table until invoices exist or are manually added
                 invoiceData = [];
@@ -249,15 +261,9 @@ const InvoiceManagement = () => {
     useEffect(() => {
         const qRef = query(collection(db, 'invoices'), orderBy('createdAt', 'desc'));
         const unsub = onSnapshot(qRef, (snap) => {
-            // 🔥 FILTER OUT BACKFILL INVOICES: Only show multi-modal AI processed invoices
+            // Show ALL invoices in the main invoice management section
             const allInvoices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const nonBackfillInvoices = allInvoices.filter(inv =>
-                !inv.backfillSource || // Include invoices without backfillSource (generated invoices)
-                (inv.backfillSource !== 'upload_dialog' && // Exclude upload dialog backfills
-                    inv.backfillSource !== 'ap_processing' && // Exclude AP processing backfills
-                    inv.backfillSource !== 'manual_upload') // Exclude manual uploads
-            );
-            const data = nonBackfillInvoices.map(d => mapInvoiceRecord(d));
+            const data = allInvoices.map(d => mapInvoiceRecord(d));
             setInvoices(data);
         });
         return () => unsub();
@@ -300,16 +306,24 @@ const InvoiceManagement = () => {
     };
 
     const calculateMetrics = (invoiceData) => {
+        setMetricsLoading(true);
+
         const now = new Date();
+        let totalShipments = 0;
 
         const metrics = {
             totalInvoices: invoiceData.length,
+            totalShipments: 0,
             totalOutstanding: 0,
             totalPaid: 0,
             overdue: 0
         };
 
         invoiceData.forEach(invoice => {
+            // Count shipments in this invoice
+            const shipmentCount = invoice.shipmentCount || 0;
+            totalShipments += shipmentCount;
+
             if (invoice.status === 'paid') {
                 metrics.totalPaid += invoice.total || 0;
             } else {
@@ -322,7 +336,9 @@ const InvoiceManagement = () => {
             }
         });
 
+        metrics.totalShipments = totalShipments;
         setMetrics(metrics);
+        setMetricsLoading(false);
     };
 
     // 🔄 ENHANCED: Update invoice document status (not shipments)
@@ -706,39 +722,92 @@ const InvoiceManagement = () => {
     useEffect(() => {
         let filtered = invoices;
 
-        // Search filter
+        // Search filter - Enhanced to search across all relevant fields
         if (searchQuery) {
+            const query = searchQuery.toLowerCase().trim();
             filtered = filtered.filter(invoice =>
-                invoice.invoiceNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                invoice.companyName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                invoice.id.toLowerCase().includes(searchQuery.toLowerCase())
+                // Invoice identifiers
+                invoice.invoiceNumber?.toLowerCase().includes(query) ||
+                invoice.id?.toLowerCase().includes(query) ||
+
+                // Company information
+                invoice.companyName?.toLowerCase().includes(query) ||
+                invoice.companyCode?.toLowerCase().includes(query) ||
+                (invoice.companyId || invoice.companyID)?.toLowerCase().includes(query) ||
+
+                // Customer information
+                invoice.customerName?.toLowerCase().includes(query) ||
+                invoice.customerId?.toLowerCase().includes(query) ||
+
+                // Financial fields
+                invoice.total?.toString().includes(query) ||
+                invoice.status?.toLowerCase().includes(query) ||
+
+                // Additional search fields
+                invoice.paymentTerms?.toLowerCase().includes(query)
             );
         }
 
-        // Company filter
+        // Company filter - Enhanced to handle multiple company identifier formats
         if (selectedCompanyFilter && selectedCompanyFilter.id) {
-            filtered = filtered.filter(inv => (inv.companyId || inv.companyID) === selectedCompanyFilter.id);
+            filtered = filtered.filter(invoice => {
+                const companyId = invoice.companyId || invoice.companyID;
+                const companyCode = invoice.companyCode;
+                const companyName = invoice.companyName;
+
+                // Match by ID, code, or name
+                return companyId === selectedCompanyFilter.id ||
+                    companyCode === selectedCompanyFilter.id ||
+                    companyName === selectedCompanyFilter.id ||
+                    companyName === selectedCompanyFilter.name;
+            });
         }
 
-        // Customer filter
+        // Customer filter - Enhanced to handle customer identification properly
         if (selectedCustomerFilter && selectedCustomerFilter.id) {
-            filtered = filtered.filter(inv => inv.customerId === selectedCustomerFilter.id || inv.customerName === selectedCustomerFilter.name);
+            filtered = filtered.filter(invoice => {
+                const customerId = invoice.customerId || invoice.customer?.id;
+                const customerName = invoice.customerName || invoice.customer?.name;
+
+                // Match by customer ID or name
+                return customerId === selectedCustomerFilter.id ||
+                    customerName === selectedCustomerFilter.name ||
+                    customerName === selectedCustomerFilter.id;
+            });
         }
 
-        // Payment Status filter
+        // Payment Status filter - Enhanced with proper status matching
         if (selectedPaymentStatusFilter && selectedPaymentStatusFilter.id && selectedPaymentStatusFilter.id !== 'all') {
-            if (selectedPaymentStatusFilter.id === 'overdue') {
-                filtered = filtered.filter(invoice => isOverdue(invoice));
-            } else {
-                filtered = filtered.filter(invoice => {
-                    const overdue = isOverdue(invoice);
-                    const isProcessing = invoice.status === 'processing' ||
-                        invoice.paymentStatus === 'processing' ||
-                        (invoice.total === 0 && !invoice.companyName && !invoice.customerName);
-                    const displayStatus = overdue ? 'overdue' : (isProcessing ? 'processing' : invoice.status);
-                    return displayStatus === selectedPaymentStatusFilter.id;
-                });
-            }
+            filtered = filtered.filter(invoice => {
+                const isOverdueStatus = isOverdue(invoice);
+                const isProcessing = invoice.status === 'processing' ||
+                    invoice.paymentStatus === 'processing' ||
+                    (invoice.total === 0 && !invoice.companyName && !invoice.customerName);
+
+                // Determine the actual status
+                let actualStatus = invoice.status || invoice.paymentStatus || 'outstanding';
+                if (isOverdueStatus) {
+                    actualStatus = 'overdue';
+                } else if (isProcessing) {
+                    actualStatus = 'processing';
+                }
+
+                // Handle special status cases
+                if (selectedPaymentStatusFilter.id === 'overdue') {
+                    return isOverdueStatus;
+                } else if (selectedPaymentStatusFilter.id === 'outstanding') {
+                    return actualStatus === 'outstanding' && !isOverdueStatus;
+                } else if (selectedPaymentStatusFilter.id === 'paid') {
+                    return actualStatus === 'paid';
+                } else if (selectedPaymentStatusFilter.id === 'processing') {
+                    return isProcessing;
+                } else {
+                    // Match by exact status code or label
+                    return actualStatus === selectedPaymentStatusFilter.id ||
+                        invoice.status === selectedPaymentStatusFilter.id ||
+                        invoice.paymentStatus === selectedPaymentStatusFilter.id;
+                }
+            });
         }
 
         // Status filter (legacy)
@@ -751,6 +820,10 @@ const InvoiceManagement = () => {
         }
 
         setFilteredInvoices(filtered);
+
+        // Recalculate metrics based on filtered invoices
+        calculateMetrics(filtered);
+
         setPage(0); // Reset to first page when filters change
     }, [invoices, searchQuery, statusFilter, selectedCompanyFilter, selectedCustomerFilter, selectedPaymentStatusFilter]);
 
@@ -846,11 +919,25 @@ const InvoiceManagement = () => {
                                 <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', mb: 2 }}>
                                     Total Invoices
                                 </Typography>
-                                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-                                    {metrics.totalInvoices}
-                                </Typography>
+                                {metricsLoading ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                        <CircularProgress size={20} />
+                                        <Typography variant="h6" sx={{ fontWeight: 700, color: '#9ca3af' }}>
+                                            Loading...
+                                        </Typography>
+                                    </Box>
+                                ) : (
+                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+                                        {metrics.totalInvoices}
+                                        {metrics.totalShipments > 0 && (
+                                            <Typography component="span" variant="body2" sx={{ color: '#6b7280', fontWeight: 400, ml: 1 }}>
+                                                ({metrics.totalShipments} shipments)
+                                            </Typography>
+                                        )}
+                                    </Typography>
+                                )}
                                 <Typography variant="body2" sx={{ color: '#6b7280' }}>
-                                    All time
+                                    {metricsLoading ? 'Calculating...' : 'All time'}
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -868,11 +955,20 @@ const InvoiceManagement = () => {
                                 <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', mb: 2 }}>
                                     Outstanding
                                 </Typography>
-                                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-                                    ${metrics.totalOutstanding.toLocaleString()}
-                                </Typography>
+                                {metricsLoading ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                        <CircularProgress size={20} />
+                                        <Typography variant="h6" sx={{ fontWeight: 700, color: '#9ca3af' }}>
+                                            Loading...
+                                        </Typography>
+                                    </Box>
+                                ) : (
+                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+                                        ${metrics.totalOutstanding.toLocaleString()}
+                                    </Typography>
+                                )}
                                 <Typography variant="body2" sx={{ color: '#6b7280' }}>
-                                    Unpaid invoices
+                                    {metricsLoading ? 'Calculating...' : 'Unpaid invoices'}
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -890,11 +986,20 @@ const InvoiceManagement = () => {
                                 <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', mb: 2 }}>
                                     Total Paid
                                 </Typography>
-                                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-                                    ${metrics.totalPaid.toLocaleString()}
-                                </Typography>
+                                {metricsLoading ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                        <CircularProgress size={20} />
+                                        <Typography variant="h6" sx={{ fontWeight: 700, color: '#9ca3af' }}>
+                                            Loading...
+                                        </Typography>
+                                    </Box>
+                                ) : (
+                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+                                        ${metrics.totalPaid.toLocaleString()}
+                                    </Typography>
+                                )}
                                 <Typography variant="body2" sx={{ color: '#6b7280' }}>
-                                    Collected revenue
+                                    {metricsLoading ? 'Calculating...' : 'Collected revenue'}
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -912,18 +1017,27 @@ const InvoiceManagement = () => {
                             sx={{
                                 border: '1px solid #e5e7eb',
                                 borderRadius: '12px',
-                                background: metrics.overdue > 0 ? '#fef2f2' : 'white'
+                                background: !metricsLoading && metrics.overdue > 0 ? '#fef2f2' : 'white'
                             }}
                         >
                             <CardContent sx={{ p: 3 }}>
                                 <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', mb: 2 }}>
                                     Overdue
                                 </Typography>
-                                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-                                    ${metrics.overdue.toLocaleString()}
-                                </Typography>
+                                {metricsLoading ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                        <CircularProgress size={20} />
+                                        <Typography variant="h6" sx={{ fontWeight: 700, color: '#9ca3af' }}>
+                                            Loading...
+                                        </Typography>
+                                    </Box>
+                                ) : (
+                                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+                                        ${metrics.overdue.toLocaleString()}
+                                    </Typography>
+                                )}
                                 <Typography variant="body2" sx={{ color: '#6b7280' }}>
-                                    Past due date
+                                    {metricsLoading ? 'Calculating...' : 'Past due date'}
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -1043,10 +1157,21 @@ const InvoiceManagement = () => {
                                         name: c.name || c.companyName,
                                         logo: c.logo || c.logoUrl || c.logoURL || c.customerLogo || ''
                                     }))
-                                    : Array.from(new Map(invoices.map(i => [
-                                        i.customerId || i.customer?.id,
-                                        { id: i.customerId || i.customer?.id, name: i.customerName || i.customer?.name, logo: (customersMap[i.customerId || i.customer?.id]?.logo || customersMap[i.customerId || i.customer?.id]?.logoUrl || i.customerLogo || '') }
-                                    ])).values())}
+                                    : Array.from(new Map(invoices.map(i => {
+                                        const customerId = i.customerId || i.customer?.id;
+                                        const customerName = i.customerName || i.customer?.name;
+                                        const customerDoc = customersMap[customerId];
+                                        const logo = customerDoc?.logo ||
+                                            customerDoc?.logoUrl ||
+                                            customerDoc?.logoURL ||
+                                            i.customerLogo ||
+                                            '';
+                                        return [customerId, {
+                                            id: customerId,
+                                            name: customerName,
+                                            logo
+                                        }];
+                                    })).values()).filter(c => c?.name)}
                                 getOptionLabel={(opt) => opt?.name || ''}
                                 value={selectedCustomerFilter}
                                 onChange={(e, val) => setSelectedCustomerFilter(val)}
@@ -1067,12 +1192,12 @@ const InvoiceManagement = () => {
                             <Autocomplete
                                 options={[
                                     { id: 'all', label: 'All Statuses' },
-                                    { id: 'outstanding', label: 'Outstanding' },
-                                    { id: 'overdue', label: 'Overdue' },
-                                    { id: 'paid', label: 'Paid' },
-                                    { id: 'processing', label: 'Processing' },
-                                    { id: 'cancelled', label: 'Cancelled' },
-                                    { id: 'void', label: 'Void' }
+                                    ...invoiceStatuses.map(status => ({
+                                        id: status.statusCode,
+                                        label: status.statusLabel,
+                                        color: status.color,
+                                        fontColor: status.fontColor
+                                    }))
                                 ]}
                                 getOptionLabel={(option) => option.label}
                                 value={selectedPaymentStatusFilter}
@@ -1082,7 +1207,19 @@ const InvoiceManagement = () => {
                                 )}
                                 renderOption={(props, option) => (
                                     <li {...props}>
-                                        <Typography sx={{ fontSize: '12px' }}>{option.label}</Typography>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            {option.color && (
+                                                <Box
+                                                    sx={{
+                                                        width: 12,
+                                                        height: 12,
+                                                        borderRadius: '50%',
+                                                        bgcolor: option.color
+                                                    }}
+                                                />
+                                            )}
+                                            <Typography sx={{ fontSize: '12px' }}>{option.label}</Typography>
+                                        </Box>
                                     </li>
                                 )}
                             />
