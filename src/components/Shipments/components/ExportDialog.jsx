@@ -57,7 +57,7 @@ const ExportDialog = ({
     };
 
     const exportToCSV = () => {
-        // Create CSV headers
+        // Create CSV headers - Enhanced with missing critical columns
         const headers = [
             'Shipment ID',
             'Status',
@@ -67,7 +67,10 @@ const ExportDialog = ({
             'Carrier',
             'Service',
             'Total Charges',
+            'Invoice Status',
             'Created Date',
+            'Shipment Date',
+            'Delivery Date',
             'Reference Number',
             'Tracking Number'
         ];
@@ -75,12 +78,83 @@ const ExportDialog = ({
         // Create CSV rows
         const rows = shipments.map(shipment => {
             const carrier = carrierData[shipment.id];
-            const customerName = customers[shipment.shipTo?.customerID] || shipment.shipTo?.company || '';
+
+            // Enhanced customer name extraction - handle object vs string
+            const getCustomerName = () => {
+                // Try multiple customer data sources
+                const customerData = customers[shipment.shipTo?.customerID] ||
+                    customers[shipment.selectedCustomerId] ||
+                    customers[shipment.customerId];
+
+                if (customerData) {
+                    // If customerData is an object, extract name property
+                    if (typeof customerData === 'object') {
+                        return customerData.name || customerData.companyName || customerData.customerName || '';
+                    }
+                    // If customerData is already a string, return it
+                    return String(customerData);
+                }
+
+                // Fallback to shipment data
+                return shipment.shipTo?.company ||
+                    shipment.shipTo?.companyName ||
+                    shipment.customerName ||
+                    shipment.selectedCustomerName ||
+                    '';
+            };
+
+            const customerName = getCustomerName();
             const origin = `${shipment.shipFrom?.city || ''}, ${shipment.shipFrom?.state || ''}`;
             const destination = `${shipment.shipTo?.city || ''}, ${shipment.shipTo?.state || ''}`;
-            const createdDate = shipment.createdAt?.toDate ?
-                shipment.createdAt.toDate().toLocaleDateString() :
-                new Date(shipment.createdAt).toLocaleDateString();
+
+            // Enhanced date handling
+            const formatDate = (dateField) => {
+                if (!dateField) return '';
+                try {
+                    if (dateField.toDate) {
+                        return dateField.toDate().toLocaleDateString();
+                    }
+                    return new Date(dateField).toLocaleDateString();
+                } catch (error) {
+                    return '';
+                }
+            };
+
+            const createdDate = formatDate(shipment.createdAt);
+
+            // Get shipment date - multiple possible sources
+            const shipmentDate = formatDate(
+                shipment.shipmentDate ||
+                shipment.shipmentInfo?.shipmentDate ||
+                shipment.bookedAt ||
+                shipment.scheduledDate
+            );
+
+            // Get delivery date - multiple possible sources
+            const deliveryDate = formatDate(
+                shipment.deliveryDate ||
+                shipment.estimatedDelivery ||
+                shipment.eta1 ||
+                shipment.eta2 ||
+                shipment.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                shipment.selectedRate?.transit?.estimatedDelivery ||
+                shipment.selectedRate?.estimatedDeliveryDate ||
+                shipment.shipmentInfo?.deliveredAt
+            );
+
+            // Get total charges - multiple possible sources
+            const getTotalCharges = () => {
+                // Priority order for total charges
+                if (carrier?.totalCharges) return `$${carrier.totalCharges.toFixed(2)}`;
+                if (shipment.selectedRate?.totalCharges) return `$${shipment.selectedRate.totalCharges.toFixed(2)}`;
+                if (shipment.totalCharges) return `$${shipment.totalCharges.toFixed(2)}`;
+                if (shipment.billingDetails?.totalCharges) return `$${shipment.billingDetails.totalCharges.toFixed(2)}`;
+                if (shipment.markupRates?.totalCharges) return `$${shipment.markupRates.totalCharges.toFixed(2)}`;
+                return '';
+            };
+
+            // Get invoice status
+            const invoiceStatus = shipment.invoiceStatus || 'uninvoiced';
 
             return [
                 shipment.shipmentID || shipment.id || '',
@@ -90,8 +164,11 @@ const ExportDialog = ({
                 destination,
                 carrier?.carrier || '',
                 carrier?.service || '',
-                carrier?.totalCharges ? `$${carrier.totalCharges.toFixed(2)}` : '',
+                getTotalCharges(),
+                invoiceStatus,
                 createdDate,
+                shipmentDate,
+                deliveryDate,
                 shipment.shipmentInfo?.shipperReferenceNumber || shipment.referenceNumber || '',
                 shipment.trackingNumber || shipment.carrierTrackingData?.trackingNumber || ''
             ];
@@ -151,18 +228,97 @@ const ExportDialog = ({
                             <th>Destination</th>
                             <th>Carrier</th>
                             <th>Total Charges</th>
+                            <th>Invoice Status</th>
                             <th>Created Date</th>
+                            <th>Shipment Date</th>
+                            <th>Delivery Date</th>
+                            <th>Reference</th>
+                            <th>Tracking</th>
                         </tr>
                     </thead>
-                    <tbody>
+                                        <tbody>
                         ${shipments.map(shipment => {
             const carrier = carrierData[shipment.id];
-            const customerName = customers[shipment.shipTo?.customerID] || shipment.shipTo?.company || '';
+
+            // Enhanced customer name extraction for PDF - handle object vs string
+            const getCustomerName = () => {
+                // Try multiple customer data sources
+                const customerData = customers[shipment.shipTo?.customerID] ||
+                    customers[shipment.selectedCustomerId] ||
+                    customers[shipment.customerId];
+
+                if (customerData) {
+                    // If customerData is an object, extract name property
+                    if (typeof customerData === 'object') {
+                        return customerData.name || customerData.companyName || customerData.customerName || '';
+                    }
+                    // If customerData is already a string, return it
+                    return String(customerData);
+                }
+
+                // Fallback to shipment data
+                return shipment.shipTo?.company ||
+                    shipment.shipTo?.companyName ||
+                    shipment.customerName ||
+                    shipment.selectedCustomerName ||
+                    '';
+            };
+
+            const customerName = getCustomerName();
             const origin = `${shipment.shipFrom?.city || ''}, ${shipment.shipFrom?.state || ''}`;
             const destination = `${shipment.shipTo?.city || ''}, ${shipment.shipTo?.state || ''}`;
-            const createdDate = shipment.createdAt?.toDate ?
-                shipment.createdAt.toDate().toLocaleDateString() :
-                new Date(shipment.createdAt).toLocaleDateString();
+
+            // Enhanced date handling for PDF
+            const formatDate = (dateField) => {
+                if (!dateField) return '';
+                try {
+                    if (dateField.toDate) {
+                        return dateField.toDate().toLocaleDateString();
+                    }
+                    return new Date(dateField).toLocaleDateString();
+                } catch (error) {
+                    return '';
+                }
+            };
+
+            const createdDate = formatDate(shipment.createdAt);
+
+            // Get shipment date - multiple possible sources
+            const shipmentDate = formatDate(
+                shipment.shipmentDate ||
+                shipment.shipmentInfo?.shipmentDate ||
+                shipment.bookedAt ||
+                shipment.scheduledDate
+            );
+
+            // Get delivery date - multiple possible sources
+            const deliveryDate = formatDate(
+                shipment.deliveryDate ||
+                shipment.estimatedDelivery ||
+                shipment.eta1 ||
+                shipment.eta2 ||
+                shipment.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                shipment.selectedRate?.transit?.estimatedDelivery ||
+                shipment.selectedRate?.estimatedDeliveryDate ||
+                shipment.shipmentInfo?.deliveredAt
+            );
+
+            // Get total charges - multiple possible sources
+            const getTotalCharges = () => {
+                if (carrier?.totalCharges) return `$${carrier.totalCharges.toFixed(2)}`;
+                if (shipment.selectedRate?.totalCharges) return `$${shipment.selectedRate.totalCharges.toFixed(2)}`;
+                if (shipment.totalCharges) return `$${shipment.totalCharges.toFixed(2)}`;
+                if (shipment.billingDetails?.totalCharges) return `$${shipment.billingDetails.totalCharges.toFixed(2)}`;
+                if (shipment.markupRates?.totalCharges) return `$${shipment.markupRates.totalCharges.toFixed(2)}`;
+                return '';
+            };
+
+            // Get invoice status
+            const invoiceStatus = shipment.invoiceStatus || 'uninvoiced';
+
+            // Get reference and tracking
+            const reference = shipment.shipmentInfo?.shipperReferenceNumber || shipment.referenceNumber || '';
+            const tracking = shipment.trackingNumber || shipment.carrierTrackingData?.trackingNumber || '';
 
             return `
                                 <tr>
@@ -172,8 +328,13 @@ const ExportDialog = ({
                                     <td>${origin}</td>
                                     <td>${destination}</td>
                                     <td>${carrier?.carrier || ''}</td>
-                                    <td>${carrier?.totalCharges ? `$${carrier.totalCharges.toFixed(2)}` : ''}</td>
+                                    <td>${getTotalCharges()}</td>
+                                    <td>${invoiceStatus}</td>
                                     <td>${createdDate}</td>
+                                    <td>${shipmentDate}</td>
+                                    <td>${deliveryDate}</td>
+                                    <td>${reference}</td>
+                                    <td>${tracking}</td>
                                 </tr>
                             `;
         }).join('')}

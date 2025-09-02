@@ -34,7 +34,9 @@ import {
     AccordionSummary,
     AccordionDetails,
     Avatar,
-    Stack
+    Stack,
+    FormControlLabel,
+    Switch
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -967,6 +969,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     // Main data states (moved before useEffects that reference them)
     const [shipments, setShipments] = useState([]);
     const [allShipments, setAllShipments] = useState([]);
+    const [filteredShipments, setFilteredShipments] = useState([]); // Store ALL filtered results for export
     const [customers, setCustomers] = useState({});
     const [carrierData, setCarrierData] = useState({});
     const [companiesData, setCompaniesData] = useState([]); // Enhanced to load multiple companies for admin view
@@ -1001,6 +1004,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // ENTERPRISE SEARCH STATE - Single unified search field
     const [unifiedSearch, setUnifiedSearch] = useState('');
+
+    // Auto-apply filters state
+    const [isAutoApply, setIsAutoApply] = useState(true);
+    const [isApplyingFilters, setIsApplyingFilters] = useState(false);
+    const autoApplyTimeoutRef = useRef(null);
 
     // Legacy search fields for backward compatibility and specific filters
     const [searchFields, setSearchFields] = useState({
@@ -1077,10 +1085,132 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         tracking: false,
         originDestination: false,
         billing: false, // Moved billing to end
-        financial: false,
-        packages: false,
-        contacts: false
+        financial: false, // Hidden for now
+        packages: false, // Hidden for now
+        contacts: false // Hidden for now
     });
+
+
+
+    // Function to count active filters
+    const countActiveFilters = useCallback(() => {
+        if (!advancedFilters) return 0;
+
+        let count = 0;
+
+        // Basic Information filters
+        if (advancedFilters.shipmentIds && advancedFilters.shipmentIds.length > 0) count++;
+        if (advancedFilters.companyId) count++;
+        if (advancedFilters.customerId) count++;
+        if (advancedFilters.shipmentType) count++;
+
+        // Timing Information filters
+        if (advancedFilters.createdAt && (advancedFilters.createdAt[0] || advancedFilters.createdAt[1])) count++;
+        if (advancedFilters.shipmentDate && (advancedFilters.shipmentDate[0] || advancedFilters.shipmentDate[1])) count++;
+        if (advancedFilters.eta && (advancedFilters.eta[0] || advancedFilters.eta[1])) count++;
+
+        // Tracking & Status filters
+        if (advancedFilters.currentStatus && advancedFilters.currentStatus.length > 0) count++;
+        if (advancedFilters.carrier) count++;
+        if (advancedFilters.trackingNumbers && advancedFilters.trackingNumbers.length > 0) count++;
+        if (advancedFilters.referenceNumbers && advancedFilters.referenceNumbers.length > 0) count++;
+
+        // Origin & Destination filters
+        if (advancedFilters.originCustomerName) count++;
+        if (advancedFilters.originCity) count++;
+        if (advancedFilters.originProvState) count++;
+        if (advancedFilters.originCountry) count++;
+        if (advancedFilters.originPostalCode) count++;
+        if (advancedFilters.destCustomerName) count++;
+        if (advancedFilters.destCity) count++;
+        if (advancedFilters.destProvState) count++;
+        if (advancedFilters.destCountry) count++;
+        if (advancedFilters.destPostalCode) count++;
+
+        // Billing & Invoice filters
+        if (advancedFilters.invoiceStatus) count++;
+        if (advancedFilters.ediNumbers && advancedFilters.ediNumbers.length > 0) count++;
+        if (advancedFilters.invoiceNumbers && advancedFilters.invoiceNumbers.length > 0) count++;
+        if (advancedFilters.billType) count++;
+
+        return count;
+    }, [advancedFilters]);
+
+    // Function to get active filters for a specific section
+    const getSectionActiveFilters = useCallback((section) => {
+        if (!advancedFilters) return [];
+
+        const activeFilters = [];
+
+        switch (section) {
+            case 'basicInfo':
+                if (advancedFilters.shipmentIds && advancedFilters.shipmentIds.length > 0)
+                    activeFilters.push(`Shipment IDs (${advancedFilters.shipmentIds.length})`);
+                if (advancedFilters.companyId) activeFilters.push('Company');
+                if (advancedFilters.customerId) activeFilters.push('Customer');
+                if (advancedFilters.shipmentType) activeFilters.push('Shipment Type');
+                break;
+
+            case 'timing':
+                if (advancedFilters.createdAt && advancedFilters.createdAt[0]) {
+                    const hasRange = advancedFilters.createdAt[1] &&
+                        !advancedFilters.createdAt[0].isSame(advancedFilters.createdAt[1], 'day');
+                    activeFilters.push(hasRange ? 'Created Date Range' : 'Created Date');
+                }
+                if (advancedFilters.shipmentDate && advancedFilters.shipmentDate[0]) {
+                    const hasRange = advancedFilters.shipmentDate[1] &&
+                        !advancedFilters.shipmentDate[0].isSame(advancedFilters.shipmentDate[1], 'day');
+                    activeFilters.push(hasRange ? 'Shipment Date Range' : 'Shipment Date');
+                }
+                if (advancedFilters.eta1 && advancedFilters.eta1[0]) {
+                    const hasRange = advancedFilters.eta1[1] &&
+                        !advancedFilters.eta1[0].isSame(advancedFilters.eta1[1], 'day');
+                    activeFilters.push(hasRange ? 'ETA Date Range' : 'ETA Date');
+                }
+                break;
+
+            case 'tracking':
+                if (advancedFilters.currentStatus && advancedFilters.currentStatus.length > 0)
+                    activeFilters.push(`Status (${advancedFilters.currentStatus.length})`);
+                if (advancedFilters.carrier) activeFilters.push('Carrier');
+                if (advancedFilters.trackingNumbers && advancedFilters.trackingNumbers.length > 0)
+                    activeFilters.push(`Tracking (${advancedFilters.trackingNumbers.length})`);
+                if (advancedFilters.referenceNumbers && advancedFilters.referenceNumbers.length > 0)
+                    activeFilters.push(`References (${advancedFilters.referenceNumbers.length})`);
+                break;
+
+            case 'originDestination':
+                const originFilters = [
+                    advancedFilters.originCustomerName && 'Origin Customer',
+                    advancedFilters.originCity && 'Origin City',
+                    advancedFilters.originProvState && 'Origin Province/State',
+                    advancedFilters.originCountry && 'Origin Country',
+                    advancedFilters.originPostalCode && 'Origin Postal'
+                ].filter(Boolean);
+
+                const destFilters = [
+                    advancedFilters.destCustomerName && 'Dest Customer',
+                    advancedFilters.destCity && 'Dest City',
+                    advancedFilters.destProvState && 'Dest Province/State',
+                    advancedFilters.destCountry && 'Dest Country',
+                    advancedFilters.destPostalCode && 'Dest Postal'
+                ].filter(Boolean);
+
+                activeFilters.push(...originFilters, ...destFilters);
+                break;
+
+            case 'billing':
+                if (advancedFilters.invoiceStatus) activeFilters.push('Invoice Status');
+                if (advancedFilters.ediNumbers && advancedFilters.ediNumbers.length > 0)
+                    activeFilters.push(`EDI (${advancedFilters.ediNumbers.length})`);
+                if (advancedFilters.invoiceNumbers && advancedFilters.invoiceNumbers.length > 0)
+                    activeFilters.push(`Invoice (${advancedFilters.invoiceNumbers.length})`);
+                if (advancedFilters.billType) activeFilters.push('Bill Type');
+                break;
+        }
+
+        return activeFilters;
+    }, [advancedFilters]);
 
     // Invoice status state
     const [invoiceStatuses, setInvoiceStatuses] = useState([]);
@@ -1088,6 +1218,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Shipment status state for advanced filters
     const [shipmentStatuses, setShipmentStatuses] = useState([]);
+
+    // Address book data for Origin & Destination filters
+    const [addressBookData, setAddressBookData] = useState([]);
+    const [loadingAddresses, setLoadingAddresses] = useState(false);
 
     // Companies data for dropdown - using existing state
 
@@ -3425,6 +3559,298 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
     }, []);
 
+    // Load address book data for Origin & Destination filters with hierarchical filtering
+    const loadAddressBookData = useCallback(async (filterCompanyId = null, filterCustomerId = null) => {
+        setLoadingAddresses(true);
+        try {
+            const addressBookRef = collection(db, 'addressBook');
+            let q;
+
+            console.log('🏠 Loading address book data with filters:', {
+                filterCompanyId,
+                filterCustomerId,
+                adminViewMode,
+                adminCompanyIds
+            });
+
+            // ✅ FIXED: Simplified base filters to avoid conflicts
+            const baseFilters = [
+                where('status', '!=', 'deleted')
+            ];
+
+            // ✅ Note: Using composite index for optimal database-level filtering
+
+            // ✅ DYNAMIC COMPANY/CUSTOMER FILTERING AT DATABASE LEVEL
+            if (filterCustomerId) {
+                // Customer filter takes priority - load addresses for specific customer
+                console.log('🏠 Filtering by customer at database level:', filterCustomerId);
+
+                // ✅ DATABASE-LEVEL FILTERING: Use addressClassID for customer filtering
+                q = query(
+                    addressBookRef,
+                    where('addressClassID', '==', filterCustomerId),
+                    ...baseFilters
+                );
+
+                console.log('🏠 Database query filtering by addressClassID:', filterCustomerId);
+                console.log('🔍 Executing query with baseFilters:', baseFilters);
+            } else if (filterCompanyId) {
+                // Company filter - load addresses for specific company
+                console.log('🏠 Filtering by company at database level:', filterCompanyId);
+
+                // ✅ DATABASE-LEVEL FILTERING: Use companyID for company filtering
+                q = query(
+                    addressBookRef,
+                    where('companyID', '==', filterCompanyId),
+                    ...baseFilters
+                );
+
+                console.log('🏠 Database query filtering by companyID:', filterCompanyId);
+            } else if (adminViewMode === 'all') {
+                // Super admin: load all addresses when no specific filters
+                console.log('🏠 Super admin - loading all addresses');
+                q = query(addressBookRef, ...baseFilters);
+            } else if (adminViewMode && adminCompanyIds && Array.isArray(adminCompanyIds)) {
+                // Admin: load addresses from connected companies
+                if (adminCompanyIds.length <= 10) {
+                    console.log('🏠 Admin - loading addresses from connected companies:', adminCompanyIds);
+                    q = query(
+                        addressBookRef,
+                        where('companyID', 'in', adminCompanyIds),
+                        ...baseFilters
+                    );
+                } else {
+                    // Load all and filter client-side for >10 companies
+                    console.log('🏠 Admin - loading all addresses (>10 companies, will filter client-side)');
+                    q = query(addressBookRef, ...baseFilters);
+                }
+            } else if (companyIdForAddress) {
+                // Regular user: load only their company's addresses
+                console.log('🏠 Regular user - loading company addresses:', companyIdForAddress);
+                q = query(
+                    addressBookRef,
+                    where('companyID', '==', companyIdForAddress),
+                    ...baseFilters
+                );
+            } else {
+                // No company context - load all addresses for super admins
+                console.log('🏠 No context - loading all addresses');
+                q = query(addressBookRef, ...baseFilters);
+            }
+
+            console.log('🔍 About to execute Firestore query...');
+            const snapshot = await getDocs(q);
+            console.log(`📊 Raw Firestore query returned ${snapshot.docs.length} addresses`);
+
+            let addresses = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Debug: Show first few raw addresses from database
+            console.log('🔍 First 3 raw addresses from database:', addresses.slice(0, 3));
+
+            // ✅ CLIENT-SIDE FILTERING FOR ADMIN WITH >10 COMPANIES
+            if (!filterCustomerId && !filterCompanyId && adminViewMode && adminCompanyIds && Array.isArray(adminCompanyIds) && adminCompanyIds.length > 10) {
+                addresses = addresses.filter(addr => adminCompanyIds.includes(addr.companyID));
+                console.log(`🏠 Client-side filtered from ${snapshot.docs.length} to ${addresses.length} addresses for ${adminCompanyIds.length} companies`);
+            }
+
+            // ✅ ENHANCED: Apply client-side filtering for customer/company selections
+            if (filterCustomerId) {
+                // Filter addresses that match the customer in either field
+                const originalCount = addresses.length;
+
+                // ✅ DEBUG: Show sample addresses before filtering
+                console.log(`🔍 DEBUG: Customer filter "${filterCustomerId}" - Sample addresses:`);
+                addresses.slice(0, 5).forEach((addr, index) => {
+                    console.log(`  Address ${index + 1}:`, {
+                        nickname: addr.nickname,
+                        addressClassID: addr.addressClassID,
+                        customerID: addr.customerID,
+                        companyID: addr.companyID,
+                        companyName: addr.companyName,
+                        addressClass: addr.addressClass,
+                        addressType: addr.addressType
+                    });
+                });
+
+                addresses = addresses.filter(addr => {
+                    const matches = addr.addressClassID === filterCustomerId ||
+                        addr.customerID === filterCustomerId;
+
+                    // Debug each address that should match
+                    if (addr.addressClassID === filterCustomerId || addr.customerID === filterCustomerId) {
+                        console.log(`✅ FOUND MATCH for "${filterCustomerId}": ${addr.nickname}`, {
+                            addressClassID: addr.addressClassID,
+                            customerID: addr.customerID
+                        });
+                    }
+
+                    return matches;
+                });
+                console.log(`🏠 Customer filter: ${originalCount} → ${addresses.length} addresses (${filterCustomerId})`);
+
+                // ✅ ENHANCED: If no customer addresses found but company is also selected, try company filter
+                if (addresses.length === 0 && filterCompanyId) {
+                    console.log(`🔄 No customer addresses found, falling back to company filter: ${filterCompanyId}`);
+                    addresses = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    })).filter(addr =>
+                        addr.companyID === filterCompanyId ||
+                        addr.ownerCompanyID === filterCompanyId ||
+                        addr.addressClassID === filterCompanyId
+                    );
+                    console.log(`🏠 Company fallback filter: ${originalCount} → ${addresses.length} addresses (${filterCompanyId})`);
+                }
+            } else if (filterCompanyId) {
+                // Filter addresses that match the company in multiple fields
+                const originalCount = addresses.length;
+
+                // ✅ ENHANCED DEBUG: Show what we're filtering for and what we found
+                console.log(`🔍 DETAILED COMPANY FILTER DEBUG for "${filterCompanyId}":`);
+                console.log('🔍 Original addresses count:', originalCount);
+
+                if (originalCount > 0) {
+                    console.log('🔍 Sample address data:', addresses.slice(0, 3).map(addr => ({
+                        nickname: addr.nickname,
+                        companyID: addr.companyID,
+                        ownerCompanyID: addr.ownerCompanyID,
+                        addressClassID: addr.addressClassID,
+                        customerID: addr.customerID
+                    })));
+                }
+
+                addresses = addresses.filter(addr => {
+                    const matches = addr.companyID === filterCompanyId ||
+                        addr.ownerCompanyID === filterCompanyId ||
+                        addr.addressClassID === filterCompanyId;
+
+                    // Debug each address that doesn't match
+                    if (!matches && addr.nickname) {
+                        console.log(`❌ "${addr.nickname}" doesn't match "${filterCompanyId}":`, {
+                            companyID: addr.companyID,
+                            ownerCompanyID: addr.ownerCompanyID,
+                            addressClassID: addr.addressClassID
+                        });
+                    }
+
+                    return matches;
+                });
+
+                console.log(`🏠 Company filter: ${originalCount} → ${addresses.length} addresses (${filterCompanyId})`);
+
+                // ✅ DEBUG: Show what company IDs are found in the addresses BEFORE filtering
+                if (addresses.length === 0 && originalCount > 0) {
+                    console.log(`🔍 DEBUG: No addresses found after filtering for company "${filterCompanyId}"`);
+                    console.log('🔍 DEBUG: Loading fresh sample to see available company IDs...');
+
+                    // Get sample of original addresses to see what company IDs exist
+                    const sampleQuery = query(addressBookRef, ...baseFilters, limit(10));
+                    getDocs(sampleQuery).then(sampleSnapshot => {
+                        const sampleAddresses = sampleSnapshot.docs.map(doc => doc.data());
+                        console.log('🔍 DEBUG: Complete address field analysis:',
+                            sampleAddresses.map(addr => ({
+                                nickname: addr.nickname,
+                                companyID: addr.companyID,
+                                ownerCompanyID: addr.ownerCompanyID,
+                                addressClassID: addr.addressClassID,
+                                customerID: addr.customerID,
+                                companyName: addr.companyName,
+                                ownerCompanyName: addr.ownerCompanyName,
+                                // Show ALL company-related fields to find the right one
+                                allCompanyFields: Object.keys(addr).filter(key =>
+                                    key.toLowerCase().includes('company') ||
+                                    key.toLowerCase().includes('owner')
+                                ).reduce((obj, key) => ({ ...obj, [key]: addr[key] }), {})
+                            }))
+                        );
+
+                        // Look specifically for any addresses that might be Tyger Shark
+                        const tygerSharkAddresses = sampleAddresses.filter(addr =>
+                            JSON.stringify(addr).toLowerCase().includes('tyger') ||
+                            JSON.stringify(addr).toLowerCase().includes('shark') ||
+                            JSON.stringify(addr).toLowerCase().includes('ts') ||
+                            JSON.stringify(addr).toLowerCase().includes('fantom')
+                        );
+
+                        if (tygerSharkAddresses.length > 0) {
+                            console.log('🎯 DEBUG: Found potential Tyger Shark addresses:', tygerSharkAddresses);
+                        } else {
+                            console.log('❌ DEBUG: No Tyger Shark related addresses found in sample');
+                        }
+                    });
+                }
+            }
+
+            setAddressBookData(addresses);
+            console.log(`📍 Loaded ${addresses.length} addresses for origin/destination filters`);
+
+            // ✅ DEBUG: Show sample addresses for troubleshooting
+            if (addresses.length > 0) {
+                console.log('🏠 Sample addresses loaded:', addresses.slice(0, 3).map(addr => ({
+                    nickname: addr.nickname,
+                    companyID: addr.companyID,
+                    addressClassID: addr.addressClassID,
+                    addressType: addr.addressType,
+                    city: addr.city
+                })));
+            } else {
+                console.log('❌ No addresses loaded - check filters and data');
+            }
+        } catch (error) {
+            console.error('Error loading address book data:', error);
+            setAddressBookData([]);
+        } finally {
+            setLoadingAddresses(false);
+        }
+    }, [companyIdForAddress, adminViewMode, adminCompanyIds]);
+
+    // Reload addresses when company or customer filter changes
+    useEffect(() => {
+        console.log('🔄 Address book reload triggered by filter changes:', {
+            companyId: advancedFilters.companyId,
+            customerId: advancedFilters.customerId
+        });
+
+        // ✅ ALWAYS reload addresses when filters change (even if both are set)
+        loadAddressBookData(advancedFilters.companyId, advancedFilters.customerId);
+    }, [loadAddressBookData, advancedFilters.companyId, advancedFilters.customerId]);
+
+    // ✅ ENHANCED: Get destination addresses with proper type filtering  
+    const getDestinationAddresses = useMemo(() => {
+        // Destination addresses: destination, delivery, both, or null/empty (assume both)
+        const destinationAddresses = addressBookData.filter(addr => {
+            const addressType = addr.addressType?.toLowerCase();
+            return !addressType || addressType === 'destination' || addressType === 'delivery' || addressType === 'both';
+        });
+
+        console.log(`🎯 Destination addresses available: ${destinationAddresses.length} out of ${addressBookData.length} total`);
+        console.log(`🎯 Filtering based on selections:`, {
+            companyId: advancedFilters.companyId,
+            customerId: advancedFilters.customerId
+        });
+
+        if (destinationAddresses.length === 0 && addressBookData.length > 0) {
+            console.log('🎯 Sample address types for troubleshooting:', addressBookData.slice(0, 3).map(addr => ({
+                nickname: addr.nickname,
+                addressType: addr.addressType
+            })));
+        }
+
+        // ✅ SIMPLIFIED: Since we're now filtering at database level, 
+        // the addressBookData already contains the right addresses
+        console.log(`🏠 Using database-filtered addresses: ${destinationAddresses.length} total`);
+        return destinationAddresses;
+    }, [addressBookData, advancedFilters.companyId, advancedFilters.customerId]);
+
+    // ✅ SIMPLIFIED: All addresses are 'destination' type - just places that can be used for origin too
+    const getOriginAddresses = useMemo(() => {
+        console.log(`🚀 Origin addresses (all destination addresses): ${addressBookData.length} total`);
+        return addressBookData;  // ✅ All addresses can be used for origin
+    }, [addressBookData]);
+
     // Build company data map for rows: admin → multi-company map, user → current company context
     const companyDataForRows = useMemo(() => {
         if (adminViewMode) return companiesData || {};
@@ -3505,36 +3931,66 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             const shipmentsRef = collection(db, 'shipments');
             let q;
 
-            // Build query based on admin view mode
-            if (isAdminAllView) {
-                // Admin viewing all companies
+            // 🔥 CRITICAL FIX: Check if a specific company is selected in advanced filters
+            const selectedCompanyFromFilter = advancedFiltersParam?.companyId;
+            let targetCompanyIds;
+
+            if (selectedCompanyFromFilter) {
+                // Advanced filter company selection overrides everything
+                console.log(`🎯 ADVANCED FILTER: Loading shipments for specific company: ${selectedCompanyFromFilter}`);
+                targetCompanyIds = [selectedCompanyFromFilter];
+            } else if (isAdminAllView) {
+                // Admin viewing all companies (no specific filter)
                 if (adminCompanyIds === 'all') {
-                    // Super admin - load all shipments
-                    console.log('📊 Loading ALL shipments (super admin view)');
-                    q = query(shipmentsRef, orderBy('createdAt', 'desc'));
-                } else if (Array.isArray(adminCompanyIds) && adminCompanyIds.length > 0) {
-                    // Admin - load shipments from connected companies
-                    console.log(`📊 Loading shipments from ${adminCompanyIds.length} connected companies`);
-                    q = query(
-                        shipmentsRef,
-                        where('companyID', 'in', adminCompanyIds),
-                        orderBy('createdAt', 'desc')
-                    );
+                    console.log('📊 Loading ALL shipments (super admin view) with limit');
+                    targetCompanyIds = 'all';
                 } else {
-                    // Fallback - no companies to load from
-                    console.warn('No company IDs available for admin view');
-                    setShipments([]);
-                    setAllShipments([]);
-                    setTotalCount(0);
-                    return;
+                    console.log(`📊 Loading shipments from ${adminCompanyIds.length} connected companies`);
+                    targetCompanyIds = adminCompanyIds;
                 }
             } else {
-                // Single company view
-                q = query(
-                    shipmentsRef,
-                    where('companyID', '==', companyIdForAddress),
-                    orderBy('createdAt', 'desc')
-                );
+                // Single company view (frontend user)
+                console.log(`📊 Loading shipments for single company: ${companyIdForAddress}`);
+                targetCompanyIds = [companyIdForAddress];
+            }
+
+            // Build query based on target companies
+            if (targetCompanyIds === 'all') {
+                // Super admin - load all shipments (with limit for performance)
+                q = query(shipmentsRef, orderBy('createdAt', 'desc'), limit(1000));
+            } else if (Array.isArray(targetCompanyIds) && targetCompanyIds.length > 0) {
+                // Load shipments from specific companies
+                if (targetCompanyIds.length === 1) {
+                    // Single company query (most efficient)
+                    console.log(`📊 Loading shipments for single company: ${targetCompanyIds[0]}`);
+                    q = query(
+                        shipmentsRef,
+                        where('companyID', '==', targetCompanyIds[0]),
+                        orderBy('createdAt', 'desc'),
+                        limit(1000)
+                    );
+                } else if (targetCompanyIds.length <= 10) {
+                    // Multiple companies within Firestore 'in' limit
+                    console.log(`📊 Loading shipments from ${targetCompanyIds.length} companies (in query)`);
+                    q = query(
+                        shipmentsRef,
+                        where('companyID', 'in', targetCompanyIds),
+                        orderBy('createdAt', 'desc'),
+                        limit(1000)
+                    );
+                } else {
+                    // For >10 companies, load all shipments and filter client-side
+                    console.log(`📊 Loading ALL shipments and filtering client-side (${targetCompanyIds.length} companies > 10 limit)`);
+                    q = query(shipmentsRef, orderBy('createdAt', 'desc'), limit(1000));
+                }
+            } else {
+                // Fallback - no companies to load from
+                console.warn('No company IDs available for shipment loading');
+                setShipments([]);
+                setAllShipments([]);
+                setFilteredShipments([]);
+                setTotalCount(0);
+                return;
             }
 
             const querySnapshot = await getDocs(q);
@@ -3545,13 +4001,58 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             console.log(`📊 Loaded ${shipmentsData.length} total shipments from database (sorted by createdAt)`);
 
+            // 🔍 DEBUG: Check if our target shipment ICAL-227B8E is in the initial results
+            const targetShipment = shipmentsData.find(s => s.shipmentID === 'ICAL-227B8E');
+            if (targetShipment) {
+                console.log('🎯 DEBUG: Found target shipment ICAL-227B8E in initial results:', {
+                    shipmentID: targetShipment.shipmentID,
+                    companyID: targetShipment.companyID,
+                    status: targetShipment.status,
+                    createdAt: targetShipment.createdAt
+                });
+            } else {
+                console.log('❌ DEBUG: Target shipment ICAL-227B8E NOT found in initial database results');
+                console.log('🔍 DEBUG: Sample shipment IDs from database:', shipmentsData.slice(0, 5).map(s => s.shipmentID || s.id));
+            }
+
+            // Apply client-side company filtering if we loaded all shipments due to >10 companies
+            if (Array.isArray(targetCompanyIds) && targetCompanyIds.length > 10) {
+                const originalCount = shipmentsData.length;
+                shipmentsData = shipmentsData.filter(shipment =>
+                    targetCompanyIds.includes(shipment.companyID)
+                );
+                console.log(`📊 Client-side filtered from ${originalCount} to ${shipmentsData.length} shipments for ${targetCompanyIds.length} companies`);
+            }
+
             // CRITICAL: Exclude archived shipments from ALL views
+            const beforeArchiveFilter = shipmentsData.length;
             shipmentsData = shipmentsData.filter(s => {
                 const status = s.status?.toLowerCase()?.trim();
-                return status !== 'archived';
+                const isArchived = status === 'archived';
+
+                // 🔍 DEBUG: Check if target shipment is being filtered out here
+                if (s.shipmentID === 'ICAL-227B8E') {
+                    console.log('🎯 DEBUG: Target shipment archive filter check:', {
+                        shipmentID: s.shipmentID,
+                        status: s.status,
+                        normalizedStatus: status,
+                        isArchived: isArchived,
+                        willBeFiltered: isArchived
+                    });
+                }
+
+                return !isArchived;
             });
 
-            console.log(`📊 After excluding archived: ${shipmentsData.length} shipments remaining`);
+            console.log(`📊 After excluding archived: ${shipmentsData.length} shipments remaining (filtered out ${beforeArchiveFilter - shipmentsData.length} archived)`);
+
+            // 🔍 DEBUG: Check if target is still present after archive filtering
+            const targetAfterArchive = shipmentsData.find(s => s.shipmentID === 'ICAL-227B8E');
+            if (targetAfterArchive) {
+                console.log('✅ DEBUG: Target shipment ICAL-227B8E survived archive filtering');
+            } else {
+                console.log('❌ DEBUG: Target shipment ICAL-227B8E was filtered out during archive filtering');
+            }
 
             // Store all shipments for stats
             setAllShipments(shipmentsData);
@@ -3561,10 +4062,25 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             if (activeTab === 'all') {
                 // "All" tab excludes drafts and pending review
+                const beforeTabFilter = shipmentsData.length;
                 shipmentsData = shipmentsData.filter(s => {
                     const status = s.status?.toLowerCase()?.trim();
-                    return status !== 'draft';
+                    const isDraft = status === 'draft';
+
+                    // 🔍 DEBUG: Check if target shipment passes "all" tab filter
+                    if (s.shipmentID === 'ICAL-227B8E') {
+                        console.log('🎯 DEBUG: Target shipment "all" tab filter check:', {
+                            shipmentID: s.shipmentID,
+                            status: s.status,
+                            normalizedStatus: status,
+                            isDraft: isDraft,
+                            willPassFilter: !isDraft
+                        });
+                    }
+
+                    return !isDraft;
                 });
+                console.log(`📊 "All" tab filter: ${beforeTabFilter} → ${shipmentsData.length} shipments`);
             } else if (activeTab === 'draft') {
                 // Draft tab includes only drafts WITHOUT pending_review flag
                 shipmentsData = shipmentsData.filter(s => {
@@ -3600,11 +4116,25 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 });
             } else if (activeTab === 'Delivered') {
                 // Delivered statuses
+                const beforeDeliveredFilter = shipmentsData.length;
                 shipmentsData = shipmentsData.filter(s => {
                     const status = s.status?.toLowerCase()?.trim();
-                    return status === 'delivered' ||
-                        status === 'completed';
+                    const isDelivered = status === 'delivered' || status === 'completed';
+
+                    // 🔍 DEBUG: Check if target shipment passes "Delivered" tab filter
+                    if (s.shipmentID === 'ICAL-227B8E') {
+                        console.log('🎯 DEBUG: Target shipment "Delivered" tab filter check:', {
+                            shipmentID: s.shipmentID,
+                            status: s.status,
+                            normalizedStatus: status,
+                            isDelivered: isDelivered,
+                            willPassFilter: isDelivered
+                        });
+                    }
+
+                    return isDelivered;
                 });
+                console.log(`📊 "Delivered" tab filter: ${beforeDeliveredFilter} → ${shipmentsData.length} shipments`);
             } else if (activeTab === 'Cancelled') {
                 // Cancelled statuses
                 shipmentsData = shipmentsData.filter(s => {
@@ -3745,6 +4275,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     const searchResults = performUnifiedSearch(allUnfilteredShipments, currentSearchTerm, customers, carrierData);
                     console.log(`🔍 Search found ${searchResults.length} results across ${allUnfilteredShipments.length} shipments`);
 
+                    // 🔍 DEBUG: Check if target shipment is in search results
+                    const targetInSearch = searchResults.find(s => s.shipmentID === 'ICAL-227B8E');
+                    if (targetInSearch) {
+                        console.log('✅ DEBUG: Target shipment ICAL-227B8E found in search results');
+                    } else {
+                        console.log('❌ DEBUG: Target shipment ICAL-227B8E NOT found in search results');
+                        console.log('🔍 DEBUG: Search term used:', currentSearchTerm);
+                    }
+
                     // Now apply tab filter to search results
                     if (activeTab === 'all') {
                         // 🐛 BUG FIX: Include drafts in "All" tab when searching by shipment ID
@@ -3802,19 +4341,44 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             }
 
             // 1.5. APPLY ADVANCED FILTERS (comprehensive filtering system)
-            if (advancedFiltersParam && Object.values(advancedFiltersParam).some(val =>
+            // ✅ FIXED: companyId is now properly handled at database level above
+            // Exclude companyId from client-side filter detection since it's handled in the database query
+            const advancedFiltersWithoutCompany = { ...advancedFiltersParam };
+            delete advancedFiltersWithoutCompany.companyId;
+
+            if (advancedFiltersParam && Object.values(advancedFiltersWithoutCompany).some(val =>
                 val !== '' && val !== null && (!Array.isArray(val) || val.some(v => v !== null))
             )) {
-                console.log('🎯 Applying advanced filters:', advancedFiltersParam);
+                console.log('🎯 Applying advanced filters (excluding companyId):', advancedFiltersWithoutCompany);
+                console.log('🎯 Full advanced filters object:', advancedFiltersParam);
+
+                const beforeAdvancedFilter = filteredData.length;
+                // 🔍 DEBUG: Check if target is in the data before advanced filtering
+                const targetBeforeAdvanced = filteredData.find(s => s.shipmentID === 'ICAL-227B8E');
+                if (targetBeforeAdvanced) {
+                    console.log('✅ DEBUG: Target shipment ICAL-227B8E found BEFORE advanced filtering');
+                } else {
+                    console.log('❌ DEBUG: Target shipment ICAL-227B8E NOT found before advanced filtering');
+                }
 
                 filteredData = filteredData.filter(shipment => {
-                    // ========== BASIC INFORMATION FILTERS ==========
-                    if (advancedFiltersParam.companyId && !shipment.companyID?.toLowerCase().includes(advancedFiltersParam.companyId.toLowerCase())) {
-                        return false;
+                    // 🔍 DEBUG: Track filtering for target shipment
+                    if (shipment.shipmentID === 'ICAL-227B8E') {
+                        console.log('🎯 DEBUG: Processing target shipment through advanced filters:', {
+                            shipmentID: shipment.shipmentID,
+                            advancedFilters: advancedFiltersParam
+                        });
                     }
+                    // ========== BASIC INFORMATION FILTERS ==========
+                    // ✅ FIXED: Company filtering is now handled at the database query level above
+                    // When a company is selected in advanced filters, we query only that company's shipments
+                    // No client-side company filtering needed here
 
-                    if (advancedFiltersParam.customerId && shipment.selectedCustomerId !== advancedFiltersParam.customerId) {
-                        return false;
+                    if (advancedFiltersParam.customerId) {
+                        const shipmentCustomerId = shipment.shipTo?.customerID || shipment.selectedCustomerId || shipment.customerId;
+                        if (shipmentCustomerId !== advancedFiltersParam.customerId) {
+                            return false;
+                        }
                     }
 
                     if (advancedFiltersParam.shipmentType && shipment.shipmentType !== advancedFiltersParam.shipmentType) {
@@ -3845,53 +4409,75 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     // ========== TIMING INFORMATION FILTERS ==========
 
                     // Created At date range
-                    if (advancedFiltersParam.createdAt && advancedFiltersParam.createdAt[0] && advancedFiltersParam.createdAt[1]) {
+                    if (advancedFiltersParam.createdAt && advancedFiltersParam.createdAt[0]) {
                         const shipmentCreatedDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
                         const startDate = advancedFiltersParam.createdAt[0].startOf('day').toDate();
-                        const endDate = advancedFiltersParam.createdAt[1].endOf('day').toDate();
+                        const endDate = advancedFiltersParam.createdAt[1] ?
+                            advancedFiltersParam.createdAt[1].endOf('day').toDate() :
+                            advancedFiltersParam.createdAt[0].endOf('day').toDate(); // Use same date if no end date
                         if (shipmentCreatedDate < startDate || shipmentCreatedDate > endDate) {
                             return false;
                         }
                     }
 
                     // Shipment Date range
-                    if (advancedFiltersParam.shipmentDate && advancedFiltersParam.shipmentDate[0] && advancedFiltersParam.shipmentDate[1]) {
+                    if (advancedFiltersParam.shipmentDate && advancedFiltersParam.shipmentDate[0]) {
                         const shipmentDate = shipment.shipmentDate || shipment.shipmentInfo?.shipmentDate;
                         if (shipmentDate) {
                             const shipDate = new Date(shipmentDate);
                             const startDate = advancedFiltersParam.shipmentDate[0].startOf('day').toDate();
-                            const endDate = advancedFiltersParam.shipmentDate[1].endOf('day').toDate();
+                            const endDate = advancedFiltersParam.shipmentDate[1] ?
+                                advancedFiltersParam.shipmentDate[1].endOf('day').toDate() :
+                                advancedFiltersParam.shipmentDate[0].endOf('day').toDate(); // Use same date if no end date
                             if (shipDate < startDate || shipDate > endDate) {
                                 return false;
                             }
                         }
                     }
 
-                    // ETA1 date range
-                    if (advancedFiltersParam.eta1 && advancedFiltersParam.eta1[0] && advancedFiltersParam.eta1[1]) {
+                    // ETA date range (searches both eta1 and eta2)
+                    if (advancedFiltersParam.eta1 && advancedFiltersParam.eta1[0]) {
+                        const startDate = advancedFiltersParam.eta1[0].startOf('day').toDate();
+                        const endDate = advancedFiltersParam.eta1[1] ?
+                            advancedFiltersParam.eta1[1].endOf('day').toDate() :
+                            advancedFiltersParam.eta1[0].endOf('day').toDate(); // Use same date if no end date
+
+                        // Check both eta1 and eta2 dates
                         const eta1Date = shipment.eta1;
+                        const eta2Date = shipment.eta2;
+                        const estimatedDeliveryDate = shipment.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                            shipment.selectedRate?.transit?.estimatedDelivery ||
+                            shipment.selectedRate?.estimatedDeliveryDate;
+
+                        let hasMatchingETA = false;
+
                         if (eta1Date) {
                             const etaDate = new Date(eta1Date);
-                            const startDate = advancedFiltersParam.eta1[0].startOf('day').toDate();
-                            const endDate = advancedFiltersParam.eta1[1].endOf('day').toDate();
-                            if (etaDate < startDate || etaDate > endDate) {
-                                return false;
+                            if (etaDate >= startDate && etaDate <= endDate) {
+                                hasMatchingETA = true;
                             }
+                        }
+
+                        if (!hasMatchingETA && eta2Date) {
+                            const etaDate = new Date(eta2Date);
+                            if (etaDate >= startDate && etaDate <= endDate) {
+                                hasMatchingETA = true;
+                            }
+                        }
+
+                        if (!hasMatchingETA && estimatedDeliveryDate) {
+                            const etaDate = new Date(estimatedDeliveryDate);
+                            if (etaDate >= startDate && etaDate <= endDate) {
+                                hasMatchingETA = true;
+                            }
+                        }
+
+                        if (!hasMatchingETA) {
+                            return false;
                         }
                     }
 
-                    // ETA2 date range
-                    if (advancedFiltersParam.eta2 && advancedFiltersParam.eta2[0] && advancedFiltersParam.eta2[1]) {
-                        const eta2Date = shipment.eta2;
-                        if (eta2Date) {
-                            const etaDate = new Date(eta2Date);
-                            const startDate = advancedFiltersParam.eta2[0].startOf('day').toDate();
-                            const endDate = advancedFiltersParam.eta2[1].endOf('day').toDate();
-                            if (etaDate < startDate || etaDate > endDate) {
-                                return false;
-                            }
-                        }
-                    }
+
 
                     // Last Updated date range
                     if (advancedFiltersParam.lastUpdated && advancedFiltersParam.lastUpdated[0] && advancedFiltersParam.lastUpdated[1]) {
@@ -3911,8 +4497,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         if (!statusMatch) return false;
                     }
 
-                    if (advancedFiltersParam.carrier && shipment.selectedCarrier !== advancedFiltersParam.carrier) {
-                        return false;
+                    if (advancedFiltersParam.carrier) {
+                        const shipmentCarrier = shipment.selectedCarrier || shipment.carrier || shipment.selectedRate?.carrier?.id || shipment.carrierID;
+                        if (shipmentCarrier !== advancedFiltersParam.carrier) {
+                            return false;
+                        }
                     }
 
                     // Tracking Numbers array filter
@@ -4064,10 +4653,23 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         return false;
                     }
 
+                    // 🔍 DEBUG: Target shipment passed all advanced filters
+                    if (shipment.shipmentID === 'ICAL-227B8E') {
+                        console.log('✅ DEBUG: Target shipment ICAL-227B8E PASSED all advanced filters');
+                    }
+
                     return true;
                 });
 
                 console.log(`🎯 After comprehensive advanced filters: ${filteredData.length} shipments remaining`);
+
+                // 🔍 DEBUG: Check if target is still present after advanced filtering
+                const targetAfterAdvanced = filteredData.find(s => s.shipmentID === 'ICAL-227B8E');
+                if (targetAfterAdvanced) {
+                    console.log('✅ DEBUG: Target shipment ICAL-227B8E survived advanced filtering');
+                } else {
+                    console.log('❌ DEBUG: Target shipment ICAL-227B8E was filtered out by advanced filters');
+                }
             }
 
             // 2. APPLY LEGACY SEARCH FIELDS (for backward compatibility and specific filters)
@@ -4318,7 +4920,20 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 ? filteredData // Show all if rowsPerPage is -1
                 : filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
+            console.log(`📊 FINAL RESULTS SUMMARY:`, {
+                totalFromDatabase: querySnapshot.docs.length,
+                afterAllFiltering: filteredData.length,
+                page: page,
+                rowsPerPage: rowsPerPage,
+                paginatedShowing: paginatedData.length,
+                totalCount: filteredData.length,
+                adminViewMode: adminViewMode,
+                adminCompanyIds: adminCompanyIds,
+                activeTab: activeTab
+            });
+
             setShipments(paginatedData);
+            setFilteredShipments(filteredData); // Store ALL filtered results for export
 
             // Fetch carrier data for visible shipments
             const visibleShipmentIds = paginatedData.map(s => s.id);
@@ -4328,11 +4943,52 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.error('Error loading shipments:', error);
             setShipments([]);
             setAllShipments([]);
+            setFilteredShipments([]); // Reset filtered data on error
             setTotalCount(0);
         } finally {
             setLoading(false);
         }
     }, [companyIdForAddress, selectedTab, fetchCarrierData, adminViewMode, adminCompanyIds, customers, carrierData, allShipments.length, isSemanticMode, semanticSearchResults, searchFields, selectedCustomer, filters, dateRange, page, rowsPerPage, applyCarrierFilter, applyStatusFilter, performUnifiedSearch]); // Removed unifiedSearch from dependencies to prevent infinite loop
+
+    // Auto-apply filters function with debouncing
+    const autoApplyFilters = useCallback((filters = null, delay = 0) => {
+        if (!isAutoApply) return;
+
+        // Clear existing timeout
+        if (autoApplyTimeoutRef.current) {
+            clearTimeout(autoApplyTimeoutRef.current);
+        }
+
+        const applyFunction = () => {
+            setIsApplyingFilters(true);
+            const filtersToApply = filters || advancedFilters;
+            console.log('🤖 Auto-applying filters:', filtersToApply);
+            loadShipments(null, unifiedSearch, null, null, filtersToApply).finally(() => {
+                setIsApplyingFilters(false);
+            });
+        };
+
+        if (delay > 0) {
+            autoApplyTimeoutRef.current = setTimeout(applyFunction, delay);
+        } else {
+            applyFunction();
+        }
+    }, [isAutoApply, advancedFilters, unifiedSearch, loadShipments]);
+
+    // Immediate auto-apply for simple filters (no debouncing)
+    const autoApplyImmediate = useCallback((newFilters) => {
+        if (!isAutoApply) return;
+        setIsApplyingFilters(true);
+        console.log('⚡ Auto-applying filters immediately:', newFilters);
+        loadShipments(null, unifiedSearch, null, null, newFilters).finally(() => {
+            setIsApplyingFilters(false);
+        });
+    }, [isAutoApply, unifiedSearch, loadShipments]);
+
+    // Debounced auto-apply for complex filters (500ms delay)
+    const autoApplyDebounced = useCallback((newFilters) => {
+        autoApplyFilters(newFilters, 500);
+    }, [autoApplyFilters]);
 
     // Create a stable reload function that can be called when needed
     const reloadShipments = useCallback(() => {
@@ -4538,6 +5194,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     // Load shipment statuses for filtering
                     promises.push(loadShipmentStatuses());
 
+                    // Load address book data for Origin & Destination filters
+                    promises.push(loadAddressBookData());
+
                     await Promise.all(promises);
                 } catch (error) {
                     console.error('Error loading initial data:', error);
@@ -4553,8 +5212,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     useEffect(() => {
         if (companyIdForAddress && companyIdForAddress !== 'all') {
             if (adminViewMode) {
-                // Admin view: populate dropdown if company is available
-                if (companiesData.length > 0) {
+                // Admin view: populate dropdown if company is available (but NOT for super admins)
+                if (userRole !== 'superadmin' && companiesData.length > 0) {
                     const currentCompany = companiesData.find(company => company.companyID === companyIdForAddress);
                     if (currentCompany && !advancedFilters.companyId) {
                         console.log('🏢 Auto-populating admin company filter with current context:', currentCompany.companyName);
@@ -4563,6 +5222,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                             companyId: companyIdForAddress
                         }));
                     }
+                } else if (userRole === 'superadmin') {
+                    console.log('🔑 Super admin detected - NOT auto-populating company filter to show ALL companies');
                 }
             } else {
                 // Frontend user: always filter by company context (no dropdown shown)
@@ -4575,7 +5236,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 }
             }
         }
-    }, [companyIdForAddress, companiesData, advancedFilters.companyId, adminViewMode]);
+    }, [companyIdForAddress, companiesData, advancedFilters.companyId, adminViewMode, userRole]);
 
     // Add tracking drawer handler
     const handleOpenTrackingDrawer = (trackingNumber) => {
@@ -4649,8 +5310,40 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
                                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                                         {/* Always show filter and export buttons */}
-                                        <Button variant="outlined" startIcon={<FilterIcon />} onClick={() => setFiltersOpen(!filtersOpen)} size="small" sx={{ fontSize: '11px', textTransform: 'none' }}>
-                                            {filtersOpen ? 'Hide' : 'Show'}
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={<FilterIcon />}
+                                            onClick={() => setFiltersOpen(!filtersOpen)}
+                                            size="small"
+                                            sx={{
+                                                fontSize: '11px',
+                                                textTransform: 'none',
+                                                position: 'relative'
+                                            }}
+                                        >
+                                            {filtersOpen ? 'Hide' : 'Filter'}
+                                            {countActiveFilters() > 0 && (
+                                                <Box
+                                                    sx={{
+                                                        position: 'absolute',
+                                                        top: -8,
+                                                        right: -8,
+                                                        backgroundColor: '#ef4444',
+                                                        color: 'white',
+                                                        borderRadius: '50%',
+                                                        width: 20,
+                                                        height: 20,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        fontSize: '10px',
+                                                        fontWeight: 'bold',
+                                                        minWidth: 'unset'
+                                                    }}
+                                                >
+                                                    {countActiveFilters()}
+                                                </Box>
+                                            )}
                                         </Button>
                                         <IconButton variant="outlined" onClick={() => setIsExportDialogOpen(true)} size="small" sx={{ border: '1px solid rgba(0, 0, 0, 0.23)', borderRadius: '4px' }}>
                                             <ExportIcon sx={{ fontSize: '16px' }} />
@@ -4769,17 +5462,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         {/* Advanced Filters Section - Only show if unified search is not being used */}
                                         {(!unifiedSearch || !unifiedSearch.trim()) && (
                                             <>
-                                                <Typography
-                                                    variant="body2"
-                                                    sx={{
-                                                        color: '#64748b',
-                                                        mb: 2,
-                                                        fontSize: '12px',
-                                                        fontWeight: 500
-                                                    }}
-                                                >
-                                                    Comprehensive Advanced Filters - Search by any combination of fields
-                                                </Typography>
+
 
                                                 {/* Comprehensive Accordion-Based Filters */}
                                                 <Box sx={{ maxWidth: '100%', mb: 3 }}>
@@ -4800,21 +5483,42 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             }
                                                             sx={{ py: 1, cursor: 'default', '& .MuiAccordionSummary-content': { margin: 0 } }}
                                                         >
-                                                            <Typography
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setAccordionExpanded(prev => ({ ...prev, basicInfo: !prev.basicInfo }));
-                                                                }}
-                                                                sx={{
-                                                                    fontSize: '14px',
-                                                                    fontWeight: 600,
-                                                                    color: '#374151',
-                                                                    cursor: 'pointer',
-                                                                    userSelect: 'none'
-                                                                }}
-                                                            >
-                                                                Shipment Info
-                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                                                <Typography
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAccordionExpanded(prev => ({ ...prev, basicInfo: !prev.basicInfo }));
+                                                                    }}
+                                                                    sx={{
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 600,
+                                                                        color: '#374151',
+                                                                        cursor: 'pointer',
+                                                                        userSelect: 'none'
+                                                                    }}
+                                                                >
+                                                                    Shipment Info
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                                                    {getSectionActiveFilters('basicInfo').map((filter, index) => (
+                                                                        <Chip
+                                                                            key={index}
+                                                                            label={filter}
+                                                                            size="small"
+                                                                            color="primary"
+                                                                            variant="outlined"
+                                                                            sx={{
+                                                                                fontSize: '10px',
+                                                                                height: '20px',
+                                                                                borderRadius: '10px',
+                                                                                '& .MuiChip-label': {
+                                                                                    px: 1
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    ))}
+                                                                </Box>
+                                                            </Box>
                                                         </AccordionSummary>
                                                         <AccordionDetails sx={{ pt: 0 }}>
                                                             <Grid container spacing={2}>
@@ -4861,11 +5565,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                             }}
                                                                             value={companiesData.find(company => company.companyID === advancedFilters.companyId) || null}
                                                                             onChange={(event, newValue) => {
-                                                                                setAdvancedFilters(prev => ({
-                                                                                    ...prev,
+                                                                                const newFilters = {
+                                                                                    ...advancedFilters,
                                                                                     companyId: newValue?.companyID || '',
                                                                                     customerId: '' // Reset customer when company changes
-                                                                                }));
+                                                                                };
+                                                                                setAdvancedFilters(newFilters);
+
+                                                                                // Auto-apply immediately for company selection
+                                                                                autoApplyImmediate(newFilters);
                                                                             }}
                                                                             renderOption={(props, option) => (
                                                                                 <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1 }}>
@@ -4885,18 +5593,34 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                                     </Box>
                                                                                 </Box>
                                                                             )}
-                                                                            renderInput={(params) => (
-                                                                                <TextField
-                                                                                    {...params}
-                                                                                    label="Company"
-                                                                                    size="small"
-                                                                                    sx={{
-                                                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
-                                                                                    }}
-                                                                                />
-                                                                            )}
+                                                                            renderInput={(params) => {
+                                                                                const selectedCompany = companiesData.find(company => company.companyID === advancedFilters.companyId);
+                                                                                return (
+                                                                                    <TextField
+                                                                                        {...params}
+                                                                                        label="Company"
+                                                                                        size="small"
+                                                                                        InputProps={{
+                                                                                            ...params.InputProps,
+                                                                                            startAdornment: selectedCompany ? (
+                                                                                                <InputAdornment position="start">
+                                                                                                    <Avatar
+                                                                                                        src={selectedCompany.logo || selectedCompany.logoUrl}
+                                                                                                        sx={{ width: 20, height: 20, fontSize: '10px', mr: 1 }}
+                                                                                                    >
+                                                                                                        {selectedCompany.companyName?.charAt(0)}
+                                                                                                    </Avatar>
+                                                                                                </InputAdornment>
+                                                                                            ) : params.InputProps.startAdornment,
+                                                                                        }}
+                                                                                        sx={{
+                                                                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                                            '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                                                        }}
+                                                                                    />
+                                                                                );
+                                                                            }}
                                                                             sx={{ '& .MuiAutocomplete-listbox': { fontSize: '12px' } }}
                                                                         />
                                                                     </Grid>
@@ -4947,7 +5671,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                                 return null;
                                                                             })()
                                                                             : null}
-                                                                        onChange={(event, newValue) => setAdvancedFilters(prev => ({ ...prev, customerId: newValue?.id || '' }))}
+                                                                        onChange={(event, newValue) => {
+                                                                            // ✅ FIXED: Use customerID (business ID) instead of document ID
+                                                                            // This matches addressBook.addressClassID field
+                                                                            const newFilters = { ...advancedFilters, customerId: newValue?.customerID || newValue?.id || '' };
+                                                                            setAdvancedFilters(newFilters);
+
+                                                                            // Auto-apply immediately for customer selection
+                                                                            autoApplyImmediate(newFilters);
+                                                                        }}
                                                                         renderOption={(props, option) => {
                                                                             if (typeof option === 'string') {
                                                                                 return (
@@ -4979,18 +5711,55 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                                 </Box>
                                                                             );
                                                                         }}
-                                                                        renderInput={(params) => (
-                                                                            <TextField
-                                                                                {...params}
-                                                                                label="Customer"
-                                                                                size="small"
-                                                                                sx={{
-                                                                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                                                    '& .MuiAutocomplete-input': { fontSize: '12px' }
-                                                                                }}
-                                                                            />
-                                                                        )}
+                                                                        renderInput={(params) => {
+                                                                            const selectedCustomer = advancedFilters.customerId ?
+                                                                                (() => {
+                                                                                    const customerEntry = Object.entries(customers)
+                                                                                        .find(([id]) => id === advancedFilters.customerId);
+                                                                                    if (customerEntry) {
+                                                                                        const [id, customerData] = customerEntry;
+                                                                                        return {
+                                                                                            id: id,
+                                                                                            name: customerData.name || '',
+                                                                                            logo: customerData.logo || customerData.logoUrl || ''
+                                                                                        };
+                                                                                    }
+                                                                                    return null;
+                                                                                })()
+                                                                                : null;
+
+                                                                            return (
+                                                                                <TextField
+                                                                                    {...params}
+                                                                                    label="Customer"
+                                                                                    size="small"
+                                                                                    InputProps={{
+                                                                                        ...params.InputProps,
+                                                                                        startAdornment: selectedCustomer ? (
+                                                                                            <InputAdornment position="start">
+                                                                                                <Avatar
+                                                                                                    src={selectedCustomer.logo}
+                                                                                                    sx={{
+                                                                                                        width: 20,
+                                                                                                        height: 20,
+                                                                                                        fontSize: '10px',
+                                                                                                        mr: 1,
+                                                                                                        bgcolor: selectedCustomer.logo ? 'transparent' : '#059669'
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {!selectedCustomer.logo && selectedCustomer.name?.charAt(0)?.toUpperCase()}
+                                                                                                </Avatar>
+                                                                                            </InputAdornment>
+                                                                                        ) : params.InputProps.startAdornment,
+                                                                                    }}
+                                                                                    sx={{
+                                                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                                                    }}
+                                                                                />
+                                                                            );
+                                                                        }}
                                                                         sx={{ '& .MuiAutocomplete-listbox': { fontSize: '12px' } }}
                                                                     />
                                                                 </Grid>
@@ -5000,7 +5769,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                         <InputLabel sx={{ fontSize: '12px' }}>Shipment Type</InputLabel>
                                                                         <Select
                                                                             value={advancedFilters.shipmentType}
-                                                                            onChange={(e) => setAdvancedFilters(prev => ({ ...prev, shipmentType: e.target.value }))}
+                                                                            onChange={(e) => {
+                                                                                const newFilters = { ...advancedFilters, shipmentType: e.target.value };
+                                                                                setAdvancedFilters(newFilters);
+
+                                                                                // Auto-apply immediately for shipment type selection
+                                                                                autoApplyImmediate(newFilters);
+                                                                            }}
                                                                             sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
                                                                         >
                                                                             <MenuItem value="" sx={{ fontSize: '12px' }}>All Types</MenuItem>
@@ -5014,6 +5789,198 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     </Accordion>
 
 
+
+                                                    {/* Timing Information Section */}
+                                                    <Accordion
+                                                        expanded={accordionExpanded.timing}
+                                                        sx={{ mb: 1, '& .MuiAccordionSummary-root': { minHeight: 'auto' } }}
+                                                    >
+                                                        <AccordionSummary
+                                                            expandIcon={
+                                                                <ExpandMoreIcon
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAccordionExpanded(prev => ({ ...prev, timing: !prev.timing }));
+                                                                    }}
+                                                                    sx={{ cursor: 'pointer' }}
+                                                                />
+                                                            }
+                                                            sx={{ py: 1, cursor: 'default', '& .MuiAccordionSummary-content': { margin: 0 } }}
+                                                        >
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                                                <Typography
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAccordionExpanded(prev => ({ ...prev, timing: !prev.timing }));
+                                                                    }}
+                                                                    sx={{
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 600,
+                                                                        color: '#374151',
+                                                                        cursor: 'pointer',
+                                                                        userSelect: 'none'
+                                                                    }}
+                                                                >
+                                                                    Timing Information
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                                                    {getSectionActiveFilters('timing').map((filter, index) => (
+                                                                        <Chip
+                                                                            key={index}
+                                                                            label={filter}
+                                                                            size="small"
+                                                                            color="secondary"
+                                                                            variant="outlined"
+                                                                            sx={{
+                                                                                fontSize: '10px',
+                                                                                height: '20px',
+                                                                                borderRadius: '10px',
+                                                                                '& .MuiChip-label': {
+                                                                                    px: 1
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    ))}
+                                                                </Box>
+                                                            </Box>
+                                                        </AccordionSummary>
+                                                        <AccordionDetails sx={{ pt: 0 }}>
+                                                            <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                                                <Grid container spacing={2}>
+                                                                    <Grid item xs={12} sm={6} md={4}>
+                                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                            Created Date
+                                                                        </Typography>
+                                                                        <DateRangePicker
+                                                                            value={advancedFilters.createdAt}
+                                                                            onChange={(newValue) => {
+                                                                                // Handle single date logic
+                                                                                let processedValue = newValue;
+                                                                                if (newValue && newValue[0] && !newValue[1]) {
+                                                                                    // If only start date is set, use same date for end
+                                                                                    processedValue = [newValue[0], newValue[0]];
+                                                                                }
+                                                                                const newFilters = {
+                                                                                    ...advancedFilters,
+                                                                                    createdAt: processedValue || [null, null]
+                                                                                };
+                                                                                setAdvancedFilters(newFilters);
+
+                                                                                // Auto-apply with debouncing for date selection
+                                                                                autoApplyDebounced(newFilters);
+                                                                            }}
+                                                                            calendars={1}
+                                                                            slotProps={{
+                                                                                textField: {
+                                                                                    size: "small",
+                                                                                    fullWidth: true,
+                                                                                    variant: "outlined",
+                                                                                    placeholder: "Select date or range",
+                                                                                    sx: {
+                                                                                        '& .MuiInputBase-input': {
+                                                                                            fontSize: '12px',
+                                                                                            textAlign: 'center'
+                                                                                        },
+                                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                                    }
+                                                                                },
+                                                                                actionBar: {
+                                                                                    actions: ['clear', 'today']
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    </Grid>
+                                                                    <Grid item xs={12} sm={6} md={4}>
+                                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                            Shipment Date
+                                                                        </Typography>
+                                                                        <DateRangePicker
+                                                                            value={advancedFilters.shipmentDate}
+                                                                            onChange={(newValue) => {
+                                                                                // Handle single date logic
+                                                                                let processedValue = newValue;
+                                                                                if (newValue && newValue[0] && !newValue[1]) {
+                                                                                    // If only start date is set, use same date for end
+                                                                                    processedValue = [newValue[0], newValue[0]];
+                                                                                }
+                                                                                const newFilters = {
+                                                                                    ...advancedFilters,
+                                                                                    shipmentDate: processedValue || [null, null]
+                                                                                };
+                                                                                setAdvancedFilters(newFilters);
+
+                                                                                // Auto-apply with debouncing for date selection
+                                                                                autoApplyDebounced(newFilters);
+                                                                            }}
+                                                                            calendars={1}
+                                                                            slotProps={{
+                                                                                textField: {
+                                                                                    size: "small",
+                                                                                    fullWidth: true,
+                                                                                    variant: "outlined",
+                                                                                    placeholder: "Select date or range",
+                                                                                    sx: {
+                                                                                        '& .MuiInputBase-input': {
+                                                                                            fontSize: '12px',
+                                                                                            textAlign: 'center'
+                                                                                        },
+                                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                                    }
+                                                                                },
+                                                                                actionBar: {
+                                                                                    actions: ['clear', 'today']
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    </Grid>
+                                                                    <Grid item xs={12} sm={6} md={4}>
+                                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                            ETA Date
+                                                                        </Typography>
+                                                                        <DateRangePicker
+                                                                            value={advancedFilters.eta1}
+                                                                            onChange={(newValue) => {
+                                                                                // Handle single date logic
+                                                                                let processedValue = newValue;
+                                                                                if (newValue && newValue[0] && !newValue[1]) {
+                                                                                    // If only start date is set, use same date for end
+                                                                                    processedValue = [newValue[0], newValue[0]];
+                                                                                }
+                                                                                const newFilters = {
+                                                                                    ...advancedFilters,
+                                                                                    eta1: processedValue || [null, null],
+                                                                                    eta2: processedValue || [null, null] // Set both ETA1 and ETA2 to same value
+                                                                                };
+                                                                                setAdvancedFilters(newFilters);
+
+                                                                                // Auto-apply with debouncing for date selection
+                                                                                autoApplyDebounced(newFilters);
+                                                                            }}
+                                                                            calendars={1}
+                                                                            slotProps={{
+                                                                                textField: {
+                                                                                    size: "small",
+                                                                                    fullWidth: true,
+                                                                                    variant: "outlined",
+                                                                                    placeholder: "Select date or range",
+                                                                                    sx: {
+                                                                                        '& .MuiInputBase-input': {
+                                                                                            fontSize: '12px',
+                                                                                            textAlign: 'center'
+                                                                                        },
+                                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                                    }
+                                                                                },
+                                                                                actionBar: {
+                                                                                    actions: ['clear', 'today']
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    </Grid>
+                                                                </Grid>
+                                                            </LocalizationProvider>
+                                                        </AccordionDetails>
+                                                    </Accordion>
 
                                                     {/* Tracking & Status Section */}
                                                     <Accordion
@@ -5032,21 +5999,42 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             }
                                                             sx={{ py: 1, cursor: 'default', '& .MuiAccordionSummary-content': { margin: 0 } }}
                                                         >
-                                                            <Typography
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setAccordionExpanded(prev => ({ ...prev, tracking: !prev.tracking }));
-                                                                }}
-                                                                sx={{
-                                                                    fontSize: '14px',
-                                                                    fontWeight: 600,
-                                                                    color: '#374151',
-                                                                    cursor: 'pointer',
-                                                                    userSelect: 'none'
-                                                                }}
-                                                            >
-                                                                Tracking & Status
-                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                                                <Typography
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAccordionExpanded(prev => ({ ...prev, tracking: !prev.tracking }));
+                                                                    }}
+                                                                    sx={{
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 600,
+                                                                        color: '#374151',
+                                                                        cursor: 'pointer',
+                                                                        userSelect: 'none'
+                                                                    }}
+                                                                >
+                                                                    Tracking & Status
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                                                    {getSectionActiveFilters('tracking').map((filter, index) => (
+                                                                        <Chip
+                                                                            key={index}
+                                                                            label={filter}
+                                                                            size="small"
+                                                                            color="success"
+                                                                            variant="outlined"
+                                                                            sx={{
+                                                                                fontSize: '10px',
+                                                                                height: '20px',
+                                                                                borderRadius: '10px',
+                                                                                '& .MuiChip-label': {
+                                                                                    px: 1
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    ))}
+                                                                </Box>
+                                                            </Box>
                                                         </AccordionSummary>
                                                         <AccordionDetails sx={{ pt: 0 }}>
                                                             <Grid container spacing={2}>
@@ -5059,10 +6047,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                         value={shipmentStatuses.filter(status =>
                                                                             advancedFilters.currentStatuses.includes(status.statusCode || status.displayLabel)
                                                                         )}
-                                                                        onChange={(event, newValue) => setAdvancedFilters(prev => ({
-                                                                            ...prev,
-                                                                            currentStatuses: newValue.map(status => status.statusCode || status.displayLabel)
-                                                                        }))}
+                                                                        onChange={(event, newValue) => {
+                                                                            const newFilters = {
+                                                                                ...advancedFilters,
+                                                                                currentStatuses: newValue.map(status => status.statusCode || status.displayLabel)
+                                                                            };
+                                                                            setAdvancedFilters(newFilters);
+
+                                                                            // Auto-apply immediately for status selection
+                                                                            autoApplyImmediate(newFilters);
+                                                                        }}
                                                                         renderOption={(props, option) => {
 
                                                                             return (
@@ -5111,7 +6105,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                         <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
                                                                         <Select
                                                                             value={advancedFilters.carrier}
-                                                                            onChange={(e) => setAdvancedFilters(prev => ({ ...prev, carrier: e.target.value }))}
+                                                                            onChange={(e) => {
+                                                                                const newFilters = { ...advancedFilters, carrier: e.target.value };
+                                                                                setAdvancedFilters(newFilters);
+
+                                                                                // Auto-apply immediately for carrier selection
+                                                                                autoApplyImmediate(newFilters);
+                                                                            }}
                                                                             sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
                                                                         >
                                                                             <MenuItem value="" sx={{ fontSize: '12px' }}>All Carriers</MenuItem>
@@ -5206,21 +6206,42 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             }
                                                             sx={{ py: 1, cursor: 'default', '& .MuiAccordionSummary-content': { margin: 0 } }}
                                                         >
-                                                            <Typography
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setAccordionExpanded(prev => ({ ...prev, originDestination: !prev.originDestination }));
-                                                                }}
-                                                                sx={{
-                                                                    fontSize: '14px',
-                                                                    fontWeight: 600,
-                                                                    color: '#374151',
-                                                                    cursor: 'pointer',
-                                                                    userSelect: 'none'
-                                                                }}
-                                                            >
-                                                                Origin and Destination
-                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                                                <Typography
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAccordionExpanded(prev => ({ ...prev, originDestination: !prev.originDestination }));
+                                                                    }}
+                                                                    sx={{
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 600,
+                                                                        color: '#374151',
+                                                                        cursor: 'pointer',
+                                                                        userSelect: 'none'
+                                                                    }}
+                                                                >
+                                                                    Origin & Destination
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                                                    {getSectionActiveFilters('originDestination').map((filter, index) => (
+                                                                        <Chip
+                                                                            key={index}
+                                                                            label={filter}
+                                                                            size="small"
+                                                                            color="warning"
+                                                                            variant="outlined"
+                                                                            sx={{
+                                                                                fontSize: '10px',
+                                                                                height: '20px',
+                                                                                borderRadius: '10px',
+                                                                                '& .MuiChip-label': {
+                                                                                    px: 1
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    ))}
+                                                                </Box>
+                                                            </Box>
                                                         </AccordionSummary>
                                                         <AccordionDetails sx={{ pt: 0 }}>
                                                             <Grid container spacing={2}>
@@ -5228,14 +6249,78 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                     <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', mb: 1 }}>Origin</Typography>
                                                                     <Grid container spacing={1}>
                                                                         <Grid item xs={6}>
-                                                                            <TextField
+                                                                            <Autocomplete
                                                                                 fullWidth
-                                                                                label="Customer Name"
-                                                                                placeholder="e.g., Cherry Forest Veneers"
-                                                                                value={advancedFilters.originCustomerName}
-                                                                                onChange={(e) => setAdvancedFilters(prev => ({ ...prev, originCustomerName: e.target.value }))}
-                                                                                size="small"
-                                                                                sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                                options={getOriginAddresses}
+                                                                                getOptionLabel={(option) => {
+                                                                                    return `${option.nickname || option.companyName || 'Unknown'} - ${option.city || 'N/A'}`;
+                                                                                }}
+                                                                                value={(() => {
+                                                                                    if (!advancedFilters.originCustomerName) return null;
+                                                                                    const matchingAddress = getOriginAddresses.find(addr =>
+                                                                                        `${addr.nickname || addr.companyName || 'Unknown'} - ${addr.city || 'N/A'}` === advancedFilters.originCustomerName
+                                                                                    );
+                                                                                    return matchingAddress || null;
+                                                                                })()}
+                                                                                onChange={(event, newValue) => {
+                                                                                    if (newValue) {
+                                                                                        const displayValue = `${newValue.nickname || newValue.companyName || 'Unknown'} - ${newValue.city || 'N/A'}`;
+                                                                                        const newFilters = {
+                                                                                            ...advancedFilters,
+                                                                                            originCustomerName: displayValue,
+                                                                                            originCity: newValue.city || '',
+                                                                                            originProvince: newValue.province || newValue.state || '',
+                                                                                            originCountry: newValue.country || '',
+                                                                                            originPostalCode: newValue.postalCode || newValue.zipCode || ''
+                                                                                        };
+                                                                                        setAdvancedFilters(newFilters);
+
+                                                                                        // Auto-apply immediately for address selection
+                                                                                        autoApplyImmediate(newFilters);
+                                                                                    } else {
+                                                                                        const newFilters = {
+                                                                                            ...advancedFilters,
+                                                                                            originCustomerName: '',
+                                                                                            originCity: '',
+                                                                                            originProvince: '',
+                                                                                            originCountry: '',
+                                                                                            originPostalCode: ''
+                                                                                        };
+                                                                                        setAdvancedFilters(newFilters);
+                                                                                        autoApplyImmediate(newFilters);
+                                                                                    }
+                                                                                }}
+                                                                                renderOption={(props, option) => (
+                                                                                    <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+                                                                                        <Box>
+                                                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                                {option.nickname || option.companyName || 'Unknown Location'}
+                                                                                            </Typography>
+                                                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                                                {option.street && `${option.street}, `}{option.city}, {option.province || option.state} {option.postalCode || option.zipCode}
+                                                                                            </Typography>
+                                                                                        </Box>
+                                                                                    </Box>
+                                                                                )}
+                                                                                renderInput={(params) => (
+                                                                                    <TextField
+                                                                                        {...params}
+                                                                                        label="Origin"
+                                                                                        placeholder="Select origin location"
+                                                                                        size="small"
+                                                                                        sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                                        InputProps={{
+                                                                                            ...params.InputProps,
+                                                                                            endAdornment: (
+                                                                                                <>
+                                                                                                    {loadingAddresses && <CircularProgress color="inherit" size={20} />}
+                                                                                                    {params.InputProps.endAdornment}
+                                                                                                </>
+                                                                                            ),
+                                                                                        }}
+                                                                                    />
+                                                                                )}
+                                                                                sx={{ '& .MuiAutocomplete-listbox': { fontSize: '12px' } }}
                                                                             />
                                                                         </Grid>
                                                                         <Grid item xs={6}>
@@ -5313,14 +6398,78 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                     <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', mb: 1 }}>Destination</Typography>
                                                                     <Grid container spacing={1}>
                                                                         <Grid item xs={6}>
-                                                                            <TextField
+                                                                            <Autocomplete
                                                                                 fullWidth
-                                                                                label="Customer Name"
-                                                                                placeholder="e.g., M.G.H. Inc"
-                                                                                value={advancedFilters.destinationCustomerName}
-                                                                                onChange={(e) => setAdvancedFilters(prev => ({ ...prev, destinationCustomerName: e.target.value }))}
-                                                                                size="small"
-                                                                                sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                                options={getDestinationAddresses}
+                                                                                getOptionLabel={(option) => {
+                                                                                    return `${option.nickname || option.companyName || 'Unknown'} - ${option.city || 'N/A'}`;
+                                                                                }}
+                                                                                value={(() => {
+                                                                                    if (!advancedFilters.destinationCustomerName) return null;
+                                                                                    const matchingAddress = getDestinationAddresses.find(addr =>
+                                                                                        `${addr.nickname || addr.companyName || 'Unknown'} - ${addr.city || 'N/A'}` === advancedFilters.destinationCustomerName
+                                                                                    );
+                                                                                    return matchingAddress || null;
+                                                                                })()}
+                                                                                onChange={(event, newValue) => {
+                                                                                    if (newValue) {
+                                                                                        const displayValue = `${newValue.nickname || newValue.companyName || 'Unknown'} - ${newValue.city || 'N/A'}`;
+                                                                                        const newFilters = {
+                                                                                            ...advancedFilters,
+                                                                                            destinationCustomerName: displayValue,
+                                                                                            destinationCity: newValue.city || '',
+                                                                                            destinationProvince: newValue.province || newValue.state || '',
+                                                                                            destinationCountry: newValue.country || '',
+                                                                                            destinationPostalCode: newValue.postalCode || newValue.zipCode || ''
+                                                                                        };
+                                                                                        setAdvancedFilters(newFilters);
+
+                                                                                        // Auto-apply immediately for address selection
+                                                                                        autoApplyImmediate(newFilters);
+                                                                                    } else {
+                                                                                        const newFilters = {
+                                                                                            ...advancedFilters,
+                                                                                            destinationCustomerName: '',
+                                                                                            destinationCity: '',
+                                                                                            destinationProvince: '',
+                                                                                            destinationCountry: '',
+                                                                                            destinationPostalCode: ''
+                                                                                        };
+                                                                                        setAdvancedFilters(newFilters);
+                                                                                        autoApplyImmediate(newFilters);
+                                                                                    }
+                                                                                }}
+                                                                                renderOption={(props, option) => (
+                                                                                    <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+                                                                                        <Box>
+                                                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                                {option.nickname || option.companyName || 'Unknown Location'}
+                                                                                            </Typography>
+                                                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                                                {option.street && `${option.street}, `}{option.city}, {option.province || option.state} {option.postalCode || option.zipCode}
+                                                                                            </Typography>
+                                                                                        </Box>
+                                                                                    </Box>
+                                                                                )}
+                                                                                renderInput={(params) => (
+                                                                                    <TextField
+                                                                                        {...params}
+                                                                                        label="Destination"
+                                                                                        placeholder="Select destination location"
+                                                                                        size="small"
+                                                                                        sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                                        InputProps={{
+                                                                                            ...params.InputProps,
+                                                                                            endAdornment: (
+                                                                                                <>
+                                                                                                    {loadingAddresses && <CircularProgress color="inherit" size={20} />}
+                                                                                                    {params.InputProps.endAdornment}
+                                                                                                </>
+                                                                                            ),
+                                                                                        }}
+                                                                                    />
+                                                                                )}
+                                                                                sx={{ '& .MuiAutocomplete-listbox': { fontSize: '12px' } }}
                                                                             />
                                                                         </Grid>
                                                                         <Grid item xs={6}>
@@ -5415,21 +6564,42 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             }
                                                             sx={{ py: 1, cursor: 'default', '& .MuiAccordionSummary-content': { margin: 0 } }}
                                                         >
-                                                            <Typography
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setAccordionExpanded(prev => ({ ...prev, billing: !prev.billing }));
-                                                                }}
-                                                                sx={{
-                                                                    fontSize: '14px',
-                                                                    fontWeight: 600,
-                                                                    color: '#374151',
-                                                                    cursor: 'pointer',
-                                                                    userSelect: 'none'
-                                                                }}
-                                                            >
-                                                                Billing & Invoice
-                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                                                <Typography
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAccordionExpanded(prev => ({ ...prev, billing: !prev.billing }));
+                                                                    }}
+                                                                    sx={{
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 600,
+                                                                        color: '#374151',
+                                                                        cursor: 'pointer',
+                                                                        userSelect: 'none'
+                                                                    }}
+                                                                >
+                                                                    Billing & Invoice
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                                                    {getSectionActiveFilters('billing').map((filter, index) => (
+                                                                        <Chip
+                                                                            key={index}
+                                                                            label={filter}
+                                                                            size="small"
+                                                                            color="info"
+                                                                            variant="outlined"
+                                                                            sx={{
+                                                                                fontSize: '10px',
+                                                                                height: '20px',
+                                                                                borderRadius: '10px',
+                                                                                '& .MuiChip-label': {
+                                                                                    px: 1
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    ))}
+                                                                </Box>
+                                                            </Box>
                                                         </AccordionSummary>
                                                         <AccordionDetails sx={{ pt: 0 }}>
                                                             <Grid container spacing={2}>
@@ -5542,51 +6712,339 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                         </AccordionDetails>
                                                     </Accordion>
 
+                                                    {/* Financial Information Section - Hidden for now */}
+                                                    {false && (
+                                                        <Accordion
+                                                            expanded={accordionExpanded.financial}
+                                                            sx={{ mb: 1, '& .MuiAccordionSummary-root': { minHeight: 'auto' } }}
+                                                        >
+                                                            <AccordionSummary
+                                                                expandIcon={
+                                                                    <ExpandMoreIcon
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setAccordionExpanded(prev => ({ ...prev, financial: !prev.financial }));
+                                                                        }}
+                                                                        sx={{ cursor: 'pointer' }}
+                                                                    />
+                                                                }
+                                                                sx={{ py: 1, cursor: 'default', '& .MuiAccordionSummary-content': { margin: 0 } }}
+                                                            >
+                                                                <Typography
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAccordionExpanded(prev => ({ ...prev, financial: !prev.financial }));
+                                                                    }}
+                                                                    sx={{
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 600,
+                                                                        color: '#374151',
+                                                                        cursor: 'pointer',
+                                                                        userSelect: 'none'
+                                                                    }}
+                                                                >
+                                                                    Financial Information
+                                                                </Typography>
+                                                            </AccordionSummary>
+                                                            <AccordionDetails sx={{ pt: 0 }}>
+                                                                <Grid container spacing={2}>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <TextField
+                                                                            fullWidth
+                                                                            label="Total Cost Range"
+                                                                            placeholder="Min - Max"
+                                                                            size="small"
+                                                                            value={`${advancedFilters.totalCost[0] || ''} - ${advancedFilters.totalCost[1] || ''}`}
+                                                                            onChange={(e) => {
+                                                                                // TODO: Implement range picker
+                                                                                console.log('Range picker not implemented yet');
+                                                                            }}
+                                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                        />
+                                                                    </Grid>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <TextField
+                                                                            fullWidth
+                                                                            label="Total Charge Range"
+                                                                            placeholder="Min - Max"
+                                                                            size="small"
+                                                                            value={`${advancedFilters.totalCharge[0] || ''} - ${advancedFilters.totalCharge[1] || ''}`}
+                                                                            onChange={(e) => {
+                                                                                // TODO: Implement range picker
+                                                                                console.log('Range picker not implemented yet');
+                                                                            }}
+                                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                        />
+                                                                    </Grid>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <FormControl fullWidth size="small">
+                                                                            <InputLabel sx={{ fontSize: '12px' }}>Currency</InputLabel>
+                                                                            <Select
+                                                                                value={advancedFilters.currency}
+                                                                                onChange={(e) => setAdvancedFilters(prev => ({ ...prev, currency: e.target.value }))}
+                                                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                                            >
+                                                                                <MenuItem value="" sx={{ fontSize: '12px' }}>All Currencies</MenuItem>
+                                                                                <MenuItem value="USD" sx={{ fontSize: '12px' }}>USD</MenuItem>
+                                                                                <MenuItem value="CAD" sx={{ fontSize: '12px' }}>CAD</MenuItem>
+                                                                                <MenuItem value="EUR" sx={{ fontSize: '12px' }}>EUR</MenuItem>
+                                                                            </Select>
+                                                                        </FormControl>
+                                                                    </Grid>
+                                                                </Grid>
+                                                            </AccordionDetails>
+                                                        </Accordion>
+                                                    )}
+
+                                                    {/* Package Information Section - Hidden for now */}
+                                                    {false && (
+                                                        <Accordion
+                                                            expanded={accordionExpanded.packages}
+                                                            sx={{ mb: 1, '& .MuiAccordionSummary-root': { minHeight: 'auto' } }}
+                                                        >
+                                                            <AccordionSummary
+                                                                expandIcon={
+                                                                    <ExpandMoreIcon
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setAccordionExpanded(prev => ({ ...prev, packages: !prev.packages }));
+                                                                        }}
+                                                                        sx={{ cursor: 'pointer' }}
+                                                                    />
+                                                                }
+                                                                sx={{ py: 1, cursor: 'default', '& .MuiAccordionSummary-content': { margin: 0 } }}
+                                                            >
+                                                                <Typography
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAccordionExpanded(prev => ({ ...prev, packages: !prev.packages }));
+                                                                    }}
+                                                                    sx={{
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 600,
+                                                                        color: '#374151',
+                                                                        cursor: 'pointer',
+                                                                        userSelect: 'none'
+                                                                    }}
+                                                                >
+                                                                    Package Information
+                                                                </Typography>
+                                                            </AccordionSummary>
+                                                            <AccordionDetails sx={{ pt: 0 }}>
+                                                                <Grid container spacing={2}>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <TextField
+                                                                            fullWidth
+                                                                            label="Total Weight Range (lbs)"
+                                                                            placeholder="Min - Max"
+                                                                            size="small"
+                                                                            value={`${advancedFilters.totalWeight[0] || ''} - ${advancedFilters.totalWeight[1] || ''}`}
+                                                                            onChange={(e) => {
+                                                                                // TODO: Implement range picker
+                                                                                console.log('Range picker not implemented yet');
+                                                                            }}
+                                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                        />
+                                                                    </Grid>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <TextField
+                                                                            fullWidth
+                                                                            label="Total Pieces Range"
+                                                                            placeholder="Min - Max"
+                                                                            size="small"
+                                                                            value={`${advancedFilters.totalPieces[0] || ''} - ${advancedFilters.totalPieces[1] || ''}`}
+                                                                            onChange={(e) => {
+                                                                                // TODO: Implement range picker
+                                                                                console.log('Range picker not implemented yet');
+                                                                            }}
+                                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                        />
+                                                                    </Grid>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <FormControl fullWidth size="small">
+                                                                            <InputLabel sx={{ fontSize: '12px' }}>Package Type</InputLabel>
+                                                                            <Select
+                                                                                value={advancedFilters.packageType}
+                                                                                onChange={(e) => setAdvancedFilters(prev => ({ ...prev, packageType: e.target.value }))}
+                                                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                                            >
+                                                                                <MenuItem value="" sx={{ fontSize: '12px' }}>All Types</MenuItem>
+                                                                                <MenuItem value="BOX" sx={{ fontSize: '12px' }}>Box</MenuItem>
+                                                                                <MenuItem value="PALLET" sx={{ fontSize: '12px' }}>Pallet</MenuItem>
+                                                                                <MenuItem value="ENVELOPE" sx={{ fontSize: '12px' }}>Envelope</MenuItem>
+                                                                                <MenuItem value="SKID" sx={{ fontSize: '12px' }}>Skid</MenuItem>
+                                                                            </Select>
+                                                                        </FormControl>
+                                                                    </Grid>
+                                                                </Grid>
+                                                            </AccordionDetails>
+                                                        </Accordion>
+                                                    )}
+
+                                                    {/* Contact Information Section - Hidden for now */}
+                                                    {false && (
+                                                        <Accordion
+                                                            expanded={accordionExpanded.contacts}
+                                                            sx={{ mb: 1, '& .MuiAccordionSummary-root': { minHeight: 'auto' } }}
+                                                        >
+                                                            <AccordionSummary
+                                                                expandIcon={
+                                                                    <ExpandMoreIcon
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setAccordionExpanded(prev => ({ ...prev, contacts: !prev.contacts }));
+                                                                        }}
+                                                                        sx={{ cursor: 'pointer' }}
+                                                                    />
+                                                                }
+                                                                sx={{ py: 1, cursor: 'default', '& .MuiAccordionSummary-content': { margin: 0 } }}
+                                                            >
+                                                                <Typography
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAccordionExpanded(prev => ({ ...prev, contacts: !prev.contacts }));
+                                                                    }}
+                                                                    sx={{
+                                                                        fontSize: '14px',
+                                                                        fontWeight: 600,
+                                                                        color: '#374151',
+                                                                        cursor: 'pointer',
+                                                                        userSelect: 'none'
+                                                                    }}
+                                                                >
+                                                                    Contact Information
+                                                                </Typography>
+                                                            </AccordionSummary>
+                                                            <AccordionDetails sx={{ pt: 0 }}>
+                                                                <Grid container spacing={2}>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <TextField
+                                                                            fullWidth
+                                                                            label="Ship From Email"
+                                                                            placeholder="e.g., contact@company.com"
+                                                                            value={advancedFilters.shipFromEmail}
+                                                                            onChange={(e) => setAdvancedFilters(prev => ({ ...prev, shipFromEmail: e.target.value }))}
+                                                                            size="small"
+                                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                        />
+                                                                    </Grid>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <TextField
+                                                                            fullWidth
+                                                                            label="Ship From Phone"
+                                                                            placeholder="e.g., (555) 123-4567"
+                                                                            value={advancedFilters.shipFromPhone}
+                                                                            onChange={(e) => setAdvancedFilters(prev => ({ ...prev, shipFromPhone: e.target.value }))}
+                                                                            size="small"
+                                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                        />
+                                                                    </Grid>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <TextField
+                                                                            fullWidth
+                                                                            label="Ship To Email"
+                                                                            placeholder="e.g., contact@company.com"
+                                                                            value={advancedFilters.shipToEmail}
+                                                                            onChange={(e) => setAdvancedFilters(prev => ({ ...prev, shipToEmail: e.target.value }))}
+                                                                            size="small"
+                                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                        />
+                                                                    </Grid>
+                                                                    <Grid item xs={12} sm={6} md={3}>
+                                                                        <TextField
+                                                                            fullWidth
+                                                                            label="Ship To Phone"
+                                                                            placeholder="e.g., (555) 123-4567"
+                                                                            value={advancedFilters.shipToPhone}
+                                                                            onChange={(e) => setAdvancedFilters(prev => ({ ...prev, shipToPhone: e.target.value }))}
+                                                                            size="small"
+                                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                                                        />
+                                                                    </Grid>
+                                                                </Grid>
+                                                            </AccordionDetails>
+                                                        </Accordion>
+                                                    )}
+
                                                     {/* Apply and Clear Filters */}
-                                                    <Box sx={{ mt: 2, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-                                                        <Button
-                                                            variant="outlined"
-                                                            startIcon={<ClearIcon />}
-                                                            onClick={() => {
-                                                                setAdvancedFilters({
-                                                                    // Basic Information
-                                                                    companyId: '', customerId: '', shipmentIds: [], shipmentType: '',
-                                                                    // Billing & Invoice
-                                                                    billType: '', invoiceStatus: '', ediNumbers: [], invoiceNumbers: [],
-                                                                    // Timing Information
-                                                                    createdAt: [null, null], shipmentDate: [null, null], eta1: [null, null], eta2: [null, null], lastUpdated: [null, null],
-                                                                    // Tracking & Status
-                                                                    currentStatuses: [], carrier: '', trackingNumbers: [], referenceNumbers: [],
-                                                                    // Origin and Destination
-                                                                    originCustomerName: '', originCity: '', originProvince: '', originCountry: '', originPostalCode: '',
-                                                                    destinationCustomerName: '', destinationCity: '', destinationProvince: '', destinationCountry: '', destinationPostalCode: '',
-                                                                    // Financial
-                                                                    totalCost: [null, null], totalCharge: [null, null], currency: '',
-                                                                    // Package Information
-                                                                    totalWeight: [null, null], totalPieces: [null, null], packageType: '',
-                                                                    // Contact Information
-                                                                    shipFromEmail: '', shipFromPhone: '', shipToEmail: '', shipToPhone: ''
-                                                                });
-                                                            }}
-                                                            size="small"
-                                                            sx={{ fontSize: '12px' }}
-                                                        >
-                                                            Clear All Filters
-                                                        </Button>
-                                                        <Button
-                                                            variant="contained"
-                                                            color="primary"
-                                                            startIcon={<SearchIcon />}
-                                                            onClick={() => {
-                                                                // Apply advanced filters by calling loadShipments with filter parameters
-                                                                console.log('Applying advanced filters:', advancedFilters);
-                                                                loadShipments(null, unifiedSearch, null, null, advancedFilters);
-                                                            }}
-                                                            size="small"
-                                                            sx={{ fontSize: '12px' }}
-                                                        >
-                                                            Apply Filters
-                                                        </Button>
+                                                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                            <FormControlLabel
+                                                                control={
+                                                                    <Switch
+                                                                        checked={isAutoApply}
+                                                                        onChange={(e) => setIsAutoApply(e.target.checked)}
+                                                                        size="small"
+                                                                        sx={{ '& .MuiSwitch-track': { fontSize: '11px' } }}
+                                                                    />
+                                                                }
+                                                                label={
+                                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        Auto-apply filters
+                                                                    </Typography>
+                                                                }
+                                                                sx={{ mr: 0 }}
+                                                            />
+                                                            {isApplyingFilters && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <CircularProgress size={12} />
+                                                                    <Typography sx={{ fontSize: '11px', color: '#6366f1' }}>
+                                                                        Filtering...
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
+                                                        </Box>
+                                                        <Box sx={{ display: 'flex', gap: 2 }}>
+                                                            <Button
+                                                                variant="outlined"
+                                                                startIcon={<ClearIcon />}
+                                                                onClick={() => {
+                                                                    setAdvancedFilters({
+                                                                        // Basic Information
+                                                                        companyId: '', customerId: '', shipmentIds: [], shipmentType: '',
+                                                                        // Billing & Invoice
+                                                                        billType: '', invoiceStatus: '', ediNumbers: [], invoiceNumbers: [],
+                                                                        // Timing Information
+                                                                        createdAt: [null, null], shipmentDate: [null, null], eta1: [null, null], eta2: [null, null], lastUpdated: [null, null],
+                                                                        // Tracking & Status
+                                                                        currentStatuses: [], carrier: '', trackingNumbers: [], referenceNumbers: [],
+                                                                        // Origin and Destination
+                                                                        originCustomerName: '', originCity: '', originProvince: '', originCountry: '', originPostalCode: '',
+                                                                        destinationCustomerName: '', destinationCity: '', destinationProvince: '', destinationCountry: '', destinationPostalCode: '',
+                                                                        // Financial
+                                                                        totalCost: [null, null], totalCharge: [null, null], currency: '',
+                                                                        // Package Information
+                                                                        totalWeight: [null, null], totalPieces: [null, null], packageType: '',
+                                                                        // Contact Information
+                                                                        shipFromEmail: '', shipFromPhone: '', shipToEmail: '', shipToPhone: ''
+                                                                    });
+                                                                }}
+                                                                size="small"
+                                                                sx={{ fontSize: '12px' }}
+                                                            >
+                                                                Clear All Filters
+                                                            </Button>
+                                                            <Button
+                                                                variant={isAutoApply ? "outlined" : "contained"}
+                                                                color="primary"
+                                                                startIcon={isApplyingFilters ? <CircularProgress size={14} /> : <SearchIcon />}
+                                                                onClick={() => {
+                                                                    // Manual override - always apply filters regardless of auto-apply setting
+                                                                    console.log('Manually applying advanced filters:', advancedFilters);
+                                                                    setIsApplyingFilters(true);
+                                                                    loadShipments(null, unifiedSearch, null, null, advancedFilters).finally(() => {
+                                                                        setIsApplyingFilters(false);
+                                                                    });
+                                                                    // Collapse the filters panel after applying
+                                                                    setFiltersOpen(false);
+                                                                }}
+                                                                disabled={isApplyingFilters}
+                                                                size="small"
+                                                                sx={{ fontSize: '12px' }}
+                                                            >
+                                                                {isApplyingFilters ? 'Applying...' : (isAutoApply ? 'Manual Apply' : 'Apply Filters')}
+                                                            </Button>
+                                                        </Box>
                                                     </Box>
                                                 </Box>
 
@@ -5606,6 +7064,35 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     </Box>
                                 </Collapse>
                             </Paper >
+
+                            {/* Top Pagination - Show if more than 1 page and filters are closed */}
+                            {(() => {
+                                const totalPages = rowsPerPage > 0 ? Math.ceil(totalCount / rowsPerPage) : 1;
+                                return totalPages > 1 && !filtersOpen && (
+                                    <Box sx={{
+                                        borderTop: '1px solid #e2e8f0',
+                                        borderBottom: '1px solid #e2e8f0',
+                                        bgcolor: '#f8fafc',
+                                        py: 0.5,
+                                        px: 1
+                                    }}>
+                                        <ShipmentsPagination
+                                            totalCount={totalCount}
+                                            page={page}
+                                            rowsPerPage={rowsPerPage}
+                                            onPageChange={(event, newPage) => {
+                                                setPage(newPage);
+                                                setTimeout(() => loadShipments(null, unifiedSearch), 50);
+                                            }}
+                                            onRowsPerPageChange={(event) => {
+                                                setRowsPerPage(parseInt(event.target.value, 10));
+                                                setPage(0);
+                                                setTimeout(() => loadShipments(null, unifiedSearch), 50);
+                                            }}
+                                        />
+                                    </Box>
+                                );
+                            })()}
 
                             {/* Shipments Table */}
                             {
@@ -6265,7 +7752,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 onClose={() => setIsExportDialogOpen(false)}
                 selectedExportFormat={selectedExportFormat}
                 setSelectedExportFormat={setSelectedExportFormat}
-                shipments={shipments}
+                shipments={filteredShipments}
                 carrierData={carrierData}
                 customers={customers}
             />

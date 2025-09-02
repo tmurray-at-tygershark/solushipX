@@ -488,31 +488,71 @@ const GlobalShipmentList = () => {
         loadCompanies();
     }, [user, userRole, authLoading]);
 
-    // Load all shipments for autocomplete search
+    // Load all shipments for autocomplete search with enhanced coverage
     useEffect(() => {
         const loadShipmentsForSearch = async () => {
             if (!user || authLoading || loadingCompanies) return;
 
             try {
                 let shipmentsQuery;
+                let allShipments = [];
 
                 if (userRole === 'superadmin') {
-                    // Super admin can see all shipments
+                    // Super admin can see all shipments - increased limit
                     shipmentsQuery = query(
                         collection(db, 'shipments'),
                         orderBy('createdAt', 'desc'),
-                        limit(500) // Limit for performance
+                        limit(1000) // ✅ INCREASED FROM 500 to 1000
                     );
+
+                    const snapshot = await getDocs(shipmentsQuery);
+                    allShipments = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
                 } else if (userRole === 'admin') {
-                    // Admin can see their connected companies
+                    // Admin can see their connected companies - handle >10 companies properly
                     const connectedCompanyIds = availableCompanies.map(c => c.companyID);
+
                     if (connectedCompanyIds.length > 0) {
-                        shipmentsQuery = query(
-                            collection(db, 'shipments'),
-                            where('companyID', 'in', connectedCompanyIds.slice(0, 10)),
-                            orderBy('createdAt', 'desc'),
-                            limit(500)
-                        );
+                        if (connectedCompanyIds.length <= 10) {
+                            // ✅ STANDARD QUERY FOR ≤10 COMPANIES
+                            shipmentsQuery = query(
+                                collection(db, 'shipments'),
+                                where('companyID', 'in', connectedCompanyIds),
+                                orderBy('createdAt', 'desc'),
+                                limit(1000) // ✅ INCREASED LIMIT
+                            );
+
+                            const snapshot = await getDocs(shipmentsQuery);
+                            allShipments = snapshot.docs.map(doc => ({
+                                id: doc.id,
+                                ...doc.data()
+                            }));
+                        } else {
+                            // ✅ ENHANCED HANDLING FOR >10 COMPANIES
+                            console.log('🔄 Admin has >10 companies, using batch loading strategy');
+
+                            // Load all shipments and filter client-side for >10 companies
+                            shipmentsQuery = query(
+                                collection(db, 'shipments'),
+                                orderBy('createdAt', 'desc'),
+                                limit(1000)
+                            );
+
+                            const snapshot = await getDocs(shipmentsQuery);
+                            const allDbShipments = snapshot.docs.map(doc => ({
+                                id: doc.id,
+                                ...doc.data()
+                            }));
+
+                            // ✅ CLIENT-SIDE FILTERING FOR ADMIN'S COMPANIES
+                            allShipments = allDbShipments.filter(shipment =>
+                                connectedCompanyIds.includes(shipment.companyID)
+                            );
+
+                            console.log(`📊 Filtered ${allDbShipments.length} shipments to ${allShipments.length} for admin's ${connectedCompanyIds.length} companies`);
+                        }
                     } else {
                         setAllShipments([]);
                         return;
@@ -522,14 +562,29 @@ const GlobalShipmentList = () => {
                     return;
                 }
 
-                const snapshot = await getDocs(shipmentsQuery);
-                const shipments = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
+                // ✅ EXCLUDE ARCHIVED SHIPMENTS FROM AUTOCOMPLETE
+                allShipments = allShipments.filter(shipment => {
+                    const status = shipment.status?.toLowerCase()?.trim();
+                    return status !== 'archived';
+                });
 
-                console.log('📦 Loaded shipments for autocomplete:', shipments.length);
-                setAllShipments(shipments);
+                console.log('📦 Loaded shipments for autocomplete:', allShipments.length);
+                console.log('🎯 Sample shipment IDs for debugging:', allShipments.slice(0, 5).map(s => s.shipmentID || s.id));
+
+                // ✅ DEBUG: Check if target shipment ICAL-227B8E is in autocomplete data
+                const targetShipment = allShipments.find(s => s.shipmentID === 'ICAL-227B8E');
+                if (targetShipment) {
+                    console.log('✅ DEBUG: Target shipment ICAL-227B8E found in autocomplete data:', {
+                        shipmentID: targetShipment.shipmentID,
+                        companyID: targetShipment.companyID,
+                        status: targetShipment.status
+                    });
+                } else {
+                    console.log('❌ DEBUG: Target shipment ICAL-227B8E NOT found in autocomplete data');
+                    console.log('🔍 Available shipment IDs:', allShipments.map(s => s.shipmentID).filter(Boolean).slice(0, 20));
+                }
+
+                setAllShipments(allShipments);
 
             } catch (error) {
                 console.error('Error loading shipments for search:', error);
@@ -819,11 +874,15 @@ const GlobalShipmentList = () => {
 
             if (isShipmentIdPattern) {
                 try {
-                    // Try to find exact shipment ID match across all companies
+                    console.log('🔍 Shipment ID pattern detected, searching database for exact match:', value);
+
+                    // ✅ ENHANCED SHIPMENT ID SEARCH - Multiple strategies
                     let shipmentsQuery;
+                    let targetCompanyIds = [];
 
                     if (userRole === 'superadmin') {
                         // Super admin can search all shipments
+                        console.log('🔍 Super admin search - querying all shipments');
                         shipmentsQuery = query(
                             collection(db, 'shipments'),
                             where('shipmentID', '==', value),
@@ -832,13 +891,28 @@ const GlobalShipmentList = () => {
                     } else {
                         // Admin can only search their connected companies
                         const connectedCompanyIds = selectedCompanyData?.companyIds || availableCompanies.map(c => c.companyID);
+                        console.log('🔍 Admin search - connected companies:', connectedCompanyIds);
+
                         if (connectedCompanyIds.length > 0 && connectedCompanyIds !== 'all') {
-                            shipmentsQuery = query(
-                                collection(db, 'shipments'),
-                                where('shipmentID', '==', value),
-                                where('companyID', 'in', connectedCompanyIds.slice(0, 10)), // Firestore limit
-                                limit(1)
-                            );
+                            targetCompanyIds = Array.isArray(connectedCompanyIds) ? connectedCompanyIds : [connectedCompanyIds];
+
+                            if (targetCompanyIds.length <= 10) {
+                                // ✅ STANDARD FIRESTORE QUERY
+                                shipmentsQuery = query(
+                                    collection(db, 'shipments'),
+                                    where('shipmentID', '==', value),
+                                    where('companyID', 'in', targetCompanyIds),
+                                    limit(1)
+                                );
+                            } else {
+                                // ✅ FALLBACK FOR >10 COMPANIES - Search without company filter first
+                                console.log('🔍 >10 companies detected, using fallback search strategy');
+                                shipmentsQuery = query(
+                                    collection(db, 'shipments'),
+                                    where('shipmentID', '==', value),
+                                    limit(1)
+                                );
+                            }
                         } else {
                             shipmentsQuery = query(
                                 collection(db, 'shipments'),
@@ -851,9 +925,24 @@ const GlobalShipmentList = () => {
                     const snapshot = await getDocs(shipmentsQuery);
 
                     if (!snapshot.empty) {
-                        // Found exact match - navigate directly to shipment detail
+                        // Found exact match - validate access and navigate to shipment detail
                         const shipmentDoc = snapshot.docs[0];
                         const shipmentData = shipmentDoc.data();
+
+                        console.log('✅ Found exact shipment match:', {
+                            shipmentID: shipmentData.shipmentID,
+                            companyID: shipmentData.companyID,
+                            status: shipmentData.status
+                        });
+
+                        // ✅ VALIDATE ADMIN ACCESS TO SHIPMENT'S COMPANY
+                        if (userRole === 'admin' && targetCompanyIds.length > 0) {
+                            if (!targetCompanyIds.includes(shipmentData.companyID)) {
+                                console.log('🚫 Admin does not have access to shipment company:', shipmentData.companyID);
+                                console.log('🔍 Admin has access to companies:', targetCompanyIds);
+                                return; // Skip shipments from unauthorized companies
+                            }
+                        }
 
                         // Skip archived shipments
                         if (shipmentData.status?.toLowerCase()?.trim() === 'archived') {
@@ -1790,6 +1879,11 @@ const GlobalShipmentList = () => {
                         onModalBack={null}
                         deepLinkParams={shipmentsDeepLinkParams}
                         onOpenCreateShipment={handleOpenCreateShipment}
+                        adminViewMode={viewMode}
+                        adminCompanyIds={selectedCompanyId === 'all' ?
+                            (userRole === 'superadmin' ? 'all' : availableCompanies.map(c => c.companyID)) :
+                            [selectedCompanyId]
+                        }
                         onNavigationChange={(navigationStack) => {
                             // Track when shipment detail is open for breadcrumb display
                             const shipmentDetailView = navigationStack.find(view => view.component === 'shipment-detail');
