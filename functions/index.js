@@ -497,6 +497,15 @@ exports.updateChargeType = updateChargeType;
 exports.deleteChargeType = deleteChargeType;
 exports.getChargeTypeStats = getChargeTypeStats;
 
+// Export duplicate invoice search function
+const { adminFindDuplicateInvoices } = require('./src/admin-find-duplicate-invoices');
+exports.adminFindDuplicateInvoices = adminFindDuplicateInvoices;
+
+// Export daily currency rate fetching functions
+const { fetchDailyCurrencyRates, fetchCurrencyRatesManual } = require('./src/fetchDailyCurrencyRates');
+exports.fetchDailyCurrencyRates = fetchDailyCurrencyRates;
+exports.fetchCurrencyRatesManual = fetchCurrencyRatesManual;
+
 // Export file upload functions
 exports.uploadFile = uploadFile;
 exports.uploadFileBase64 = uploadFileBase64;

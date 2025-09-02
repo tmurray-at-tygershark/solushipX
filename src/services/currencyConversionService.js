@@ -69,11 +69,23 @@ class CurrencyConversionService {
      */
     async getRatesForDate(targetDate) {
         try {
+            // ✅ FIXED: Validate targetDate before using it
+            if (!targetDate || isNaN(new Date(targetDate).getTime())) {
+                console.warn('Invalid targetDate provided to getRatesForDate:', targetDate);
+                return await this.getLatestRates();
+            }
+
             const startOfDay = new Date(targetDate);
             startOfDay.setHours(0, 0, 0, 0);
             
             const endOfDay = new Date(targetDate);
             endOfDay.setHours(23, 59, 59, 999);
+
+            // ✅ FIXED: Additional validation after date creation
+            if (isNaN(startOfDay.getTime()) || isNaN(endOfDay.getTime())) {
+                console.warn('Invalid date range created:', { startOfDay, endOfDay, originalDate: targetDate });
+                return await this.getLatestRates();
+            }
 
             // Query rates for the specific date
             const ratesQuery = query(
@@ -241,6 +253,10 @@ class CurrencyConversionService {
                 provider: rates.provider
             };
 
+            // ✅ FIXED: Only show conversion applied if actual conversion happened (not same currency)
+            const actualConversionApplied = (costCurrency !== targetCurrency && costAmount > 0) || 
+                                          (chargeCurrency !== targetCurrency && chargeAmount > 0);
+
             return {
                 profit,
                 currency: targetCurrency, // Always CAD
@@ -248,7 +264,7 @@ class CurrencyConversionService {
                 chargeConverted: convertedCharge,
                 exchangeRateUsed: rates.timestamp,
                 exchangeRatesUsed, // Detailed rate info for audit
-                conversionApplied: costCurrency !== targetCurrency || chargeCurrency !== targetCurrency,
+                conversionApplied: actualConversionApplied, // ✅ FIXED: Only true if actual conversion occurred
                 originalCostCurrency: costCurrency,
                 originalChargeCurrency: chargeCurrency
             };

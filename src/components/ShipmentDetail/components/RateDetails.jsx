@@ -646,7 +646,7 @@ const RateDetails = ({
     const calculateLineItemProfit = useCallback(async (item, exchangeRates = null) => {
         // Tax charges should not have profit calculations - they are pass-through charges
         if (item.isTax || isTaxCharge(item.code)) {
-            return null; // Special value to indicate N/A for taxes
+            return null; // Special value to indicate $0.00 for taxes
         }
 
         const actualCost = parseFloat(item.actualCost) || 0;
@@ -759,7 +759,7 @@ const RateDetails = ({
 
                 for (const item of localRateBreakdown) {
                     if (item.isTax || isTaxCharge(item.code)) {
-                        profitResults[item.id] = null; // N/A for tax charges
+                        profitResults[item.id] = null; // $0.00 for tax charges
                         continue;
                     }
 
@@ -1774,11 +1774,7 @@ const RateDetails = ({
                                                             </FormControl>
                                                         </Box>
                                                     ) : (
-                                                        (item.actualCost !== null && item.actualCost !== undefined && item.actualCost !== '' && Number(item.actualCost) !== 0) ? formatCurrency(item.actualCost, true, item.actualCostCurrency) : (
-                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                                TBD
-                                                            </Typography>
-                                                        )
+                                                        formatCurrency(item.actualCost || 0, true, item.actualCostCurrency)
                                                     )}
                                                 </TableCell>
                                             )}
@@ -1823,11 +1819,7 @@ const RateDetails = ({
                                                             </FormControl>
                                                         </Box>
                                                     ) : (
-                                                        (item.actualCharge !== null && item.actualCharge !== undefined && item.actualCharge !== '' && Number(item.actualCharge) !== 0) ? formatCurrency(item.actualCharge, true, item.actualChargeCurrency) : (
-                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                                TBD
-                                                            </Typography>
-                                                        )
+                                                        formatCurrency(item.actualCharge || 0, true, item.actualChargeCurrency)
                                                     )}
                                                 </TableCell>
                                             )}
@@ -1842,10 +1834,9 @@ const RateDetails = ({
                                                                     <Typography sx={{
                                                                         fontSize: '12px',
                                                                         color: '#6b7280',
-                                                                        fontWeight: 400,
-                                                                        fontStyle: 'italic'
+                                                                        fontWeight: 400
                                                                     }}>
-                                                                        N/A
+                                                                        $0.00 CAD
                                                                     </Typography>
                                                                 );
                                                             }
@@ -1886,16 +1877,15 @@ const RateDetails = ({
                                                         !item.isMarkup ? (() => {
                                                             const profitResult = profitCalculations[item.id];
 
-                                                            // Tax charges or uncalculated profits show N/A
+                                                            // Tax charges or uncalculated profits show $0.00
                                                             if (profitResult === null || profitResult === undefined) {
                                                                 return (
                                                                     <Typography sx={{
                                                                         fontSize: '12px',
                                                                         color: '#6b7280',
-                                                                        fontWeight: 400,
-                                                                        fontStyle: 'italic'
+                                                                        fontWeight: 400
                                                                     }}>
-                                                                        {profitResult === null ? 'N/A' : 'Calculating...'}
+                                                                        {profitResult === null ? '$0.00 CAD' : 'Calculating...'}
                                                                     </Typography>
                                                                 );
                                                             }
@@ -1926,15 +1916,27 @@ const RateDetails = ({
                                                                             fontStyle: 'italic'
                                                                         }}>
                                                                             {(() => {
-                                                                                // Use the same logic as totals row - check exchangeRates state
-                                                                                const usdRate = exchangeRates?.USD ||           // Direct USD property
-                                                                                    exchangeRates?.rates?.USD ||     // Nested rates.USD  
-                                                                                    exchangeRates?.chargeRate;       // chargeRate property
+                                                                                // ✅ FIXED: Only show conversion if cost and charge currencies are different
+                                                                                if (typeof profitResult === 'object') {
+                                                                                    const originalCostCurrency = profitResult.originalCostCurrency || item.quotedCostCurrency || item.currency || 'CAD';
+                                                                                    const originalChargeCurrency = profitResult.originalChargeCurrency || item.quotedChargeCurrency || item.currency || 'CAD';
 
-                                                                                if (usdRate && usdRate !== 1) {
-                                                                                    return `Converted @ ${usdRate.toFixed(3)}`;
+                                                                                    // Only show conversion text if currencies are actually different
+                                                                                    if (originalCostCurrency !== 'CAD' || originalChargeCurrency !== 'CAD') {
+                                                                                        const exchangeRateInfo = profitResult.exchangeRatesUsed;
+                                                                                        const costRate = exchangeRateInfo?.costRate;
+                                                                                        const chargeRate = exchangeRateInfo?.chargeRate;
+
+                                                                                        // Show specific rate if available, otherwise generic message
+                                                                                        if (costRate && costRate !== 1 && !isNaN(costRate)) {
+                                                                                            return `Converted @ ${costRate.toFixed(3)}`;
+                                                                                        } else if (chargeRate && chargeRate !== 1 && !isNaN(chargeRate)) {
+                                                                                            return `Converted @ ${chargeRate.toFixed(3)}`;
+                                                                                        }
+                                                                                        return 'Converted to CAD';
+                                                                                    }
                                                                                 }
-                                                                                return 'Converted @ current rates';
+                                                                                return null; // No conversion needed
                                                                             })()}
                                                                         </Typography>
                                                                     )}
@@ -2087,40 +2089,32 @@ const RateDetails = ({
 
                                     {/* Total Row */}
                                     <TableRow sx={{ borderTop: '2px solid #e0e0e0', bgcolor: '#f8fafc' }}>
-                                        <TableCell sx={{ fontSize: '14px', fontWeight: 700 }}>
+                                        <TableCell sx={{ fontSize: '14px', fontWeight: 700, verticalAlign: 'top' }}>
                                             {/* Empty cell for code column */}
                                         </TableCell>
-                                        <TableCell sx={{ fontSize: '14px', fontWeight: 700 }}>
+                                        <TableCell sx={{ fontSize: '14px', fontWeight: 700, verticalAlign: 'top' }}>
                                             TOTAL
                                         </TableCell>
                                         {canViewFinancials && (
-                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', color: '#374151', fontWeight: 700 }}>
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', color: '#374151', fontWeight: 700, verticalAlign: 'top' }}>
                                                 {formatCurrency(localTotalQuotedCost, true, baseCurrency)}
                                             </TableCell>
                                         )}
-                                        <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
+                                        <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700, verticalAlign: 'top' }}>
                                             {formatCurrency(localTotalQuotedCharge, true, baseCurrency)}
                                         </TableCell>
                                         {canViewFinancials && (
-                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
-                                                {(localTotalActualCost !== null && localTotalActualCost !== undefined && localTotalActualCost !== '') ? formatCurrency(localTotalActualCost, true, baseCurrency) : (
-                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', fontWeight: 400 }}>
-                                                        TBD
-                                                    </Typography>
-                                                )}
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700, verticalAlign: 'top' }}>
+                                                {formatCurrency(localTotalActualCost || 0, true, baseCurrency)}
                                             </TableCell>
                                         )}
                                         {canViewFinancials && (
-                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
-                                                {(localTotalActualCharge !== null && localTotalActualCharge !== undefined && localTotalActualCharge !== '') ? formatCurrency(localTotalActualCharge, true, baseCurrency) : (
-                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', fontWeight: 400 }}>
-                                                        TBD
-                                                    </Typography>
-                                                )}
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700, verticalAlign: 'top' }}>
+                                                {formatCurrency(localTotalActualCharge || 0, true, baseCurrency)}
                                             </TableCell>
                                         )}
                                         {canViewFinancials && (
-                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700, verticalAlign: 'top' }}>
                                                 {(() => {
                                                     // Use the comprehensive profit calculation from calculateLocalTotals
                                                     const profit = localTotalProfit;
@@ -2130,7 +2124,7 @@ const RateDetails = ({
                                                     const absProfit = Math.abs(profit);
                                                     const color = isProfit ? '#059669' : (isLoss ? '#dc2626' : 'inherit');
                                                     return (
-                                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-start' }}>
                                                             <Typography sx={{
                                                                 fontSize: '14px',
                                                                 fontWeight: 700,
@@ -2145,15 +2139,27 @@ const RateDetails = ({
                                                                     fontStyle: 'italic'
                                                                 }}>
                                                                     {(() => {
-                                                                        // Check multiple possible structures for USD rate
-                                                                        const usdRate = exchangeRatesUsed?.USD ||           // Direct USD property
-                                                                            exchangeRatesUsed?.rates?.USD ||     // Nested rates.USD
-                                                                            exchangeRatesUsed?.chargeRate;       // chargeRate property
+                                                                        // ✅ FIXED: Only show conversion info if currencies were actually converted
+                                                                        // Check if any line items had different currencies requiring conversion
+                                                                        const hasConversions = localRateBreakdown.some(item => {
+                                                                            const profitResult = profitCalculations[item.id];
+                                                                            if (profitResult && typeof profitResult === 'object') {
+                                                                                const originalCostCurrency = profitResult.originalCostCurrency || item.quotedCostCurrency || item.currency || 'CAD';
+                                                                                const originalChargeCurrency = profitResult.originalChargeCurrency || item.quotedChargeCurrency || item.currency || 'CAD';
+                                                                                return originalCostCurrency !== 'CAD' || originalChargeCurrency !== 'CAD';
+                                                                            }
+                                                                            return false;
+                                                                        });
 
-                                                                        if (usdRate && usdRate !== 1) {
-                                                                            return `Converted @ ${usdRate.toFixed(3)}`;
+                                                                        if (hasConversions && exchangeRatesUsed) {
+                                                                            // Show exchange rate if available and not 1:1
+                                                                            const usdRate = exchangeRatesUsed.USD;
+                                                                            if (usdRate && usdRate !== 1 && !isNaN(usdRate)) {
+                                                                                return `Converted @ ${usdRate.toFixed(3)}`;
+                                                                            }
+                                                                            return `Converted to ${baseCurrency}`;
                                                                         }
-                                                                        return `Converted to ${baseCurrency}`;
+                                                                        return `Total in ${baseCurrency}`; // No conversion needed
                                                                     })()}
                                                                 </Typography>
                                                             )}
@@ -2163,17 +2169,17 @@ const RateDetails = ({
                                             </TableCell>
                                         )}
                                         {(canViewFinancials || canEditCharges) && (
-                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700, verticalAlign: 'top' }}>
                                                 {/* Empty cell for Invoice# column */}
                                             </TableCell>
                                         )}
                                         {(canViewFinancials || canEditCharges) && (
-                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700, verticalAlign: 'top' }}>
                                                 {/* Empty cell for EDI# column */}
                                             </TableCell>
                                         )}
                                         {canEditCharges && (
-                                            <TableCell sx={{ fontSize: '14px', textAlign: 'center', fontWeight: 700 }}>
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'center', fontWeight: 700, verticalAlign: 'top' }}>
                                                 {/* Empty cell for Commissionable column */}
                                             </TableCell>
                                         )}

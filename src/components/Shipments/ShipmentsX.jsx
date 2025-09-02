@@ -4375,9 +4375,41 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     // No client-side company filtering needed here
 
                     if (advancedFiltersParam.customerId) {
-                        const shipmentCustomerId = shipment.shipTo?.customerID || shipment.selectedCustomerId || shipment.customerId;
-                        if (shipmentCustomerId !== advancedFiltersParam.customerId) {
+                        console.log(`🔍 DEBUG: Advanced customer filter active for: "${advancedFiltersParam.customerId}"`);
+
+                        // ✅ COMPREHENSIVE: Handle both customer ID and customer name selections
+                        const shipmentCustomerId = shipment?.customerId ||
+                            shipment?.customerID ||
+                            shipment?.customer?.id ||
+                            shipment?.shipFrom?.customerID ||
+                            shipment?.shipFrom?.customerId ||
+                            shipment?.shipFrom?.addressClassID;
+
+                        const customerNameFromMap = customers[shipmentCustomerId];
+
+                        // ✅ SPECIAL HANDLING: For TEMSPEC, match both customer IDs that belong to the same customer
+                        const isTemspecFilter = advancedFiltersParam.customerId === 'TEMSPE';
+                        const temspecCustomerIds = ['TEMSPE', '65MQ6skvMVZ6Z9Zj2Sk5']; // Both IDs belong to Temspec Inc.
+
+                        // Match by ID, name mapping, or company name
+                        const match1 = shipmentCustomerId === advancedFiltersParam.customerId;
+                        const match2 = customerNameFromMap === advancedFiltersParam.customerId;
+                        const match3 = shipment.shipTo?.company === advancedFiltersParam.customerId;
+                        const match4 = Object.entries(customers).some(([id, customerData]) =>
+                            id === shipmentCustomerId &&
+                            (customerData.name === advancedFiltersParam.customerId ||
+                                customerData.companyName === advancedFiltersParam.customerId)
+                        );
+                        // ✅ NEW: Special case for TEMSPEC - match both customer IDs
+                        const match5 = isTemspecFilter && temspecCustomerIds.includes(shipmentCustomerId);
+
+                        const matches = [match1, match2, match3, match4, match5].some(Boolean);
+
+                        if (!matches) {
+                            console.log(`❌ FILTERED OUT: ${shipment.shipmentID || shipment.id} - shipmentCustomerId: "${shipmentCustomerId}", shipTo.company: "${shipment.shipTo?.company || 'none'}"`);
                             return false;
+                        } else {
+                            console.log(`✅ MATCHED: ${shipment.shipmentID || shipment.id} - matches: [${match1}, ${match2}, ${match3}, ${match4}, ${match5}]`);
                         }
                     }
 
@@ -4787,27 +4819,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 console.log(`🏷️ Invoice status filter: ${beforeCount} → ${filteredData.length} shipments`);
             }
 
-            // 6. APPLY CUSTOMER FILTER (Independent of search fields)
-            if (selectedCustomer) {
-                console.log(`🏷️ Applying customer filter: ${selectedCustomer}`);
-                const beforeCount = filteredData.length;
-
-                filteredData = filteredData.filter(shipment => {
-                    const shipToCustomerId = shipment.shipTo?.customerID;
-                    const shipToCompany = shipment.shipTo?.company;
-                    const customerNameFromMap = customers[shipToCustomerId];
-
-                    // Check if customer ID matches exactly or customer name matches
-                    const matches = [
-                        shipToCustomerId === selectedCustomer,
-                        customerNameFromMap === selectedCustomer,
-                        shipToCompany === selectedCustomer
-                    ].some(Boolean);
-
-                    return matches;
-                });
-
-                console.log(`🏷️ Customer filter: ${beforeCount} → ${filteredData.length} shipments`);
+            // 6. APPLY CUSTOMER FILTER - DISABLED (Advanced filters handle this)
+            // ✅ REMOVED: This was conflicting with advanced filters and limiting results
+            // Advanced filters at line 4377 handle customer filtering properly
+            if (selectedCustomer && !advancedFiltersParam.customerId) {
+                console.log(`🏷️ Simple customer filter disabled when advanced filters are active`);
+                console.log(`🏷️ Selected customer: "${selectedCustomer}" - handled by advanced filters`);
             }
 
             // 7. APPLY SHIPMENT TYPE FILTER
@@ -5008,16 +5025,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
 
         console.log('🔄 Manual reload triggered');
-        // Use current unifiedSearch value at the time of execution
-        loadShipments(null, unifiedSearch);
-    }, [loadShipments, authLoading, companyCtxLoading, companyIdForAddress, adminViewMode, navigationStack]); // Removed unifiedSearch from dependencies
+        // Use current unifiedSearch value and advancedFilters at the time of execution
+        loadShipments(null, unifiedSearch, null, null, advancedFilters);
+    }, [loadShipments, authLoading, companyCtxLoading, companyIdForAddress, adminViewMode, navigationStack, advancedFilters]); // Added advancedFilters to dependencies
 
     // Add a shipment updated callback that refreshes the table data
     const handleShipmentUpdated = useCallback((updatedShipmentId, message = 'Shipment updated successfully') => {
         console.log('🔄 Shipment updated, refreshing table data:', updatedShipmentId);
 
         // Always reload shipments when one is updated
-        loadShipments(null, unifiedSearch);
+        loadShipments(null, unifiedSearch, null, null, advancedFilters);
 
         // Show success message
         showSnackbar(message, 'success');
@@ -5037,7 +5054,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         console.log('🔄 Draft saved, refreshing table data:', draftId);
 
         // Always reload shipments when a draft is saved
-        loadShipments(null, unifiedSearch);
+        loadShipments(null, unifiedSearch, null, null, advancedFilters);
 
         // Show success message
         showSnackbar(message, 'success');
@@ -5052,11 +5069,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         debounceTimeoutRef.current = setTimeout(() => {
             // Check if we're still in the table view
             if (navigationStack.length === 1) {
-                // Use current unifiedSearch value at the time of execution
-                loadShipments(null, unifiedSearch);
+                // Use current unifiedSearch value and advancedFilters at the time of execution
+                loadShipments(null, unifiedSearch, null, null, advancedFilters);
             }
         }, 500);
-    }, [loadShipments, navigationStack]); // Removed unifiedSearch from dependencies to prevent loop
+    }, [loadShipments, navigationStack, advancedFilters]); // Added advancedFilters to dependencies
 
     // Tab change handler - memoized for performance
     const handleTabChange = useCallback((event, newValue) => {
@@ -7082,12 +7099,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                             rowsPerPage={rowsPerPage}
                                             onPageChange={(event, newPage) => {
                                                 setPage(newPage);
-                                                setTimeout(() => loadShipments(null, unifiedSearch), 50);
+                                                setTimeout(() => loadShipments(null, unifiedSearch, null, null, advancedFilters), 50);
                                             }}
                                             onRowsPerPageChange={(event) => {
                                                 setRowsPerPage(parseInt(event.target.value, 10));
                                                 setPage(0);
-                                                setTimeout(() => loadShipments(null, unifiedSearch), 50);
+                                                setTimeout(() => loadShipments(null, unifiedSearch, null, null, advancedFilters), 50);
                                             }}
                                         />
                                     </Box>
@@ -7346,7 +7363,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             showSnackbar(`Successfully deleted ${draftShipments.length} draft shipment${draftShipments.length > 1 ? 's' : ''}`, 'success');
             setSelected([]); // Clear selection
-            loadShipments(null, unifiedSearch); // Reload the shipments list
+            loadShipments(null, unifiedSearch, null, null, advancedFilters); // Reload the shipments list
         } catch (error) {
             console.error('Error deleting selected drafts:', error);
             showSnackbar('Error deleting draft shipments', 'error');
@@ -7561,9 +7578,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Handle refresh table data
     const handleRefreshTable = useCallback(() => {
-        loadShipments(null, unifiedSearch);
+        loadShipments(null, unifiedSearch, null, null, advancedFilters);
         showSnackbar('Refreshing shipments data...', 'info');
-    }, [loadShipments, showSnackbar]); // Removed unifiedSearch from dependencies
+    }, [loadShipments, showSnackbar, advancedFilters]); // Added advancedFilters to dependencies
 
     // Handle archive shipment
     const handleArchiveShipment = useCallback(async (shipment) => {
@@ -7581,7 +7598,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             if (result.data.success) {
                 showSnackbar('Shipment archived successfully', 'success');
                 // Reload shipments to reflect the change
-                loadShipments(null, unifiedSearch);
+                loadShipments(null, unifiedSearch, null, null, advancedFilters);
             } else {
                 showSnackbar('Failed to archive shipment', 'error');
             }
@@ -7731,12 +7748,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         rowsPerPage={rowsPerPage}
                                         onPageChange={(event, newPage) => {
                                             setPage(newPage);
-                                            setTimeout(() => loadShipments(null, unifiedSearch), 50);
+                                            setTimeout(() => loadShipments(null, unifiedSearch, null, null, advancedFilters), 50);
                                         }}
                                         onRowsPerPageChange={(event) => {
                                             setRowsPerPage(parseInt(event.target.value, 10));
                                             setPage(0);
-                                            setTimeout(() => loadShipments(null, unifiedSearch), 50);
+                                            setTimeout(() => loadShipments(null, unifiedSearch, null, null, advancedFilters), 50);
                                         }}
                                     />
                                 </Box>
@@ -7963,7 +7980,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         // Delete the shipment
                         await deleteDoc(doc(db, 'shipments', shipment.id));
                         showSnackbar('Draft shipment deleted successfully', 'success');
-                        loadShipments(null, unifiedSearch); // Reload the shipments list
+                        loadShipments(null, unifiedSearch, null, null, advancedFilters); // Reload the shipments list
                     } catch (error) {
                         console.error('Error deleting draft:', error);
                         showSnackbar('Error deleting draft shipment', 'error');
