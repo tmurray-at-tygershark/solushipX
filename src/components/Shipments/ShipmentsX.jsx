@@ -987,6 +987,206 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const [loading, setLoading] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
 
+    // Sorting state - default to ship date (most recent first)
+    const [sortBy, setSortBy] = useState('shipDate');
+    const [sortDirection, setSortDirection] = useState('desc'); // desc = newest first
+
+    // Sort handling - only allow sorting on specific columns
+    const SORTABLE_COLUMNS = ['customer', 'shipmentID', 'eta', 'carrier', 'status', 'shipDate'];
+
+    const handleSort = (column) => {
+        // Only allow sorting on specified columns
+        if (!SORTABLE_COLUMNS.includes(column)) {
+            return;
+        }
+
+        if (sortBy === column) {
+            // Toggle direction if same column
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            // New column, default to descending for dates/IDs, ascending for text
+            setSortBy(column);
+            setSortDirection(['shipDate', 'shipmentID', 'eta'].includes(column) ? 'desc' : 'asc');
+        }
+    };
+
+    // Sort function - only handles specified columns
+    const sortShipments = useCallback((shipments) => {
+        if (!sortBy || !SORTABLE_COLUMNS.includes(sortBy)) {
+            return shipments;
+        }
+
+        return [...shipments].sort((a, b) => {
+            let aValue, bValue;
+
+            switch (sortBy) {
+                case 'shipmentID':
+                    aValue = a.shipmentID || '';
+                    bValue = b.shipmentID || '';
+                    break;
+
+                case 'customer':
+                    // Match the exact customer display logic from ShipmentTableRow.jsx
+                    const getCustomerName = (shipment) => {
+                        // First try to get from customers lookup (like the table does)
+                        const customerId = shipment?.customerId || shipment?.customerID;
+                        if (customerId && customers[customerId]) {
+                            const customerData = customers[customerId];
+                            return customerData.name || customerData.companyName || customerId;
+                        }
+
+                        // Fallback to shipment data
+                        return shipment.customerName || shipment.shipTo?.companyName ||
+                            shipment.shipTo?.company || shipment.shipTo?.name ||
+                            customerId || 'Unknown Customer';
+                    };
+
+                    aValue = getCustomerName(a);
+                    bValue = getCustomerName(b);
+                    break;
+
+                case 'createdAt':
+                case 'shipDate':
+                    const getShipmentDate = (shipment) => {
+                        if (sortBy === 'shipDate') {
+                            // For ship date: prefer bookedAt, then bookingTimestamp, then createdAt
+                            if (shipment.bookedAt) {
+                                return shipment.bookedAt?.toDate ?
+                                    shipment.bookedAt.toDate() :
+                                    new Date(shipment.bookedAt);
+                            }
+                            if (shipment.bookingTimestamp) {
+                                return shipment.bookingTimestamp?.toDate ?
+                                    shipment.bookingTimestamp.toDate() :
+                                    new Date(shipment.bookingTimestamp);
+                            }
+                            if (shipment.createdAt) {
+                                return shipment.createdAt?.toDate ?
+                                    shipment.createdAt.toDate() :
+                                    new Date(shipment.createdAt);
+                            }
+                        } else {
+                            // For created date: prefer createdAt, then bookingTimestamp
+                            if (shipment.createdAt) {
+                                return shipment.createdAt?.toDate ?
+                                    shipment.createdAt.toDate() :
+                                    new Date(shipment.createdAt);
+                            }
+                            if (shipment.bookingTimestamp) {
+                                return shipment.bookingTimestamp?.toDate ?
+                                    shipment.bookingTimestamp.toDate() :
+                                    new Date(shipment.bookingTimestamp);
+                            }
+                        }
+                        return new Date(0);
+                    };
+                    aValue = getShipmentDate(a);
+                    bValue = getShipmentDate(b);
+                    break;
+
+                case 'eta':
+                    // Match the exact ETA display logic from ShipmentTableRow.jsx
+                    const getETA = (shipment) => {
+                        // Priority 1: ETA1 (check both locations like the table does)
+                        const eta1 = shipment?.shipmentInfo?.eta1 || shipment?.eta1;
+                        if (eta1) {
+                            try {
+                                // Handle Firestore Timestamp
+                                if (eta1?.toDate) {
+                                    return eta1.toDate();
+                                }
+                                // Handle date-only strings (YYYY-MM-DD) to avoid timezone issues
+                                else if (typeof eta1 === 'string' && eta1.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                    const parts = eta1.split('-');
+                                    return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                                }
+                                // Handle other date formats
+                                else {
+                                    return new Date(eta1);
+                                }
+                            } catch (e) { /* continue to next option */ }
+                        }
+
+                        // Priority 2: ETA2 (check both locations like the table does)
+                        const eta2 = shipment?.shipmentInfo?.eta2 || shipment?.eta2;
+                        if (eta2) {
+                            try {
+                                // Handle Firestore Timestamp
+                                if (eta2?.toDate) {
+                                    return eta2.toDate();
+                                }
+                                // Handle date-only strings (YYYY-MM-DD) to avoid timezone issues
+                                else if (typeof eta2 === 'string' && eta2.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                    const parts = eta2.split('-');
+                                    return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                                }
+                                // Handle other date formats
+                                else {
+                                    return new Date(eta2);
+                                }
+                            } catch (e) { /* continue to next option */ }
+                        }
+
+                        // Priority 3: Carrier estimated delivery dates (fallback)
+                        const carrierEstimatedDelivery =
+                            shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                            shipment?.selectedRate?.transit?.estimatedDelivery ||
+                            shipment?.selectedRate?.estimatedDeliveryDate;
+
+                        if (carrierEstimatedDelivery) {
+                            try {
+                                return carrierEstimatedDelivery?.toDate ? carrierEstimatedDelivery.toDate() : new Date(carrierEstimatedDelivery);
+                            } catch (e) { /* continue to fallback */ }
+                        }
+
+                        // Return very old date for sorting items without ETA to the bottom
+                        return new Date(0);
+                    };
+                    aValue = getETA(a);
+                    bValue = getETA(b);
+                    break;
+
+                case 'reference':
+                    aValue = a.referenceNumber || a.shipperReferenceNumber || '';
+                    bValue = b.referenceNumber || b.shipperReferenceNumber || '';
+                    break;
+
+                case 'route':
+                    const getRoute = (shipment) => {
+                        const from = shipment.shipFrom?.city || '';
+                        const to = shipment.shipTo?.city || '';
+                        return `${from} → ${to}`;
+                    };
+                    aValue = getRoute(a);
+                    bValue = getRoute(b);
+                    break;
+
+                case 'carrier':
+                    aValue = a.carrier?.name || a.carrier || '';
+                    bValue = b.carrier?.name || b.carrier || '';
+                    break;
+
+                case 'charges':
+                    aValue = parseFloat(a.totalCharges || a.selectedRate?.totalCharge || 0);
+                    bValue = parseFloat(b.totalCharges || b.selectedRate?.totalCharge || 0);
+                    break;
+
+                case 'status':
+                    aValue = a.status || '';
+                    bValue = b.status || '';
+                    break;
+
+                default:
+                    return 0;
+            }
+
+            // Handle sorting
+            if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+            if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [sortBy, sortDirection, customers]);
+
     // Tab and filter states
     const [selectedTab, setSelectedTab] = useState('all');
     const [page, setPage] = useState(0);
@@ -4883,54 +5083,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             setTotalCount(filteredData.length);
 
-            // CRITICAL FIX: Apply date sorting after all filters to ensure latest shipments appear at the top
-            // This handles both regular shipments (createdAt) and QuickShip (bookedAt) properly
-            filteredData.sort((a, b) => {
-                // Get the appropriate date for each shipment - MUST match CREATED column display logic
-                const getShipmentDate = (shipment) => {
-                    // Match the CREATED column logic from ShipmentTableRow.jsx exactly
-                    if (shipment.creationMethod === 'quickship') {
-                        // For QuickShip: bookingTimestamp (primary) > bookedAt > createdAt (fallback)
-                        if (shipment.bookingTimestamp) {
-                            return shipment.bookingTimestamp?.toDate ?
-                                shipment.bookingTimestamp.toDate() :
-                                new Date(shipment.bookingTimestamp);
-                        }
-                        if (shipment.bookedAt) {
-                            return shipment.bookedAt?.toDate ?
-                                shipment.bookedAt.toDate() :
-                                new Date(shipment.bookedAt);
-                        }
-                        if (shipment.createdAt) {
-                            return shipment.createdAt?.toDate ?
-                                shipment.createdAt.toDate() :
-                                new Date(shipment.createdAt);
-                        }
-                    } else {
-                        // For regular shipments: createdAt (primary) > bookingTimestamp (fallback)
-                        if (shipment.createdAt) {
-                            return shipment.createdAt?.toDate ?
-                                shipment.createdAt.toDate() :
-                                new Date(shipment.createdAt);
-                        }
-                        if (shipment.bookingTimestamp) {
-                            return shipment.bookingTimestamp?.toDate ?
-                                shipment.bookingTimestamp.toDate() :
-                                new Date(shipment.bookingTimestamp);
-                        }
-                    }
-                    // Fallback to epoch if no date available
-                    return new Date(0);
-                };
-
-                const dateA = getShipmentDate(a);
-                const dateB = getShipmentDate(b);
-
-                // Sort descending (newest first)
-                return dateB - dateA;
-            });
-
-            console.log(`📅 Applied CREATED date sorting - matches table display column`);
+            // Apply current sorting
+            filteredData = sortShipments(filteredData);
+            console.log(`📅 Applied ${sortBy} sorting (${sortDirection}) - matches table display column`);
 
             // Apply pagination to filtered and sorted data
             const paginatedData = rowsPerPage === -1
@@ -4965,7 +5120,24 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         } finally {
             setLoading(false);
         }
-    }, [companyIdForAddress, selectedTab, fetchCarrierData, adminViewMode, adminCompanyIds, customers, carrierData, allShipments.length, isSemanticMode, semanticSearchResults, searchFields, selectedCustomer, filters, dateRange, page, rowsPerPage, applyCarrierFilter, applyStatusFilter, performUnifiedSearch]); // Removed unifiedSearch from dependencies to prevent infinite loop
+    }, [companyIdForAddress, selectedTab, fetchCarrierData, adminViewMode, adminCompanyIds, customers, carrierData, allShipments.length, isSemanticMode, semanticSearchResults, searchFields, selectedCustomer, filters, dateRange, page, rowsPerPage, applyCarrierFilter, applyStatusFilter, performUnifiedSearch]); // Removed sorting dependencies - sorting only affects display order, not data fetching
+
+    // Effect to re-sort existing data when sorting state changes (without reloading from database)
+    useEffect(() => {
+        if (shipments.length > 0) {
+            console.log(`🔄 Applying new sort to existing ${shipments.length} shipments: ${sortBy} ${sortDirection}`);
+            const sortedShipments = sortShipments(shipments);
+            console.log(`✅ Re-sorted shipments, first shipment after sort:`, sortedShipments[0]?.shipmentID);
+            setShipments(sortedShipments);
+        }
+
+        if (filteredShipments.length > 0) {
+            console.log(`🔄 Applying new sort to existing ${filteredShipments.length} filtered shipments: ${sortBy} ${sortDirection}`);
+            const sortedFiltered = sortShipments(filteredShipments);
+            console.log(`✅ Re-sorted filtered shipments, first shipment after sort:`, sortedFiltered[0]?.shipmentID);
+            setFilteredShipments(sortedFiltered);
+        }
+    }, [sortBy, sortDirection, sortShipments, customers]);
 
     // Auto-apply filters function with debouncing
     const autoApplyFilters = useCallback((filters = null, delay = 0) => {
@@ -7134,6 +7306,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         showSnackbar={showSnackbar}
                                         onOpenTrackingDrawer={handleOpenTrackingDrawer}
                                         adminViewMode={adminViewMode}
+                                        // Sorting props
+                                        sortBy={sortBy}
+                                        sortDirection={sortDirection}
+                                        onSort={handleSort}
                                     />
                                 )
                             }

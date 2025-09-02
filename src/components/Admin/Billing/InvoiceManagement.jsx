@@ -46,7 +46,9 @@ import {
     PictureAsPdf as PdfIcon,
     CheckCircle as CheckCircleIcon,
     Cancel as CancelIcon,
-    AttachMoney as AttachMoneyIcon
+    AttachMoney as AttachMoneyIcon,
+    ArrowUpward as ArrowUpwardIcon,
+    ArrowDownward as ArrowDownwardIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { collection, getDocs, query, orderBy, where, doc, updateDoc, addDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
@@ -81,6 +83,10 @@ const InvoiceManagement = () => {
     const [selectedCompanyFilter, setSelectedCompanyFilter] = useState(null);
     const [selectedCustomerFilter, setSelectedCustomerFilter] = useState(null);
     const [selectedPaymentStatusFilter, setSelectedPaymentStatusFilter] = useState(null);
+
+    // Sorting state
+    const [sortBy, setSortBy] = useState('invoiceNumber');
+    const [sortDirection, setSortDirection] = useState('desc'); // desc = highest first
 
     // ✅ NEW: Mark As Paid dialog state
     const [markAsPaidDialogOpen, setMarkAsPaidDialogOpen] = useState(false);
@@ -239,11 +245,11 @@ const InvoiceManagement = () => {
                 invoiceData = [];
             }
 
-            // Sort by creation date (newest first)
-            invoiceData.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+            // Apply default sort (highest invoice number first)
+            const sortedData = sortInvoices(invoiceData);
 
             setInvoices(invoiceData);
-            setFilteredInvoices(invoiceData);
+            setFilteredInvoices(sortedData);
             calculateMetrics(invoiceData);
 
             // Hydrate customers directory for avatars
@@ -270,6 +276,10 @@ const InvoiceManagement = () => {
             const allInvoices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             const data = allInvoices.map(d => mapInvoiceRecord(d));
             setInvoices(data);
+
+            // Apply current sorting to the data
+            const sortedData = sortInvoices(data);
+            setFilteredInvoices(sortedData);
         });
         return () => unsub();
     }, []);
@@ -560,8 +570,102 @@ const InvoiceManagement = () => {
         setStatusFilter('');
     };
 
+    // Sort handling
+    const handleSort = (column) => {
+        if (sortBy === column) {
+            // Toggle direction if same column
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            // New column, default to ascending (except invoiceNumber which defaults to desc)
+            setSortBy(column);
+            setSortDirection(column === 'invoiceNumber' ? 'desc' : 'asc');
+        }
+    };
+
+    // Sort function
+    const sortInvoices = (invoices) => {
+        if (!sortBy) return invoices;
+
+        return [...invoices].sort((a, b) => {
+            let aValue, bValue;
+
+            switch (sortBy) {
+                case 'invoiceNumber':
+                    // Sort numerically by extracting numbers from invoice number
+                    aValue = parseInt(a.invoiceNumber?.replace(/\D/g, '') || '0');
+                    bValue = parseInt(b.invoiceNumber?.replace(/\D/g, '') || '0');
+                    break;
+                case 'companyName':
+                    aValue = a.companyName?.toLowerCase() || '';
+                    bValue = b.companyName?.toLowerCase() || '';
+                    break;
+                case 'customerName':
+                    aValue = a.customerName?.toLowerCase() || '';
+                    bValue = b.customerName?.toLowerCase() || '';
+                    break;
+                case 'issueDate':
+                    aValue = a.issueDate ? new Date(a.issueDate).getTime() : 0;
+                    bValue = b.issueDate ? new Date(b.issueDate).getTime() : 0;
+                    break;
+                case 'dueDate':
+                    aValue = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+                    bValue = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+                    break;
+                case 'total':
+                    aValue = Number(a.total || 0);
+                    bValue = Number(b.total || 0);
+                    break;
+                case 'status':
+                    aValue = a.status?.toLowerCase() || '';
+                    bValue = b.status?.toLowerCase() || '';
+                    break;
+                default:
+                    aValue = a[sortBy] || '';
+                    bValue = b[sortBy] || '';
+            }
+
+            if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+            if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+            return 0;
+        });
+    };
+
     const handleInvoiceClick = (invoice) => {
         handleEditInvoice(invoice);
+    };
+
+    // Sortable header component
+    const SortableHeader = ({ column, children, sx = {} }) => {
+        const isActive = sortBy === column;
+        const direction = isActive ? sortDirection : 'asc';
+
+        return (
+            <TableCell
+                sx={{
+                    fontWeight: 600,
+                    fontSize: '12px',
+                    color: '#374151',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    '&:hover': {
+                        backgroundColor: '#f3f4f6'
+                    },
+                    ...sx
+                }}
+                onClick={() => handleSort(column)}
+            >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {children}
+                    {isActive ? (
+                        direction === 'asc' ?
+                            <ArrowUpwardIcon sx={{ fontSize: '14px', color: '#6b7280' }} /> :
+                            <ArrowDownwardIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                    ) : (
+                        <Box sx={{ width: '14px' }} /> // Placeholder to maintain spacing
+                    )}
+                </Box>
+            </TableCell>
+        );
     };
 
     // 🔄 ENHANCED: Support for additional invoice statuses
@@ -840,13 +944,15 @@ const InvoiceManagement = () => {
             }
         }
 
-        setFilteredInvoices(filtered);
+        // Apply sorting to filtered results
+        const sortedFiltered = sortInvoices(filtered);
+        setFilteredInvoices(sortedFiltered);
 
         // Recalculate metrics based on filtered invoices
         calculateMetrics(filtered);
 
         setPage(0); // Reset to first page when filters change
-    }, [invoices, searchQuery, statusFilter, selectedCompanyFilter, selectedCustomerFilter, selectedPaymentStatusFilter]);
+    }, [invoices, searchQuery, statusFilter, selectedCompanyFilter, selectedCustomerFilter, selectedPaymentStatusFilter, sortBy, sortDirection]);
 
     if (loading) {
         return (
@@ -1252,14 +1358,14 @@ const InvoiceManagement = () => {
                     <Table>
                         <TableHead>
                             <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice #</TableCell>
+                                <SortableHeader column="invoiceNumber">Invoice #</SortableHeader>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>File</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Company</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Customer</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Date Sent</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Due Date</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Total</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Payment Status</TableCell>
+                                <SortableHeader column="companyName">Company</SortableHeader>
+                                <SortableHeader column="customerName">Customer</SortableHeader>
+                                <SortableHeader column="issueDate">Date Sent</SortableHeader>
+                                <SortableHeader column="dueDate">Due Date</SortableHeader>
+                                <SortableHeader column="total">Total</SortableHeader>
+                                <SortableHeader column="status">Payment Status</SortableHeader>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
                             </TableRow>
                         </TableHead>

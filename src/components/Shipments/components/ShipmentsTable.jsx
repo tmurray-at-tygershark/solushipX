@@ -9,6 +9,10 @@ import {
     CircularProgress,
     Box
 } from '@mui/material';
+import {
+    ArrowUpward as ArrowUpwardIcon,
+    ArrowDownward as ArrowDownwardIcon
+} from '@mui/icons-material';
 import ShipmentTableRow from './ShipmentTableRow';
 import { useAuth } from '../../../contexts/AuthContext';
 import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
@@ -29,7 +33,11 @@ const ShipmentsTable = ({
     onOpenTrackingDrawer,
     onViewShipmentDetail,
     onEditDraftShipment,
-    adminViewMode
+    adminViewMode,
+    // Sorting props
+    sortBy,
+    sortDirection,
+    onSort
 }) => {
     const safeShipments = shipments || [];
     const safeSelected = selected || [];
@@ -76,6 +84,50 @@ const ShipmentsTable = ({
 
     // Calculate total width - adjust based on whether charges column is shown
     const totalWidth = isAdminView ? (canViewCosts ? 1298 : 1248) : 1218;
+
+    // Sortable header component - only shows sort UI for allowed columns
+    const SORTABLE_COLUMNS = ['customer', 'shipmentID', 'eta', 'carrier', 'status', 'shipDate'];
+
+    const SortableHeader = ({ column, children, ...cellProps }) => {
+        const isActive = sortBy === column;
+        const direction = isActive ? sortDirection : 'asc';
+        const isSortable = SORTABLE_COLUMNS.includes(column);
+
+        if (!isSortable) {
+            // Return regular table cell for non-sortable columns
+            return (
+                <TableCell {...cellProps}>
+                    {children}
+                </TableCell>
+            );
+        }
+
+        return (
+            <TableCell
+                {...cellProps}
+                sx={{
+                    ...cellProps.sx,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    '&:hover': {
+                        backgroundColor: '#f3f4f6'
+                    }
+                }}
+                onClick={() => onSort && onSort(column)}
+            >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {children}
+                    {isActive ? (
+                        direction === 'asc' ?
+                            <ArrowUpwardIcon sx={{ fontSize: '14px', color: '#6b7280' }} /> :
+                            <ArrowDownwardIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                    ) : (
+                        <Box sx={{ width: '14px' }} /> // Placeholder to maintain spacing
+                    )}
+                </Box>
+            </TableCell>
+        );
+    };
 
     return (
         <Box sx={{
@@ -150,80 +202,107 @@ const ShipmentsTable = ({
                         {/* Admin View Headers */}
                         {isAdminView ? (
                             <>
-                                <TableCell sx={{
-                                    width: 140,
-                                    minWidth: 140,
-                                    maxWidth: 140,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                <SortableHeader
+                                    column="customer"
+                                    sx={{
+                                        width: 140,
+                                        minWidth: 140,
+                                        maxWidth: 140,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     CUSTOMER
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 110,
-                                    minWidth: 110,
-                                    maxWidth: 110,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="shipmentID"
+                                    sx={{
+                                        width: 110,
+                                        minWidth: 110,
+                                        maxWidth: 110,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     SHIPMENT ID
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 100,
-                                    minWidth: 100,
-                                    maxWidth: 100,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
-                                    SHIP DATE
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 100,
-                                    minWidth: 100,
-                                    maxWidth: 100,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
-                                    ETA
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 120,
-                                    minWidth: 120,
-                                    maxWidth: 120,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
-                                    REFERENCE
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 150,
-                                    minWidth: 150,
-                                    maxWidth: 150,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
-                                    ROUTE
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: canViewCosts ? 180 : 230,
-                                    minWidth: canViewCosts ? 180 : 230,
-                                    maxWidth: canViewCosts ? 180 : 230,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
-                                    CARRIER
-                                </TableCell>
-                                {canViewCosts && (
-                                    <TableCell sx={{
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="shipDate"
+                                    sx={{
                                         width: 100,
                                         minWidth: 100,
                                         maxWidth: 100,
                                         backgroundColor: '#f8fafc !important'
-                                    }}>
+                                    }}
+                                >
+                                    SHIP DATE
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="eta"
+                                    sx={{
+                                        width: 100,
+                                        minWidth: 100,
+                                        maxWidth: 100,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
+                                    ETA
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="reference"
+                                    sx={{
+                                        width: 120,
+                                        minWidth: 120,
+                                        maxWidth: 120,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
+                                    REFERENCE
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="route"
+                                    sx={{
+                                        width: 150,
+                                        minWidth: 150,
+                                        maxWidth: 150,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
+                                    ROUTE
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="carrier"
+                                    sx={{
+                                        width: canViewCosts ? 180 : 230,
+                                        minWidth: canViewCosts ? 180 : 230,
+                                        maxWidth: canViewCosts ? 180 : 230,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
+                                    CARRIER
+                                </SortableHeader>
+                                {canViewCosts && (
+                                    <SortableHeader
+                                        column="charges"
+                                        sx={{
+                                            width: 100,
+                                            minWidth: 100,
+                                            maxWidth: 100,
+                                            backgroundColor: '#f8fafc !important'
+                                        }}
+                                    >
                                         CHARGES
-                                    </TableCell>
+                                    </SortableHeader>
                                 )}
-                                <TableCell sx={{
-                                    width: 110,
-                                    minWidth: 110,
-                                    maxWidth: 110,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                <SortableHeader
+                                    column="status"
+                                    sx={{
+                                        width: 110,
+                                        minWidth: 110,
+                                        maxWidth: 110,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     STATUS
-                                </TableCell>
+                                </SortableHeader>
                                 <TableCell
                                     align="center"
                                     sx={{
@@ -250,70 +329,94 @@ const ShipmentsTable = ({
                         ) : (
                             /* Regular View Headers */
                             <>
-                                <TableCell sx={{
-                                    width: 120,
-                                    minWidth: 120,
-                                    maxWidth: 120,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                <SortableHeader
+                                    column="shipmentID"
+                                    sx={{
+                                        width: 120,
+                                        minWidth: 120,
+                                        maxWidth: 120,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     SHIPMENT ID
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 100,
-                                    minWidth: 100,
-                                    maxWidth: 100,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="shipDate"
+                                    sx={{
+                                        width: 100,
+                                        minWidth: 100,
+                                        maxWidth: 100,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     SHIP DATE
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 100,
-                                    minWidth: 100,
-                                    maxWidth: 100,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="eta"
+                                    sx={{
+                                        width: 100,
+                                        minWidth: 100,
+                                        maxWidth: 100,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     ETA
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 130,
-                                    minWidth: 130,
-                                    maxWidth: 130,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="reference"
+                                    sx={{
+                                        width: 130,
+                                        minWidth: 130,
+                                        maxWidth: 130,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     REFERENCE
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 150,
-                                    minWidth: 150,
-                                    maxWidth: 150,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="customer"
+                                    sx={{
+                                        width: 150,
+                                        minWidth: 150,
+                                        maxWidth: 150,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     CUSTOMER
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 160,
-                                    minWidth: 160,
-                                    maxWidth: 160,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="route"
+                                    sx={{
+                                        width: 160,
+                                        minWidth: 160,
+                                        maxWidth: 160,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     ROUTE
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 170,
-                                    minWidth: 170,
-                                    maxWidth: 170,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="carrier"
+                                    sx={{
+                                        width: 170,
+                                        minWidth: 170,
+                                        maxWidth: 170,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     CARRIER
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 130,
-                                    minWidth: 130,
-                                    maxWidth: 130,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
+                                </SortableHeader>
+                                <SortableHeader
+                                    column="status"
+                                    sx={{
+                                        width: 130,
+                                        minWidth: 130,
+                                        maxWidth: 130,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}
+                                >
                                     STATUS
-                                </TableCell>
+                                </SortableHeader>
                                 <TableCell
                                     align="center"
                                     sx={{
