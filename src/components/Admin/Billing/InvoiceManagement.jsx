@@ -57,6 +57,7 @@ import { functions } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCompany } from '../../../contexts/CompanyContext';
 import InvoiceForm from './InvoiceForm';
+import MarkAsPaidDialog from './MarkAsPaidDialog';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { getCircleLogo } from '../../../utils/logoUtils';
 import { Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
@@ -80,6 +81,10 @@ const InvoiceManagement = () => {
     const [selectedCompanyFilter, setSelectedCompanyFilter] = useState(null);
     const [selectedCustomerFilter, setSelectedCustomerFilter] = useState(null);
     const [selectedPaymentStatusFilter, setSelectedPaymentStatusFilter] = useState(null);
+
+    // ✅ NEW: Mark As Paid dialog state
+    const [markAsPaidDialogOpen, setMarkAsPaidDialogOpen] = useState(false);
+    const [markAsPaidInvoice, setMarkAsPaidInvoice] = useState(null);
     const [metrics, setMetrics] = useState({
         totalInvoices: 0,
         totalShipments: 0,
@@ -380,6 +385,22 @@ const InvoiceManagement = () => {
             console.error('Error marking invoice as paid:', error);
             enqueueSnackbar('Failed to mark invoice as paid: ' + error.message, { variant: 'error' });
         }
+    };
+
+    // ✅ NEW: Open Mark As Paid dialog
+    const handleOpenMarkAsPaid = (invoice) => {
+        setMarkAsPaidInvoice(invoice);
+        setMarkAsPaidDialogOpen(true);
+        setMenuAnchorEl(null);
+        setMenuInvoice(null);
+    };
+
+    // ✅ NEW: Handle successful payment marking
+    const handleMarkAsPaidSuccess = () => {
+        // Refresh invoice data and metrics (calculateMetrics is called automatically in fetchInvoices)
+        fetchInvoices();
+        setMarkAsPaidDialogOpen(false);
+        setMarkAsPaidInvoice(null);
     };
 
     // 🔄 NEW: Mark invoice as cancelled
@@ -1398,6 +1419,24 @@ const InvoiceManagement = () => {
                     transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                 >
                     <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleEditInvoice(menuInvoice); }} sx={{ fontSize: '12px' }}>View / Edit</MenuItem>
+
+                    {/* ✅ NEW: Mark As Paid option - only show for unpaid invoices */}
+                    {menuInvoice && (
+                        menuInvoice.paymentStatus !== 'paid' &&
+                        menuInvoice.status !== 'paid' &&
+                        menuInvoice.status !== 'cancelled' &&
+                        menuInvoice.status !== 'void'
+                    ) && (
+                            <MenuItem
+                                onClick={() => { if (menuInvoice) handleOpenMarkAsPaid(menuInvoice); }}
+                                sx={{
+                                    fontSize: '12px'
+                                }}
+                            >
+                                Mark As Paid
+                            </MenuItem>
+                        )}
+
                     {menuInvoice && (menuInvoice.status === 'cancelled' || menuInvoice.status === 'void' || menuInvoice.paymentStatus === 'cancelled') ? (
                         <MenuItem onClick={() => { if (menuInvoice) handleDeleteInvoice(menuInvoice); }} sx={{ fontSize: '12px', color: '#dc2626' }}>Delete</MenuItem>
                     ) : (
@@ -1463,6 +1502,17 @@ const InvoiceManagement = () => {
                     />
                 </Box>
             )}
+
+            {/* ✅ NEW: Mark As Paid Dialog */}
+            <MarkAsPaidDialog
+                open={markAsPaidDialogOpen}
+                onClose={() => {
+                    setMarkAsPaidDialogOpen(false);
+                    setMarkAsPaidInvoice(null);
+                }}
+                invoice={markAsPaidInvoice}
+                onSuccess={handleMarkAsPaidSuccess}
+            />
         </Box>
     );
 };
