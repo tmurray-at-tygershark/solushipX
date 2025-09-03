@@ -204,31 +204,35 @@ async function fetchFilteredShipments(companyId, filters) {
         console.log(`📊 Normal query result: ${shipments.length} shipments`);
     }
 
-    // Apply customer filter
+    // Apply customer filter (EXACT SAME AS TEST EMAIL AND PREVIEW - WORKING VERSION)
     if (filters.customers && filters.customers.length > 0) {
         console.log('🔍 Applying customer filter for:', filters.customers);
         console.log(`📊 Before customer filter: ${shipments.length} shipments`);
         
-        // DEBUG: Show actual customer IDs in shipments
-        shipments.forEach((shipment, index) => {
-            const customerID = shipment.shipTo?.customerID || shipment.customerID;
-            console.log(`🔍 Shipment ${index + 1} (${shipment.shipmentID}): customerID = "${customerID}", shipTo.customerID = "${shipment.shipTo?.customerID}", customerID field = "${shipment.customerID}"`);
-        });
-        
-        shipments = shipments.filter(shipment => {
-            // Check multiple possible customer ID fields
-            const customerID = shipment.shipTo?.customerID || shipment.customerID;
-            const addressClassID = shipment.shipTo?.addressClassID || shipment.shipFrom?.addressClassID;
-            
-            // Check if any customer ID variant matches the filter
-            const matchesCustomerID = filters.customers.includes(customerID);
-            const matchesAddressClassID = filters.customers.includes(addressClassID);
-            const matches = matchesCustomerID || matchesAddressClassID;
-            
-            console.log(`🔍 Shipment ${shipment.shipmentID}: customerID="${customerID}", addressClassID="${addressClassID}", matches filter? ${matches}`);
-            return matches;
-        });
-        console.log(`📊 After customer filter: ${shipments.length} shipments`);
+        const originalCount = shipments.length;
+        const normalize = (v) => (v ? String(v).trim().toUpperCase() : null);
+        const targets = filters.customers.map(normalize).filter(Boolean);
+
+        const getCandidates = (s) => {
+            const arr = [
+                s?.shipTo?.customerID,
+                s?.customerID,
+                s?.shipFrom?.customerID,
+                // Legacy variants
+                s?.shipTo?.customerId,
+                s?.shipFrom?.customerId,
+                s?.shipTo?._rawData?.customerID,
+                s?.shipFrom?._rawData?.customerID,
+                s?.customerId,
+                s?.customer?.id
+            ];
+            const norm = arr.map(normalize).filter(Boolean);
+            return Array.from(new Set(norm));
+        };
+
+        shipments = shipments.filter(s => getCandidates(s).some(cid => targets.includes(cid)));
+
+        console.log(`Customer filter reduced shipments from ${originalCount} to ${shipments.length}`);
     }
 
     console.log(`✅ fetchFilteredShipments final result: ${shipments.length} shipments`);

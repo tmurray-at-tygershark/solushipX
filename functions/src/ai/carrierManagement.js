@@ -7,8 +7,13 @@ const db = admin.firestore();
  * Get all unified training carriers for a company
  */
 const getUnifiedTrainingCarriers = onCall({
-    cors: true,
-    timeoutSeconds: 60
+    cors: {
+        origin: ['https://solushipx.web.app', 'http://localhost:3000'],
+        credentials: true
+    },
+    timeoutSeconds: 60,
+    memory: '256MiB',
+    region: 'us-central1'
 }, async (request) => {
     try {
         const { companyId } = request.data || {};
@@ -61,20 +66,28 @@ const getUnifiedTrainingCarriers = onCall({
  * Add a new unified training carrier
  */
 const addUnifiedTrainingCarrier = onCall({
-    cors: true,
-    timeoutSeconds: 60
+    cors: {
+        origin: ['https://solushipx.web.app', 'http://localhost:3000'],
+        credentials: true
+    },
+    timeoutSeconds: 60,
+    memory: '256MiB',
+    region: 'us-central1'
 }, async (request) => {
     try {
         const { name, companyId } = request.data || {};
         
-        if (!name || !companyId) {
-            throw new Error('Name and companyId are required');
+        if (!name) {
+            throw new Error('Name is required');
         }
         
-        // Check if carrier with this name already exists for this company
+        // For AI training system, use 'system' as default companyId if not provided
+        const effectiveCompanyId = companyId || 'system';
+        
+        // Check if carrier with this name already exists (system-wide for AI training)
         const existingQuery = await db.collection('trainingCarriers')
             .where('name', '==', name)
-            .where('companyId', '==', companyId)
+            .where('active', '==', true)
             .get();
             
         if (!existingQuery.empty) {
@@ -84,7 +97,7 @@ const addUnifiedTrainingCarrier = onCall({
         // Create new carrier document
         const carrierData = {
             name: name.trim(),
-            companyId: companyId,
+            companyId: effectiveCompanyId,
             confidence: 0,
             sampleCount: 0,
             source: 'manual',
@@ -115,8 +128,13 @@ const addUnifiedTrainingCarrier = onCall({
  * Delete a unified training carrier
  */
 const deleteUnifiedTrainingCarrier = onCall({
-    cors: true,
-    timeoutSeconds: 60
+    cors: {
+        origin: ['https://solushipx.web.app', 'http://localhost:3000'],
+        credentials: true
+    },
+    timeoutSeconds: 60,
+    memory: '256MiB',
+    region: 'us-central1'
 }, async (request) => {
     try {
         const { carrierId } = request.data || {};

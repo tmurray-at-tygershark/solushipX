@@ -51,7 +51,10 @@ import {
     Assessment as MetricsIcon,
     PlayArrow as RetrainIcon,
     Visibility as ViewIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    Upload as UploadIcon,
+    Download as DownloadIcon,
+    GetApp as ExportIcon
 } from '@mui/icons-material';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../firebase/firebase';
@@ -83,6 +86,8 @@ const CarrierManagement = () => {
     const [editDialogOpen, setEditDialogOpen] = useState(false);
     const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [bulkImportDialogOpen, setBulkImportDialogOpen] = useState(false);
+    const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
     // Form states
     const [formData, setFormData] = useState({
@@ -97,6 +102,13 @@ const CarrierManagement = () => {
     // Context menu
     const [contextMenu, setContextMenu] = useState(null);
     const [contextCarrier, setContextCarrier] = useState(null);
+
+    // Bulk import state
+    const [importFile, setImportFile] = useState(null);
+    const [importData, setImportData] = useState([]);
+    const [importErrors, setImportErrors] = useState([]);
+    const [importing, setImporting] = useState(false);
+    const [importProgress, setImportProgress] = useState(0);
 
     // Categories
     const [categories, setCategories] = useState(['general', 'courier', 'freight', 'ltl', 'postal']);
@@ -273,6 +285,51 @@ const CarrierManagement = () => {
         } catch (error) {
             console.error('Retrain carrier error:', error);
             enqueueSnackbar(error.message, { variant: 'error' });
+        }
+    };
+
+    // Export carriers to CSV
+    const handleExportCarriers = () => {
+        try {
+            const csvData = carriers.map(carrier => ({
+                name: carrier.name,
+                description: carrier.description || '',
+                category: carrier.category || 'general',
+                externalId: carrier.externalId || '',
+                active: carrier.active ? 'true' : 'false',
+                totalSamples: carrier.stats?.totalSamples || 0,
+                averageConfidence: carrier.stats?.averageConfidence || 0,
+                createdAt: carrier.audit?.createdAt?.toDate?.()?.toLocaleDateString() || ''
+            }));
+
+            const csvContent = [
+                ['Name', 'Description', 'Category', 'External ID', 'Active', 'Total Samples', 'Average Confidence', 'Created At'],
+                ...csvData.map(row => [
+                    row.name,
+                    row.description,
+                    row.category,
+                    row.externalId,
+                    row.active,
+                    row.totalSamples,
+                    row.averageConfidence,
+                    row.createdAt
+                ])
+            ].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `carriers_export_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            enqueueSnackbar(`Exported ${carriers.length} carriers to CSV`, { variant: 'success' });
+        } catch (error) {
+            console.error('Export error:', error);
+            enqueueSnackbar('Failed to export carriers', { variant: 'error' });
         }
     };
 
@@ -490,6 +547,25 @@ const CarrierManagement = () => {
                         sx={{ fontSize: '12px' }}
                     >
                         Refresh
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<UploadIcon />}
+                        onClick={() => setBulkImportDialogOpen(true)}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Bulk Import
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<ExportIcon />}
+                        onClick={handleExportCarriers}
+                        disabled={carriers.length === 0}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Export
                     </Button>
                     <Button
                         variant="contained"

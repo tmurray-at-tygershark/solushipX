@@ -59,53 +59,49 @@ import {
     Timeline as TimelineIcon,
     TrendingUp as TrendingUpIcon,
     School as SchoolIcon,
-    Assignment as AssignmentIcon
+    Assignment as AssignmentIcon,
+    HelpOutline as HelpIcon,
+    Info as InfoIcon
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../../firebase/firebase';
+import { collection, doc, query, where, getDocs } from 'firebase/firestore';
+import { functions, db } from '../../../firebase/firebase';
 import { useSnackbar } from 'notistack';
 import VisualPDFViewer from './VisualPDFViewer';
 import BoundingBoxAnnotator from './BoundingBoxAnnotator';
 import TrainingMetrics from './TrainingMetrics';
 import CarrierManagement from './CarrierManagement';
 import VisualAnnotationTrainer from './VisualAnnotationTrainer';
+import InvoiceTestingEngine from './InvoiceTestingEngine';
 
 const TRAINING_STEPS = [
     {
         id: 'select',
         label: 'Select Carrier',
-        description: 'Choose or create a carrier for training'
+        description: 'Choose a carrier to train',
+        helpText: 'Select the carrier whose invoices you want to train the AI to process.',
+        tips: ['Choose carriers with consistent invoice formats', 'One invoice is enough to start training']
     },
     {
         id: 'upload',
-        label: 'Upload Samples',
-        description: 'Upload multiple invoice samples for learning'
-    },
-    {
-        id: 'process',
-        label: 'AI Processing',
-        description: 'AI analyzes and learns from invoice patterns'
-    },
-    {
-        id: 'review',
-        label: 'Review & Improve',
-        description: 'Review results and provide corrections'
-    },
-    {
-        id: 'deploy',
-        label: 'Deploy Model',
-        description: 'Activate trained model for production use'
+        label: 'Upload & Train',
+        description: 'Upload invoice and train AI model',
+        helpText: 'Upload a single representative invoice to train the AI. The system will analyze it and create a working model immediately.',
+        tips: ['Use a clear, readable PDF file', 'Choose a typical invoice format for this carrier', 'Training completes instantly']
     }
 ];
 
 export default function EnhancedInvoiceTraining() {
     const { enqueueSnackbar } = useSnackbar();
 
+    // Progress persistence key
+    const STORAGE_KEY = 'solushipx_training_progress';
+
     // Tab management
     const [activeTab, setActiveTab] = useState(0);
 
-    // Training workflow state
+    // Training workflow state with persistence
     const [activeStep, setActiveStep] = useState(0);
     const [stepCompleted, setStepCompleted] = useState({});
     const [workflowData, setWorkflowData] = useState({});
@@ -133,14 +129,85 @@ export default function EnhancedInvoiceTraining() {
     const [contextMenu, setContextMenu] = useState(null);
     const [contextSample, setContextSample] = useState(null);
 
-    // Load unified carriers on component mount
+    // Progress persistence utilities
+    const saveProgress = useCallback((progress) => {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                ...progress,
+                lastSaved: new Date().toISOString(),
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days
+            }));
+        } catch (error) {
+            console.warn('Failed to save training progress:', error);
+        }
+    }, [STORAGE_KEY]);
+
+    const loadProgress = useCallback(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (!saved) return null;
+
+            const progress = JSON.parse(saved);
+            const now = new Date();
+            const expiresAt = new Date(progress.expiresAt);
+
+            if (now > expiresAt) {
+                localStorage.removeItem(STORAGE_KEY);
+                return null;
+            }
+
+            return progress;
+        } catch (error) {
+            console.warn('Failed to load training progress:', error);
+            localStorage.removeItem(STORAGE_KEY);
+            return null;
+        }
+    }, [STORAGE_KEY]);
+
+    const clearProgress = useCallback(() => {
+        localStorage.removeItem(STORAGE_KEY);
+    }, [STORAGE_KEY]);
+
+    // Load unified carriers and restore progress on component mount
     useEffect(() => {
         loadUnifiedCarriers();
+
+        // Restore previous progress
+        const savedProgress = loadProgress();
+        if (savedProgress) {
+            setActiveTab(savedProgress.activeTab || 0);
+            setActiveStep(savedProgress.activeStep || 0);
+            setStepCompleted(savedProgress.stepCompleted || {});
+            setWorkflowData(savedProgress.workflowData || {});
+
+            // Restore carrier selection if exists
+            if (savedProgress.selectedCarrier) {
+                setSelectedCarrier(savedProgress.selectedCarrier);
+            }
+
+            enqueueSnackbar(`Restored previous training session from ${new Date(savedProgress.lastSaved).toLocaleDateString()}`, {
+                variant: 'info',
+                autoHideDuration: 3000
+            });
+        }
+    }, [loadProgress, enqueueSnackbar]);
+
+    // Load carriers on component mount and reset workflow
+    useEffect(() => {
+        console.log('Training Workflow: Component mounting, resetting state');
+        // Reset workflow state when tab loads
+        setActiveStep(0);
+        setSelectedCarrier(null);
+        setStepCompleted({});
+        loadUnifiedCarriers();
     }, []);
+
+    // Training Workflow tab removed – no tab-specific reset required
 
     // Load training analytics when carrier changes
     useEffect(() => {
         if (selectedCarrier) {
+            console.log('Carrier selected, loading analytics:', selectedCarrier);
             loadTrainingAnalytics();
             loadCarrierSamples();
         }
@@ -149,14 +216,28 @@ export default function EnhancedInvoiceTraining() {
     const loadUnifiedCarriers = async () => {
         try {
             setLoadingCarriers(true);
-            const getCarriersFunc = httpsCallable(functions, 'getUnifiedTrainingCarriers');
-            const result = await getCarriersFunc();
+            // Use getTrainingCarriers to get ALL available carriers (not just trained ones)
+            const getCarriersFunc = httpsCallable(functions, 'getTrainingCarriers');
+            const result = await getCarriersFunc({
+                status: 'active' // Get all active training carriers
+            });
 
-            if (result.data.success) {
-                setCarriers(result.data.carriers || []);
-                console.log(`Loaded ${result.data.totalCount} unified carriers (${result.data.managedCount} managed, ${result.data.staticCount} static)`);
+            if (result.data?.success) {
+                const carriersList = result.data.data?.carriers || [];
+                console.log(`Setting carriers to:`, carriersList);
+                setCarriers(carriersList);
+                console.log(`Loaded ${carriersList.length} training carriers for Training Workflow`);
+                console.log(`Current selectedCarrier before setting carriers:`, selectedCarrier);
+
+                // Show message if no carriers available
+                if (carriersList.length === 0) {
+                    enqueueSnackbar('No training carriers available. Use Carrier Management to add carriers first.', {
+                        variant: 'info',
+                        autoHideDuration: 5000
+                    });
+                }
             } else {
-                throw new Error(result.data.error || 'Failed to load carriers');
+                throw new Error(result.data?.error || 'Failed to load carriers');
             }
         } catch (error) {
             console.error('Error loading carriers:', error);
@@ -178,7 +259,8 @@ export default function EnhancedInvoiceTraining() {
             });
 
             if (result.data.success) {
-                setTrainingAnalytics(result.data.analytics);
+                // Cloud function returns analytics in `data` property
+                setTrainingAnalytics(result.data.data);
             }
         } catch (error) {
             console.error('Error loading analytics:', error);
@@ -190,33 +272,131 @@ export default function EnhancedInvoiceTraining() {
     const loadCarrierSamples = async () => {
         if (!selectedCarrier) return;
         try {
-            const listFunc = httpsCallable(functions, 'listTrainingSamples');
-            const res = await listFunc({ carrierId: selectedCarrier.id, limit: 50 });
-            if (res.data?.success && Array.isArray(res.data.samples)) {
-                setTrainingSamples(res.data.samples);
+            // First try to load visual training samples directly using Firestore v9 syntax
+            const visualSamplesQuery = query(
+                collection(db, 'unifiedTraining', selectedCarrier.id, 'samples'),
+                where('trainingType', '==', 'visual_annotation')
+            );
+
+            const visualSamplesSnapshot = await getDocs(visualSamplesQuery);
+            const visualSamples = visualSamplesSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            if (visualSamples.length > 0) {
+                console.log(`Found ${visualSamples.length} visual training samples for ${selectedCarrier.name}`);
+                setTrainingSamples(visualSamples);
+
+                // Auto-complete workflow steps for existing visual training
+                const completedSamples = visualSamples.filter(s => s.processingStatus === 'completed');
+                if (completedSamples.length > 0) {
+                    setStepCompleted(prev => ({
+                        ...prev,
+                        upload: true,    // Visual samples exist
+                        process: true,   // Visual training completed
+                        review: completedSamples.length >= 1,
+                        deploy: completedSamples.length >= 1 // Single visual training is sufficient
+                    }));
+
+                    // Advance to review/deploy step since visual training is done
+                    setActiveStep(3); // Review step
+                }
+            } else {
+                // Fallback to workflow training samples
+                const listFunc = httpsCallable(functions, 'listTrainingSamples');
+                const res = await listFunc({ carrierId: selectedCarrier.id, limit: 50 });
+                if (res.data?.success && Array.isArray(res.data.samples)) {
+                    setTrainingSamples(res.data.samples);
+                }
             }
         } catch (error) {
             console.error('Error loading samples:', error);
+            enqueueSnackbar('Failed to load training data', { variant: 'error' });
         }
     };
 
-    // Enhanced multi-file drop handler
-    const onDrop = useCallback(async (acceptedFiles) => {
-        if (!selectedCarrier) {
-            enqueueSnackbar('Please select a carrier first', { variant: 'warning' });
-            return;
+    // Enhanced validation utilities
+    const validateCarrier = useCallback((carrier) => {
+        if (!carrier) return { valid: false, message: 'Please select a carrier first' };
+        if (!carrier.id || !carrier.name) return { valid: false, message: 'Invalid carrier selected' };
+        return { valid: true };
+    }, []);
+
+    const validateFileUpload = useCallback((files) => {
+        if (!files || files.length === 0) {
+            return { valid: false, message: 'No files selected' };
         }
 
-        const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf');
+        const pdfFiles = files.filter(file => file.type === 'application/pdf');
         if (pdfFiles.length === 0) {
-            enqueueSnackbar('Please upload PDF files only', { variant: 'error' });
-            return;
+            return { valid: false, message: 'Please upload PDF files only. Other file types are not supported.' };
         }
 
         if (pdfFiles.length > 10) {
-            enqueueSnackbar('Maximum 10 files can be uploaded at once', { variant: 'warning' });
+            return { valid: false, message: 'Maximum 10 files can be uploaded at once. Please split into smaller batches.' };
+        }
+
+        // Check file sizes (max 10MB per file)
+        const oversizedFiles = pdfFiles.filter(file => file.size > 10 * 1024 * 1024);
+        if (oversizedFiles.length > 0) {
+            return {
+                valid: false,
+                message: `Files too large: ${oversizedFiles.map(f => f.name).join(', ')}. Maximum size is 10MB per file.`
+            };
+        }
+
+        // Check for duplicate names
+        const fileNames = pdfFiles.map(f => f.name.toLowerCase());
+        const duplicates = fileNames.filter((name, index) => fileNames.indexOf(name) !== index);
+        if (duplicates.length > 0) {
+            return {
+                valid: false,
+                message: `Duplicate file names detected: ${[...new Set(duplicates)].join(', ')}`
+            };
+        }
+
+        return { valid: true, files: pdfFiles };
+    }, []);
+
+    const validateModelDeployment = useCallback(() => {
+        const processedSamples = trainingSamples.filter(s => s.processingStatus === 'completed').length;
+        const avgConfidence = trainingAnalytics?.averageConfidence || 0;
+
+        if (processedSamples < 3) {
+            return {
+                valid: false,
+                message: `Minimum 3 successfully processed samples required. Currently have ${processedSamples}.`
+            };
+        }
+
+        if (avgConfidence < 0.75) {
+            return {
+                valid: false,
+                message: `Model confidence too low (${(avgConfidence * 100).toFixed(0)}%). Minimum 75% required for deployment.`
+            };
+        }
+
+        return { valid: true };
+    }, [trainingSamples, trainingAnalytics]);
+
+    // Enhanced multi-file drop handler with comprehensive validation
+    const onDrop = useCallback(async (acceptedFiles) => {
+        // Validate carrier selection
+        const carrierValidation = validateCarrier(selectedCarrier);
+        if (!carrierValidation.valid) {
+            enqueueSnackbar(carrierValidation.message, { variant: 'warning' });
             return;
         }
+
+        // Validate file upload
+        const fileValidation = validateFileUpload(acceptedFiles);
+        if (!fileValidation.valid) {
+            enqueueSnackbar(fileValidation.message, { variant: 'error' });
+            return;
+        }
+
+        const pdfFiles = fileValidation.files;
 
         setUploadingSamples(pdfFiles.map(file => ({
             id: `temp_${Date.now()}_${Math.random()}`,
@@ -225,16 +405,31 @@ export default function EnhancedInvoiceTraining() {
             progress: 0
         })));
 
+        let successCount = 0;
+        let errorCount = 0;
+
         for (const file of pdfFiles) {
-            await uploadTrainingSample(file);
+            try {
+                await uploadTrainingSample(file);
+                successCount++;
+            } catch (error) {
+                errorCount++;
+            }
         }
 
         setUploadingSamples([]);
-        enqueueSnackbar(`Successfully uploaded ${pdfFiles.length} training samples`, { variant: 'success' });
 
-    }, [selectedCarrier]);
+        if (successCount > 0 && errorCount === 0) {
+            enqueueSnackbar(`Successfully uploaded ${successCount} training samples`, { variant: 'success' });
+        } else if (successCount > 0 && errorCount > 0) {
+            enqueueSnackbar(`Uploaded ${successCount} samples, ${errorCount} failed`, { variant: 'warning' });
+        } else {
+            enqueueSnackbar(`Failed to upload ${errorCount} samples`, { variant: 'error' });
+        }
 
-    // Update step completion based on training state
+    }, [selectedCarrier, validateCarrier, validateFileUpload, enqueueSnackbar]);
+
+    // Update step completion based on training state with persistence
     useEffect(() => {
         const newStepCompleted = {};
 
@@ -258,19 +453,25 @@ export default function EnhancedInvoiceTraining() {
 
         setStepCompleted(newStepCompleted);
 
-        // Auto-advance to appropriate step based on completion state
+        // Save progress whenever step completion changes
+        const currentProgress = {
+            activeTab,
+            activeStep,
+            stepCompleted: newStepCompleted,
+            workflowData,
+            selectedCarrier,
+            trainingSamplesCount: trainingSamples.length,
+            processedSamplesCount: processedSamples
+        };
+        saveProgress(currentProgress);
+
+        // Auto-advance only within the 2-step workflow
         if (newStepCompleted.select && activeStep === 0) {
-            // Advance to step 1 (Upload Samples) when carrier is selected
+            // Advance to step 1 (Upload & Train) when carrier is selected
             setActiveStep(1);
-        } else if (newStepCompleted.upload && processedSamples > 0 && activeStep <= 2) {
-            // If samples exist and some are processed, advance to Review & Improve
-            setActiveStep(3);
-        } else if (newStepCompleted.upload && pendingSamples > 0 && activeStep <= 1) {
-            // If samples exist but none are processed, advance to AI Processing
-            setActiveStep(2);
         }
 
-    }, [selectedCarrier, trainingSamples, processingSamples, activeStep]);
+    }, [selectedCarrier, trainingSamples, processingSamples, activeStep, activeTab, workflowData, saveProgress]);
 
     const uploadTrainingSample = async (file) => {
         try {
@@ -355,11 +556,58 @@ export default function EnhancedInvoiceTraining() {
     };
 
     const processAllPending = async () => {
+        console.log('🔍 processAllPending called');
+        console.log('📊 All training samples:', trainingSamples);
+
         const pending = trainingSamples.filter(s => s.processingStatus === 'pending');
-        if (pending.length === 0) return;
+        console.log('⏳ Pending samples found:', pending);
+
+        if (pending.length === 0) {
+            console.log('⚠️  No pending samples to process');
+            return;
+        }
+
+        console.log(`🔄 Processing ${pending.length} pending samples...`);
         for (const s of pending) {
+            console.log(`🔄 Processing sample: ${s.id}`);
             // eslint-disable-next-line no-await-in-loop
             await processSample(s.id);
+        }
+        console.log('✅ All pending samples processed');
+    };
+
+    // Unified completion handler used by buttons and Next action on step 1
+    const handleCompleteTraining = async () => {
+        console.log('🚀 Starting training process...');
+        console.log('Training samples:', trainingSamples);
+        console.log('Selected carrier:', selectedCarrier);
+
+        try {
+            console.log('📝 Calling processAllPending...');
+            await processAllPending();
+            console.log('✅ processAllPending completed');
+
+            // Set step as completed
+            setStepCompleted(prev => ({ ...prev, upload: true }));
+            console.log('✅ Step marked as completed');
+
+            // Show success notification
+            enqueueSnackbar(`Training completed successfully for ${selectedCarrier?.name}!`, {
+                variant: 'success',
+                autoHideDuration: 5000
+            });
+            console.log('✅ Success notification shown');
+
+            // Refresh analytics to show updated results
+            console.log('📊 Refreshing analytics...');
+            await loadTrainingAnalytics();
+            console.log('✅ Analytics refreshed');
+
+        } catch (error) {
+            console.error('❌ Error processing samples:', error);
+            enqueueSnackbar(`Error processing training samples: ${error.message}`, {
+                variant: 'error'
+            });
         }
     };
 
@@ -381,11 +629,26 @@ export default function EnhancedInvoiceTraining() {
             options={carriers}
             getOptionLabel={(option) => option.name}
             value={selectedCarrier}
-            onChange={(_, value) => {
-                setSelectedCarrier(value);
-                if (value) {
-                    setStepCompleted(prev => ({ ...prev, select: true }));
-                    setActiveStep(1);
+            isOptionEqualToValue={(option, value) => option.id === value?.id}
+            autoSelect={false}
+            autoHighlight={false}
+            clearOnEscape={true}
+            onChange={(_, value, reason) => {
+                console.log('Carrier selector onChange called with value:', value, 'Current selectedCarrier:', selectedCarrier, 'Reason:', reason);
+
+                // Only allow manual selection, not programmatic
+                if (reason === 'selectOption' || reason === 'clear') {
+                    console.log('✅ Manual user selection detected');
+                    setSelectedCarrier(value);
+                    if (value) {
+                        console.log('Marking select step as completed for carrier:', value.name);
+                        setStepCompleted(prev => ({ ...prev, select: true }));
+                    } else {
+                        console.log('Clearing carrier selection');
+                        setStepCompleted(prev => ({ ...prev, select: false }));
+                    }
+                } else {
+                    console.log('❌ Programmatic selection blocked, reason:', reason);
                 }
             }}
             renderOption={(props, option) => (
@@ -410,8 +673,8 @@ export default function EnhancedInvoiceTraining() {
             renderInput={(params) => (
                 <TextField
                     {...params}
-                    label="Select or Create Carrier"
-                    placeholder="Choose a carrier to train..."
+                    label="Select Carrier"
+                    placeholder={carriers.length === 0 ? "No carriers available - use Carrier Management tab to add" : "Choose a carrier to train..."}
                     InputProps={{
                         ...params.InputProps,
                         endAdornment: (
@@ -423,6 +686,21 @@ export default function EnhancedInvoiceTraining() {
                     }}
                 />
             )}
+            noOptionsText={
+                <Box sx={{ textAlign: 'center', p: 2 }}>
+                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 1 }}>
+                        No carriers available for training
+                    </Typography>
+                    <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setActiveTab(2)}
+                        sx={{ fontSize: '10px' }}
+                    >
+                        Go to Carrier Management
+                    </Button>
+                </Box>
+            }
         />
     );
 
@@ -443,10 +721,27 @@ export default function EnhancedInvoiceTraining() {
                     {uploadingSamples.map((sample) => (
                         <TableRow key={sample.id}>
                             <TableCell sx={{ fontSize: '12px' }}>
-                                {sample.file.name}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        {sample.file.name}
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                        ({(sample.file.size / (1024 * 1024)).toFixed(1)} MB)
+                                    </Typography>
+                                </Box>
                             </TableCell>
                             <TableCell>
-                                <Chip size="small" label="Uploading" color="info" />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Chip size="small" label="Uploading" color="info" />
+                                    <LinearProgress
+                                        variant="indeterminate"
+                                        sx={{
+                                            width: 60,
+                                            height: 3,
+                                            '& .MuiLinearProgress-bar': { backgroundColor: '#3b82f6' }
+                                        }}
+                                    />
+                                </Box>
                             </TableCell>
                             <TableCell sx={{ fontSize: '12px' }}>-</TableCell>
                             <TableCell sx={{ fontSize: '12px' }}>Just now</TableCell>
@@ -461,15 +756,27 @@ export default function EnhancedInvoiceTraining() {
                                 {sample.fileName}
                             </TableCell>
                             <TableCell>
-                                <Chip
-                                    size="small"
-                                    label={sample.processingStatus || 'uploaded'}
-                                    color={
-                                        sample.processingStatus === 'completed' ? 'success' :
-                                            sample.processingStatus === 'processing' ? 'warning' :
-                                                sample.processingStatus === 'failed' ? 'error' : 'default'
-                                    }
-                                />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Chip
+                                        size="small"
+                                        label={sample.processingStatus || 'uploaded'}
+                                        color={
+                                            sample.processingStatus === 'completed' ? 'success' :
+                                                sample.processingStatus === 'processing' ? 'warning' :
+                                                    sample.processingStatus === 'failed' ? 'error' : 'default'
+                                        }
+                                    />
+                                    {processingSamples.has(sample.id) && (
+                                        <LinearProgress
+                                            variant="indeterminate"
+                                            sx={{
+                                                width: 40,
+                                                height: 2,
+                                                '& .MuiLinearProgress-bar': { backgroundColor: '#f59e0b' }
+                                            }}
+                                        />
+                                    )}
+                                </Box>
                             </TableCell>
                             <TableCell sx={{ fontSize: '12px' }}>
                                 {sample.confidence ?
@@ -616,50 +923,16 @@ export default function EnhancedInvoiceTraining() {
 
     return (
         <Box sx={{ p: 3 }}>
-            {/* Header */}
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                mb: 3,
-                borderBottom: '1px solid #e5e7eb',
-                pb: 3
-            }}>
-                <Box>
-                    <Typography variant="h4" sx={{ fontWeight: 700, color: '#111827', mb: 1 }}>
-                        Advanced AI Training Studio
-                    </Typography>
-                    {/* Removed tagline per request */}
-                </Box>
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                        startIcon={<RefreshIcon />}
-                        onClick={loadUnifiedCarriers}
-                        disabled={loadingCarriers}
-                        size="small"
-                    >
-                        Refresh
-                    </Button>
-                    <Button
-                        startIcon={<AnalyticsIcon />}
-                        onClick={loadTrainingAnalytics}
-                        disabled={!selectedCarrier || loadingAnalytics}
-                        size="small"
-                    >
-                        Analytics
-                    </Button>
-                </Box>
-            </Box>
 
             {/* Tab Navigation */}
             <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value)} sx={{ mb: 3 }}>
+                <Tab label="Trained Carriers" sx={{ fontSize: '12px' }} />
                 <Tab label="Visual Training" sx={{ fontSize: '12px' }} />
-                <Tab label="Training Workflow" sx={{ fontSize: '12px' }} />
-                <Tab label="Carrier Management" sx={{ fontSize: '12px' }} />
+                <Tab label="Testing & Validation" sx={{ fontSize: '12px' }} />
             </Tabs>
 
-            {/* Visual Training Tab */}
-            {activeTab === 0 && (
+            {/* Visual Training Tab (now index 1) */}
+            {activeTab === 1 && (
                 <Box>
                     {/* Removed redundant explainer header and description per request */}
 
@@ -672,21 +945,25 @@ export default function EnhancedInvoiceTraining() {
                                 loadTrainingAnalytics();
                             }
                         }}
+                        onAddCarrierSuccess={() => {
+                            // Reload unified carriers when a new carrier is added
+                            loadUnifiedCarriers();
+                        }}
                         onTrainingComplete={(results) => {
                             console.log('Visual training completed:', results);
                             // Refresh analytics and samples
                             loadTrainingAnalytics();
                             loadCarrierSamples();
-                            // Navigate to Carrier Management to show confidence table
-                            setActiveTab(2);
+                            // Navigate to Trained Carriers to show confidence table
+                            setActiveTab(0);
                             enqueueSnackbar('Training saved. Showing Carrier Confidence table.', { variant: 'success' });
                         }}
                     />
                 </Box>
             )}
 
-            {/* Training Workflow Tab */}
-            {activeTab === 1 && (
+            {/* Training Workflow Tab removed */}
+            {false && (
                 <Grid container spacing={3}>
                     <Grid item xs={12} md={8}>
                         <Paper sx={{ p: 3, border: '1px solid #e5e7eb' }}>
@@ -694,28 +971,123 @@ export default function EnhancedInvoiceTraining() {
                                 Machine Learning Training Workflow
                             </Typography>
 
-                            <Stepper activeStep={activeStep} orientation="vertical">
+                            <Stepper activeStep={Math.min(activeStep, TRAINING_STEPS.length - 1)} orientation="vertical">
                                 {TRAINING_STEPS.map((step, index) => (
                                     <Step key={step.id} completed={stepCompleted[step.id]}>
-                                        <StepLabel>
-                                            <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>
-                                                {step.label}
-                                            </Typography>
+                                        <StepLabel
+                                            sx={{
+                                                cursor: 'pointer',
+                                                '&:hover': { backgroundColor: '#f9fafb' },
+                                                '& .MuiStepLabel-labelContainer': {
+                                                    cursor: 'pointer'
+                                                }
+                                            }}
+                                            onClick={() => {
+                                                console.log(`Clicked on step ${index}: ${step.label}. Current activeStep: ${activeStep}. Setting activeStep to: ${index}`);
+                                                setActiveStep(index);
+                                            }}
+                                        >
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                                    {step.label}
+                                                </Typography>
+                                                <Tooltip
+                                                    title={
+                                                        <Box>
+                                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                                                {step.helpText}
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '11px', mb: 1, fontWeight: 600 }}>
+                                                                💡 Tips:
+                                                            </Typography>
+                                                            {step.tips.map((tip, i) => (
+                                                                <Typography key={i} sx={{ fontSize: '11px', mb: 0.5 }}>
+                                                                    • {tip}
+                                                                </Typography>
+                                                            ))}
+                                                        </Box>
+                                                    }
+                                                    arrow
+                                                    placement="right"
+                                                >
+                                                    <HelpIcon sx={{ fontSize: 16, color: '#6b7280', cursor: 'help' }} />
+                                                </Tooltip>
+                                            </Box>
                                         </StepLabel>
                                         <StepContent>
                                             <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
                                                 {step.description}
                                             </Typography>
 
+                                            {/* Enhanced Progress Indicator */}
+                                            <Box sx={{ mb: 2 }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                                    <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>
+                                                        Step Progress
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                        {stepCompleted[step.id] ? '✅ Complete' : '⏳ In Progress'}
+                                                    </Typography>
+                                                </Box>
+                                                <LinearProgress
+                                                    variant="determinate"
+                                                    value={stepCompleted[step.id] ? 100 : (index < activeStep ? 100 : (index === activeStep ? 50 : 0))}
+                                                    sx={{
+                                                        height: 6,
+                                                        borderRadius: 3,
+                                                        backgroundColor: '#f3f4f6',
+                                                        '& .MuiLinearProgress-bar': {
+                                                            backgroundColor: stepCompleted[step.id] ? '#10b981' : '#8b5cf6'
+                                                        }
+                                                    }}
+                                                />
+                                            </Box>
+
                                             {/* Step Content */}
                                             {index === 0 && (
                                                 <Box sx={{ mb: 2 }}>
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 2, color: '#374151' }}>
+                                                        Select a carrier to train:
+                                                    </Typography>
                                                     <CarrierSelector />
+                                                    {selectedCarrier && (
+                                                        <Alert severity="success" sx={{ mt: 2 }}>
+                                                            <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                                ✅ Selected: {selectedCarrier.name}
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                {selectedCarrier.sampleCount || 0} training samples • {((selectedCarrier.confidence || 0) * 100).toFixed(0)}% confidence
+                                                            </Typography>
+                                                        </Alert>
+                                                    )}
+
+                                                    {/* Navigation buttons for step 0 */}
+                                                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                                                        <Button
+                                                            size="small"
+                                                            variant="contained"
+                                                            disabled={!selectedCarrier}
+                                                            onClick={() => setActiveStep(1)}
+                                                            sx={{ fontSize: '12px' }}
+                                                        >
+                                                            Next: Upload & Train
+                                                        </Button>
+                                                    </Box>
                                                 </Box>
                                             )}
 
                                             {index === 1 && selectedCarrier && (
                                                 <Box>
+                                                    {/* Simplified Upload Guidelines */}
+                                                    <Alert severity="success" sx={{ mb: 2 }}>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                                            🚀 Ready to Train with {selectedCarrier.name}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '11px' }}>
+                                                            Upload a single representative invoice to train the AI model instantly. The system will analyze the document and create a working model immediately.
+                                                        </Typography>
+                                                    </Alert>
+
                                                     <Box
                                                         {...getRootProps()}
                                                         sx={{
@@ -734,14 +1106,27 @@ export default function EnhancedInvoiceTraining() {
                                                         <Typography sx={{ fontSize: '14px', fontWeight: 600, mb: 1 }}>
                                                             Drop multiple invoice PDFs here
                                                         </Typography>
-                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                            Upload 5-20 samples for best training results (Max 10 at once)
+                                                        <Typography sx={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
+                                                            Upload one invoice to train instantly • Model ready in 30 seconds
                                                         </Typography>
                                                     </Box>
 
                                                     {(trainingSamples.length > 0 || uploadingSamples.length > 0) && (
                                                         <SamplesTable />
                                                     )}
+
+                                                    {/* Primary CTA for step 1 to trigger training */}
+                                                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                                                        <Button
+                                                            size="small"
+                                                            variant="contained"
+                                                            disabled={trainingSamples.length === 0}
+                                                            onClick={handleCompleteTraining}
+                                                            sx={{ fontSize: '12px' }}
+                                                        >
+                                                            Process & Complete Training
+                                                        </Button>
+                                                    </Box>
                                                 </Box>
                                             )}
 
@@ -750,6 +1135,18 @@ export default function EnhancedInvoiceTraining() {
                                                     {trainingSamples.length === 0 ? (
                                                         <Alert severity="warning" sx={{ mb: 2 }}>
                                                             Please upload training samples first before AI processing can begin
+                                                        </Alert>
+                                                    ) : trainingSamples.some(s => s.trainingType === 'visual_annotation' && s.processingStatus === 'completed') ? (
+                                                        <Alert severity="success" sx={{ mb: 2 }}>
+                                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                                                ✅ Visual Training Complete
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '11px', mb: 2 }}>
+                                                                Your carrier has been trained using visual annotations. The AI model is ready for use.
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '11px' }}>
+                                                                {trainingSamples.filter(s => s.trainingType === 'visual_annotation' && s.processingStatus === 'completed').length} visual training samples completed.
+                                                            </Typography>
                                                         </Alert>
                                                     ) : trainingSamples.filter(s => s.processingStatus === 'pending').length > 0 ? (
                                                         <Alert severity="info" sx={{ mb: 2 }}>
@@ -788,6 +1185,59 @@ export default function EnhancedInvoiceTraining() {
                                                     {trainingSamples.length > 0 && <SamplesTable />}
 
                                                     {trainingAnalytics && <AnalyticsDashboard />}
+
+                                                    {/* Navigation buttons for step 1 */}
+                                                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                                                        <Button
+                                                            size="small"
+                                                            variant="outlined"
+                                                            onClick={() => setActiveStep(0)}
+                                                            sx={{ fontSize: '12px' }}
+                                                        >
+                                                            Back
+                                                        </Button>
+                                                        <Button
+                                                            size="small"
+                                                            variant="contained"
+                                                            disabled={trainingSamples.length === 0}
+                                                            onClick={async () => {
+                                                                console.log('🚀 Starting training process...');
+                                                                console.log('Training samples:', trainingSamples);
+                                                                console.log('Selected carrier:', selectedCarrier);
+
+                                                                try {
+                                                                    console.log('📝 Calling processAllPending...');
+                                                                    await processAllPending();
+                                                                    console.log('✅ processAllPending completed');
+
+                                                                    // Set step as completed
+                                                                    setStepCompleted(prev => ({ ...prev, upload: true }));
+                                                                    console.log('✅ Step marked as completed');
+
+                                                                    // Show success notification
+                                                                    enqueueSnackbar(`Training completed successfully for ${selectedCarrier?.name}!`, {
+                                                                        variant: 'success',
+                                                                        autoHideDuration: 5000
+                                                                    });
+                                                                    console.log('✅ Success notification shown');
+
+                                                                    // Refresh analytics to show updated results
+                                                                    console.log('📊 Refreshing analytics...');
+                                                                    await loadTrainingAnalytics();
+                                                                    console.log('✅ Analytics refreshed');
+
+                                                                } catch (error) {
+                                                                    console.error('❌ Error processing samples:', error);
+                                                                    enqueueSnackbar(`Error processing training samples: ${error.message}`, {
+                                                                        variant: 'error'
+                                                                    });
+                                                                }
+                                                            }}
+                                                            sx={{ fontSize: '12px' }}
+                                                        >
+                                                            Process & Complete Training
+                                                        </Button>
+                                                    </Box>
                                                 </Box>
                                             )}
 
@@ -823,14 +1273,81 @@ export default function EnhancedInvoiceTraining() {
 
                                             {index === 4 && (
                                                 <Box>
-                                                    <Alert severity="success" sx={{ mb: 2 }}>
-                                                        Model ready for production use in AP Processing
-                                                    </Alert>
-                                                    <Button variant="contained" color="primary">
-                                                        Deploy to Production
-                                                    </Button>
+                                                    {(() => {
+                                                        const deployValidation = validateModelDeployment();
+                                                        return deployValidation.valid ? (
+                                                            <>
+                                                                <Alert severity="success" sx={{ mb: 2 }}>
+                                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                                                        Model Ready for Production
+                                                                    </Typography>
+                                                                    <Typography sx={{ fontSize: '11px' }}>
+                                                                        Confidence: {trainingAnalytics?.averageConfidence ? `${(trainingAnalytics.averageConfidence * 100).toFixed(0)}%` : 'Unknown'} |
+                                                                        Samples: {trainingSamples.filter(s => s.processingStatus === 'completed').length} processed
+                                                                    </Typography>
+                                                                </Alert>
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    onClick={() => {
+                                                                        enqueueSnackbar('Model deployed to production! Available in AP Processing.', { variant: 'success' });
+                                                                        // Clear progress after successful deployment
+                                                                        setTimeout(() => clearProgress(), 2000);
+                                                                    }}
+                                                                >
+                                                                    Deploy to Production
+                                                                </Button>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Alert severity="warning" sx={{ mb: 2 }}>
+                                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                                                        Model Not Ready for Deployment
+                                                                    </Typography>
+                                                                    <Typography sx={{ fontSize: '11px' }}>
+                                                                        {deployValidation.message}
+                                                                    </Typography>
+                                                                </Alert>
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    disabled
+                                                                >
+                                                                    Deploy to Production
+                                                                </Button>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </Box>
                                             )}
+
+                                            {/* Step Navigation Buttons */}
+                                            <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    onClick={() => setActiveStep(Math.max(0, activeStep - 1))}
+                                                    disabled={activeStep === 0}
+                                                    sx={{ fontSize: '11px' }}
+                                                >
+                                                    Previous
+                                                </Button>
+                                                {/* Next button removed — use explicit Process & Complete Training in step 1 */}
+                                                {/* Step jump buttons for completed steps */}
+                                                {TRAINING_STEPS.map((step, stepIndex) => (
+                                                    stepCompleted[step.id] && stepIndex !== activeStep && (
+                                                        <Button
+                                                            key={step.id}
+                                                            size="small"
+                                                            variant="text"
+                                                            onClick={() => setActiveStep(stepIndex)}
+                                                            sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                        >
+                                                            {stepIndex + 1}
+                                                        </Button>
+                                                    )
+                                                ))}
+                                            </Box>
                                         </StepContent>
                                     </Step>
                                 ))}
@@ -847,9 +1364,19 @@ export default function EnhancedInvoiceTraining() {
                             {selectedCarrier ? (
                                 <>
                                     <Box sx={{ mb: 2 }}>
-                                        <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 1 }}>
-                                            Selected Carrier
-                                        </Typography>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                Selected Carrier
+                                            </Typography>
+                                            <Button
+                                                size="small"
+                                                variant="outlined"
+                                                onClick={() => setActiveStep(0)}
+                                                sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                            >
+                                                Change
+                                            </Button>
+                                        </Box>
                                         <Chip
                                             label={selectedCarrier.name}
                                             color="primary"
@@ -876,9 +1403,29 @@ export default function EnhancedInvoiceTraining() {
                 </Grid>
             )}
 
-            {/* Carrier Management Tab */}
-            {activeTab === 2 && (
+            {/* Trained Carriers (Carrier Management) Tab now index 0 */}
+            {activeTab === 0 && (
                 <CarrierManagement />
+            )}
+
+            {/* Testing & Validation Tab (now index 2 after removal) */}
+            {activeTab === 2 && (
+                <InvoiceTestingEngine
+                    carriers={carriers}
+                    selectedCarrier={selectedCarrier}
+                    onCarrierChange={setSelectedCarrier}
+                    onTestCompleted={(testResults) => {
+                        // Handle test completion
+                        enqueueSnackbar(`Test completed with ${Math.round((testResults.accuracyMetrics?.overall || 0) * 100)}% accuracy`, {
+                            variant: 'success'
+                        });
+
+                        // Optionally refresh analytics
+                        if (selectedCarrier?.id) {
+                            // loadAnalytics(selectedCarrier.id); // TODO: Implement analytics refresh
+                        }
+                    }}
+                />
             )}
 
             {/* Analytics Tab removed per request */}

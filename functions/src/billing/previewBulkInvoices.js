@@ -17,7 +17,7 @@ const db = getFirestore();
 // Use orchestrator for consistent build/generate across preview/test/official
 const orchestrator = require('./invoiceOrchestrator');
 const { PDFDocument } = require('pdf-lib');
-const { detectSimpleCurrency } = require('./bulkInvoiceGenerator');
+const { detectSimpleCurrency, getSimpleShipmentCharges } = require('./bulkInvoiceGenerator');
 
 /**
  * Preview Bulk Invoices - Generates actual PDF invoices for preview
@@ -119,19 +119,60 @@ exports.previewBulkInvoices = onRequest(
                 });
             }
 
-            // Apply customer filter if provided
+                        // Apply customer filter if provided (EXACT SAME AS TEST EMAIL - WORKING VERSION)
             if (filters.customers && filters.customers.length > 0) {
                 console.log(`Applying customer filter: ${filters.customers.length} customers`);
-                shipments = shipments.filter(shipment => {
-                    const customerID = shipment.shipTo?.customerID || shipment.customerID;
-                    return filters.customers.includes(customerID);
-                });
-                console.log(`After customer filtering: ${shipments.length} shipments`);
+                
+                const originalCount = shipments.length;
+                const normalize = (v) => (v ? String(v).trim().toUpperCase() : null);
+                const targets = filters.customers.map(normalize).filter(Boolean);
+
+                const getCandidates = (s) => {
+                    const arr = [
+                        s?.shipTo?.customerID,
+                        s?.customerID,
+                        s?.shipFrom?.customerID,
+                        // Legacy variants
+                        s?.shipTo?.customerId,
+                        s?.shipFrom?.customerId,
+                        s?.shipTo?._rawData?.customerID,
+                        s?.shipFrom?._rawData?.customerID,
+                        s?.customerId,
+                        s?.customer?.id
+                    ];
+                    const norm = arr.map(normalize).filter(Boolean);
+                    return Array.from(new Set(norm));
+                };
+
+                shipments = shipments.filter(s => getCandidates(s).some(cid => targets.includes(cid)));
+
+                console.log(`Customer filter reduced shipments from ${originalCount} to ${shipments.length}`);
             }
 
-            // 2. Build exactly like test/official, but PEEK invoice numbers (no reservation)
+            // 3. VALIDATE CHARGES (same as test/official functions)
+            const beforeChargeValidation = shipments.length;
+            const validShipments = shipments.filter(shipment => {
+                const charges = getSimpleShipmentCharges(shipment);
+                return charges > 0;
+            });
+
+            console.log(`${validShipments.length} shipments have valid charges (${beforeChargeValidation - validShipments.length} filtered out)`);
+
+            if (validShipments.length === 0) {
+                return res.json({
+                    success: true,
+                    totalShipments: 0,
+                    totalInvoices: 0,
+                    totalLineItems: 0,
+                    totalAmount: 0,
+                    sampleInvoices: [],
+                    message: 'No shipments with valid charges found matching the specified criteria'
+                });
+            }
+
+            // 4. Build exactly like test/official, but PEEK invoice numbers (no reservation)
             const { invoiceDatas, companyInfo } = await orchestrator.buildInvoiceDatas({
-                shipments,
+                shipments: validShipments,
                 companyId,
                 invoiceMode,
                 invoiceIssueDate,
@@ -194,7 +235,7 @@ exports.previewBulkInvoices = onRequest(
 
             const previewResult = {
                 success: true,
-                totalShipments: shipments.length,
+                totalShipments: validShipments.length,
                 totalInvoices: invoiceCount,
                 totalLineItems: lineItemCount,
                 totalAmount: totalAmount,
@@ -207,7 +248,7 @@ exports.previewBulkInvoices = onRequest(
                 recipients
             };
 
-            console.log(`Preview generated: ${invoiceCount} invoices for ${shipments.length} shipments, $${totalAmount.toFixed(2)} total`);
+            console.log(`Preview generated: ${invoiceCount} invoices for ${validShipments.length} shipments, $${totalAmount.toFixed(2)} total`);
 
             res.json(previewResult);
 

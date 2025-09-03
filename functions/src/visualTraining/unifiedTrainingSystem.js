@@ -41,113 +41,53 @@ exports.getUnifiedTrainingCarriers = onCall({
         // Initialize Firebase services
         const { db } = initServices();
         
-        // Get dynamic training carriers from carrier management
+        // Get ONLY trained carriers from the training system
+        // Only return carriers that have actual training samples
         const trainingCarriersQuery = await db.collection('trainingCarriers')
             .where('active', '==', true)
             .orderBy('name')
             .get();
 
-        const dynamicCarriers = trainingCarriersQuery.docs.map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                name: data.name,
-                category: data.category || 'general',
-                description: data.description || '',
-                trainingStats: data.stats || {},
-                modelVersion: data.modelVersion || 1,
-                lastTrainingDate: data.stats?.lastTrainingDate,
-                confidence: data.stats?.averageConfidence || 0,
-                sampleCount: data.stats?.totalSamples || 0,
-                source: 'managed',
-                isActive: true
-            };
-        });
-
-        // Static carriers (common invoice sources)
-        const staticCarriers = [
-            { 
-                id: 'purolator', 
-                name: 'Purolator', 
-                category: 'courier',
-                description: 'Purolator courier services',
-                source: 'static',
-                isActive: true
-            },
-            { 
-                id: 'canadapost', 
-                name: 'Canada Post', 
-                category: 'postal',
-                description: 'Canada Post postal services',
-                source: 'static',
-                isActive: true
-            },
-            { 
-                id: 'fedex', 
-                name: 'FedEx', 
-                category: 'courier',
-                description: 'FedEx express and ground services',
-                source: 'static',
-                isActive: true
-            },
-            { 
-                id: 'ups', 
-                name: 'UPS', 
-                category: 'courier',
-                description: 'UPS package delivery services',
-                source: 'static',
-                isActive: true
-            },
-            { 
-                id: 'canpar', 
-                name: 'Canpar', 
-                category: 'courier',
-                description: 'Canpar courier services',
-                source: 'static',
-                isActive: true
-            },
-            { 
-                id: 'dhl', 
-                name: 'DHL', 
-                category: 'courier',
-                description: 'DHL international express',
-                source: 'static',
-                isActive: true
-            },
-            { 
-                id: 'landliner', 
-                name: 'Landliner Inc', 
-                category: 'freight',
-                description: 'Landliner freight services',
-                source: 'static',
-                isActive: true
-            }
-        ];
-
-        // Merge carriers, prioritizing managed ones over static
-        const carrierMap = new Map();
+        const trainedCarriers = [];
         
-        // Add static carriers first
-        staticCarriers.forEach(carrier => {
-            carrierMap.set(carrier.id, {
-                ...carrier,
-                trainingStats: {},
-                modelVersion: 0,
-                confidence: 0,
-                sampleCount: 0
-            });
-        });
+        for (const doc of trainingCarriersQuery.docs) {
+            const data = doc.data();
+            
+            // Check if this carrier has actual training samples
+            const samplesQuery = await db.collection('unifiedTraining')
+                .doc(doc.id)
+                .collection('samples')
+                .limit(1)
+                .get();
+            
+            const hasSamples = !samplesQuery.empty;
+            const sampleCount = data.stats?.totalSamples || 0;
+            
+            // Only include carriers that have been trained (have samples)
+            if (hasSamples || sampleCount > 0) {
+                trainedCarriers.push({
+                    id: doc.id,
+                    name: data.name,
+                    category: data.category || 'general',
+                    description: data.description || '',
+                    trainingStats: data.stats || {},
+                    modelVersion: data.modelVersion || 1,
+                    lastTrainingDate: data.stats?.lastTrainingDate,
+                    confidence: data.stats?.averageConfidence || 0,
+                    sampleCount: sampleCount,
+                    source: 'trained',
+                    isActive: true,
+                    hasSamples: true
+                });
+            }
+        }
 
-        // Override with dynamic carriers (managed ones take precedence)
-        dynamicCarriers.forEach(carrier => {
-            carrierMap.set(carrier.id, carrier);
-        });
-
-        const unifiedCarriers = Array.from(carrierMap.values())
+        // REMOVED: Static carriers - only show carriers that have been actually trained
+        // No static carriers - only return trained carriers with actual samples
+        
+        const unifiedCarriers = trainedCarriers
             .sort((a, b) => {
-                // Prioritize: managed carriers, then by name
-                if (a.source === 'managed' && b.source === 'static') return -1;
-                if (a.source === 'static' && b.source === 'managed') return 1;
+                // Sort by name
                 return a.name.localeCompare(b.name);
             });
 
@@ -155,8 +95,8 @@ exports.getUnifiedTrainingCarriers = onCall({
             success: true,
             carriers: unifiedCarriers,
             totalCount: unifiedCarriers.length,
-            managedCount: dynamicCarriers.length,
-            staticCount: staticCarriers.length
+            trainedCount: trainedCarriers.length,
+            message: unifiedCarriers.length === 0 ? 'No trained carriers found. Complete the training workflow to add carriers.' : `Found ${unifiedCarriers.length} trained carriers.`
         };
 
     } catch (error) {
@@ -799,12 +739,13 @@ async function getCarrierAnalytics(carrierId, includeDetails = false) {
         
         const samples = samplesQuery.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         
-        // Calculate analytics
+        // Calculate analytics (average confidence based on COMPLETED samples only)
         const totalSamples = samples.length;
-        const completedSamples = samples.filter(s => s.processingStatus === 'completed').length;
+        const completedSampleList = samples.filter(s => s.processingStatus === 'completed');
+        const completedSamples = completedSampleList.length;
         const failedSamples = samples.filter(s => s.processingStatus === 'failed').length;
-        const averageConfidence = samples.length > 0 
-            ? samples.reduce((sum, s) => sum + (s.confidence || 0), 0) / samples.length 
+        const averageConfidence = completedSamples > 0
+            ? completedSampleList.reduce((sum, s) => sum + (s.confidence || 0), 0) / completedSamples
             : 0;
         
         const analytics = {

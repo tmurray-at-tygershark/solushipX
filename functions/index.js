@@ -256,7 +256,7 @@ const {
     getEnabledFollowUpTasks
 } = require('./src/followup-tasks-management');
 
-
+const { directGeminiExtraction } = require('./src/ai/directGeminiExtraction');
 
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
@@ -397,6 +397,11 @@ const {
     retrainCarrier,
     getCarrierCategories
 } = require('./src/visualTraining/carrierManagement');
+const { 
+    getUnifiedTrainingCarriers: getCarrierManagementCarriers, 
+    addUnifiedTrainingCarrier, 
+    deleteUnifiedTrainingCarrier 
+} = require('./src/ai/carrierManagement');
 const {
     getUnifiedTrainingCarriers,
     addTrainingSample,
@@ -405,6 +410,12 @@ const {
 } = require('./src/visualTraining/unifiedTrainingSystem');
 // Visual annotation callable (used by VisualAnnotationTrainer)
 const { processVisualTrainingSample } = require('./src/visualTraining/visualAnnotationProcessor');
+// Invoice testing engine for model validation
+const { 
+    testCarrierModel, 
+    getCarrierTestingHistory, 
+    getTestResults 
+} = require('./src/visualTraining/invoiceTestingEngine');
 const { deleteAPUpload } = require('./src/deleteAPUpload');
 
 exports.analyzeInvoiceWithVision = analyzeInvoiceWithVision;
@@ -416,11 +427,16 @@ exports.deleteTrainingCarrier = deleteTrainingCarrier;
 exports.getCarrierDetails = getCarrierDetails;
 exports.retrainCarrier = retrainCarrier;
 exports.getCarrierCategories = getCarrierCategories;
+exports.addUnifiedTrainingCarrier = addUnifiedTrainingCarrier;
+exports.deleteUnifiedTrainingCarrier = deleteUnifiedTrainingCarrier;
 exports.getUnifiedTrainingCarriers = getUnifiedTrainingCarriers;
 exports.addTrainingSample = addTrainingSample;
 exports.processTrainingSample = processTrainingSample;
 exports.getTrainingAnalytics = getTrainingAnalytics;
 exports.processVisualTrainingSample = processVisualTrainingSample;
+exports.testCarrierModel = testCarrierModel;
+exports.getCarrierTestingHistory = getCarrierTestingHistory;
+exports.getTestResults = getTestResults;
 exports.deleteAPUpload = deleteAPUpload;
 
 // AP Processing functions
@@ -1066,3 +1082,6 @@ const {
 
 exports.calculateEnhancedRates = calculateEnhancedRates;
 exports.testDimWeight = testDimWeight;
+
+// AI/ML Training
+exports.directGeminiExtraction = directGeminiExtraction;

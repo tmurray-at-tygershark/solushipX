@@ -644,8 +644,20 @@ const RateDetails = ({
 
     // Enhanced profit calculation logic with currency conversion for individual line items
     const calculateLineItemProfit = useCallback(async (item, exchangeRates = null) => {
+        console.log(`🎯 calculateLineItemProfit called for item ${item.id}:`, {
+            code: item.code,
+            description: item.description,
+            isTax: item.isTax,
+            isTaxChargeResult: isTaxCharge(item.code),
+            actualCost: item.actualCost,
+            actualCharge: item.actualCharge,
+            quotedCost: item.quotedCost,
+            quotedCharge: item.quotedCharge
+        });
+
         // Tax charges should not have profit calculations - they are pass-through charges
         if (item.isTax || isTaxCharge(item.code)) {
+            console.log(`🚫 Returning null for tax charge: ${item.code}`);
             return null; // Special value to indicate $0.00 for taxes
         }
 
@@ -696,8 +708,10 @@ const RateDetails = ({
 
         // If currencies are the same, do simple calculation
         if (costCurrency === chargeCurrency) {
+            const profit = chargeAmount - costAmount;
+            console.log(`💰 Simple profit calculation for ${item.id}: ${chargeAmount} - ${costAmount} = ${profit}`);
             return {
-                profit: chargeAmount - costAmount,
+                profit: profit,
                 currency: chargeCurrency,
                 conversionApplied: false
             };
@@ -743,7 +757,12 @@ const RateDetails = ({
     // Load exchange rates and calculate profits for all line items
     useEffect(() => {
         const loadExchangeRatesAndCalculateProfits = async () => {
-            if (!localRateBreakdown.length) return;
+            if (!localRateBreakdown.length) {
+                console.log('⚠️ No localRateBreakdown items to calculate profits for');
+                return;
+            }
+
+            console.log('💰 Starting profit calculations for', localRateBreakdown.length, 'items:', localRateBreakdown);
 
             try {
                 // Load exchange rates once for all calculations
@@ -752,23 +771,47 @@ const RateDetails = ({
                     ? await currencyConversionService.getRatesForDate(new Date(shipmentDate))
                     : await currencyConversionService.getLatestRates();
 
+                console.log('💱 Exchange rates loaded:', rates);
                 setExchangeRates(rates);
 
                 // Calculate profits for all line items
                 const profitResults = {};
 
                 for (const item of localRateBreakdown) {
+                    console.log(`💰 Processing item ${item.id} (${item.description}):`, {
+                        isTax: item.isTax,
+                        code: item.code,
+                        quotedCost: item.quotedCost,
+                        quotedCharge: item.quotedCharge,
+                        actualCost: item.actualCost,
+                        actualCharge: item.actualCharge
+                    });
+
                     if (item.isTax || isTaxCharge(item.code)) {
+                        console.log(`💰 Tax item ${item.id}: Setting profit to null`);
                         profitResults[item.id] = null; // $0.00 for tax charges
                         continue;
                     }
 
+                    // CRITICAL DEBUG: Check if FRT is being incorrectly identified as tax
+                    console.log(`🔍 PROFIT DEBUG: Processing non-tax item ${item.id}:`, {
+                        code: item.code,
+                        description: item.description,
+                        isTax: item.isTax,
+                        isTaxChargeResult: isTaxCharge(item.code),
+                        actualCost: item.actualCost,
+                        actualCharge: item.actualCharge,
+                        quotedCost: item.quotedCost,
+                        quotedCharge: item.quotedCharge
+                    });
+
                     try {
                         // Convert async function to return promise
                         const profitResult = await calculateLineItemProfit(item, rates);
+                        console.log(`💰 Calculated profit for item ${item.id}:`, profitResult);
                         profitResults[item.id] = profitResult;
                     } catch (error) {
-                        console.error(`Error calculating profit for item ${item.id}:`, error);
+                        console.error(`❌ Error calculating profit for item ${item.id}:`, error);
                         // Fallback to simple calculation
                         const actualCost = parseFloat(item.actualCost) || 0;
                         const quotedCost = parseFloat(item.quotedCost) || 0;
@@ -795,10 +838,11 @@ const RateDetails = ({
                     }
                 }
 
+                console.log('💰 Final profit results being set:', profitResults);
                 setProfitCalculations(profitResults);
 
             } catch (error) {
-                console.error('Error loading exchange rates or calculating profits:', error);
+                console.error('❌ Error loading exchange rates or calculating profits:', error);
             }
         };
 
@@ -1873,26 +1917,26 @@ const RateDetails = ({
                                                             );
                                                         })()
                                                     ) : (
-                                                        // Show calculated profit for each line item using cached calculations
+                                                        // SIMPLIFIED: Direct profit calculation (Actual Charge - Actual Cost)
                                                         !item.isMarkup ? (() => {
-                                                            const profitResult = profitCalculations[item.id];
-
-                                                            // Tax charges or uncalculated profits show $0.00
-                                                            if (profitResult === null || profitResult === undefined) {
+                                                            // Tax charges show $0.00
+                                                            if (item.isTax || isTaxCharge(item.code)) {
                                                                 return (
                                                                     <Typography sx={{
                                                                         fontSize: '12px',
                                                                         color: '#6b7280',
                                                                         fontWeight: 400
                                                                     }}>
-                                                                        {profitResult === null ? '$0.00 CAD' : 'Calculating...'}
+                                                                        $0.00 CAD
                                                                     </Typography>
                                                                 );
                                                             }
 
-                                                            const profit = typeof profitResult === 'object' ? profitResult.profit : profitResult;
-                                                            const currency = typeof profitResult === 'object' ? profitResult.currency : (item.currency || 'CAD');
-                                                            const conversionApplied = typeof profitResult === 'object' ? profitResult.conversionApplied : false;
+                                                            // Simple calculation: Actual Charge - Actual Cost
+                                                            const actualCost = parseFloat(item.actualCost) || 0;
+                                                            const actualCharge = parseFloat(item.actualCharge) || 0;
+                                                            const profit = actualCharge - actualCost;
+                                                            const currency = item.currency || 'CAD';
 
                                                             const isProfit = profit > 0;
                                                             const isLoss = profit < 0;
@@ -1901,46 +1945,13 @@ const RateDetails = ({
                                                             const color = isProfit ? '#059669' : (isLoss ? '#dc2626' : 'inherit');
 
                                                             return (
-                                                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                                                                    <Typography sx={{
-                                                                        fontSize: '12px',
-                                                                        color: color,
-                                                                        fontWeight: 400
-                                                                    }}>
-                                                                        {`${prefix}${formatCurrency(absProfit, true, currency)}`}
-                                                                    </Typography>
-                                                                    {conversionApplied && (
-                                                                        <Typography sx={{
-                                                                            fontSize: '10px',
-                                                                            color: '#6b7280',
-                                                                            fontStyle: 'italic'
-                                                                        }}>
-                                                                            {(() => {
-                                                                                // ✅ FIXED: Only show conversion if cost and charge currencies are different
-                                                                                if (typeof profitResult === 'object') {
-                                                                                    const originalCostCurrency = profitResult.originalCostCurrency || item.quotedCostCurrency || item.currency || 'CAD';
-                                                                                    const originalChargeCurrency = profitResult.originalChargeCurrency || item.quotedChargeCurrency || item.currency || 'CAD';
-
-                                                                                    // Only show conversion text if currencies are actually different
-                                                                                    if (originalCostCurrency !== 'CAD' || originalChargeCurrency !== 'CAD') {
-                                                                                        const exchangeRateInfo = profitResult.exchangeRatesUsed;
-                                                                                        const costRate = exchangeRateInfo?.costRate;
-                                                                                        const chargeRate = exchangeRateInfo?.chargeRate;
-
-                                                                                        // Show specific rate if available, otherwise generic message
-                                                                                        if (costRate && costRate !== 1 && !isNaN(costRate)) {
-                                                                                            return `Converted @ ${costRate.toFixed(3)}`;
-                                                                                        } else if (chargeRate && chargeRate !== 1 && !isNaN(chargeRate)) {
-                                                                                            return `Converted @ ${chargeRate.toFixed(3)}`;
-                                                                                        }
-                                                                                        return 'Converted to CAD';
-                                                                                    }
-                                                                                }
-                                                                                return null; // No conversion needed
-                                                                            })()}
-                                                                        </Typography>
-                                                                    )}
-                                                                </Box>
+                                                                <Typography sx={{
+                                                                    fontSize: '12px',
+                                                                    color: color,
+                                                                    fontWeight: 400
+                                                                }}>
+                                                                    {`${prefix}${formatCurrency(absProfit, true, currency)}`}
+                                                                </Typography>
                                                             );
                                                         })() : (
                                                             // For markup items, show the markup amount as profit
@@ -2116,8 +2127,22 @@ const RateDetails = ({
                                         {canViewFinancials && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700, verticalAlign: 'top' }}>
                                                 {(() => {
-                                                    // Use the comprehensive profit calculation from calculateLocalTotals
-                                                    const profit = localTotalProfit;
+                                                    // SIMPLIFIED: Direct total profit calculation excluding tax items
+                                                    let totalNonTaxActualCost = 0;
+                                                    let totalNonTaxActualCharge = 0;
+
+                                                    // Calculate totals excluding tax items
+                                                    localRateBreakdown.forEach(item => {
+                                                        // Skip tax charges
+                                                        if (item.isTax || isTaxCharge(item.code)) {
+                                                            return;
+                                                        }
+
+                                                        totalNonTaxActualCost += parseFloat(item.actualCost) || 0;
+                                                        totalNonTaxActualCharge += parseFloat(item.actualCharge) || 0;
+                                                    });
+
+                                                    const profit = totalNonTaxActualCharge - totalNonTaxActualCost;
                                                     const isProfit = profit > 0;
                                                     const isLoss = profit < 0;
                                                     const prefix = isProfit ? '+' : (isLoss ? '-' : '');

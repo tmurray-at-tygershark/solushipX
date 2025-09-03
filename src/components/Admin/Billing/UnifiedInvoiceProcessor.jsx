@@ -192,10 +192,11 @@ export default function UnifiedInvoiceProcessor() {
         }
 
         try {
-            const addCarrier = httpsCallable(functions, 'addUnifiedTrainingCarrier');
+            const addCarrier = httpsCallable(functions, 'createTrainingCarrier');
             const result = await addCarrier({
                 name: newCarrierName.trim(),
-                companyId: companyIdForAddress
+                category: 'invoice',
+                description: `Invoice training carrier for ${newCarrierName.trim()}`
             });
 
             if (result.data?.success) {
@@ -214,7 +215,7 @@ export default function UnifiedInvoiceProcessor() {
 
     const deleteCarrier = async (carrierId) => {
         try {
-            const deleteCarrier = httpsCallable(functions, 'deleteUnifiedTrainingCarrier');
+            const deleteCarrier = httpsCallable(functions, 'deleteTrainingCarrier');
             const result = await deleteCarrier({ carrierId });
 
             if (result.data?.success) {

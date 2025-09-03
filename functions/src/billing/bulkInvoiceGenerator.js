@@ -58,9 +58,23 @@ async function getNextInvoiceNumber() {
     }
 }
 
-// ✅ HELPER FUNCTION: Get actual customer name from database lookup
+// ✅ HELPER FUNCTION: Get actual customer name from database lookup (FIXED: Use comprehensive customer ID extraction)
 async function getActualCustomerName(shipment, companyId) {
-    const shipmentCustomerId = shipment.customerId || shipment.customerID || shipment.customer?.id || shipment.shipTo?.customerID;
+    // Use the same comprehensive customer ID extraction as filtering logic
+    const candidates = [
+        shipment?.shipTo?.customerID,
+        shipment?.customerID,
+        shipment?.shipFrom?.customerID,
+        // Legacy variants
+        shipment?.shipTo?.customerId,
+        shipment?.shipFrom?.customerId,
+        shipment?.shipTo?._rawData?.customerID,
+        shipment?.shipFrom?._rawData?.customerID,
+        shipment?.customerId,
+        shipment?.customer?.id
+    ];
+    // Get the first non-null candidate (preserve original case for database lookup)
+    const shipmentCustomerId = candidates.find(id => id && String(id).trim()) || null;
     
     if (!shipmentCustomerId) {
         return shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown Customer';
@@ -338,22 +352,39 @@ exports.generateBulkInvoices = onRequest(
             console.log(`Found ${shipments.length} total shipments for ${companyId} with date/status filters`);
         }
 
-        // 2. CUSTOMER FILTERING (if specified)
+        // 2. CUSTOMER FILTERING (EXACT SAME AS TEST EMAIL - WORKING VERSION)
         if (filters.customers && filters.customers.length > 0) {
             console.log(`Filtering by ${filters.customers.length} specific customers`);
             
             const originalCount = shipments.length;
-            const beforeCustomerFilter = [...shipments];
-            const normalizedTargets = filters.customers.map(c => (c || '').toString().trim().toUpperCase());
+            const normalize = (v) => (v ? String(v).trim().toUpperCase() : null);
+            const targets = filters.customers.map(normalize).filter(Boolean);
+
+            const getCandidates = (s) => {
+                const arr = [
+                    s?.shipTo?.customerID,
+                    s?.customerID,
+                    s?.shipFrom?.customerID,
+                    // Legacy variants
+                    s?.shipTo?.customerId,
+                    s?.shipFrom?.customerId,
+                    s?.shipTo?._rawData?.customerID,
+                    s?.shipFrom?._rawData?.customerID,
+                    s?.customerId,
+                    s?.customer?.id
+                ];
+                const norm = arr.map(normalize).filter(Boolean);
+                return Array.from(new Set(norm));
+            };
 
             shipments = shipments.filter(shipment => {
-                const candidates = getAllCustomerIdCandidates(shipment);
-                const matches = candidates.some(cid => normalizedTargets.includes(cid));
+                const candidates = getCandidates(shipment);
+                const matches = candidates.some(cid => targets.includes(cid));
 
                 if (!matches) {
                     filteringDetails.customerFiltered.push({
                         shipmentId: shipment.shipmentID,
-                        reason: `Customer mismatch - found: ${candidates.join('/') || 'unknown'}, required: ${normalizedTargets.join(', ')}`
+                        reason: `Customer mismatch - found: ${candidates.join('/') || 'unknown'}, required: ${targets.join(', ')}`
                     });
                 }
 
