@@ -1053,6 +1053,7 @@ export default function VisualAnnotationTrainer({ selectedCarrier, onTrainingCom
             // Prepare training data with annotations
             const trainingData = {
                 carrierId: selectedCarrier.id,
+                carrierName: selectedCarrier.name,
                 fileName: uploadedFile.name,
                 base64Data,
                 annotations,

@@ -102,7 +102,16 @@ exports.testCarrierModel = onCall({
         });
         
         // Step 2: Process invoice with current AI pipeline (Gemini extraction)
-        const aiResults = await processInvoiceWithAI(downloadURL, carrierModel);
+        console.log('🔍 DEBUGGING: About to call processInvoiceWithAI in testCarrierModel');
+        const aiResults = await processInvoiceWithAI(downloadURL, carrierModel, carrierId);
+        console.log('🔍 DEBUGGING: processInvoiceWithAI returned:', {
+            hasAiResults: !!aiResults,
+            aiResultsKeys: aiResults ? Object.keys(aiResults) : 'null',
+            hasExtractedData: !!aiResults?.extractedData,
+            extractedDataKeys: aiResults?.extractedData ? Object.keys(aiResults.extractedData) : 'null',
+            hasEnhancedResults: !!aiResults?.enhancedResults,
+            enhancedResultsKeys: aiResults?.enhancedResults ? Object.keys(aiResults.enhancedResults) : 'null'
+        });
         console.log(`🤖 Raw AI Extraction (from Gemini):`, aiResults.extractedData);
         console.log(`📈 Raw AI Confidence:`, aiResults.confidence);
 
@@ -385,7 +394,7 @@ async function getCarrierTrainedModel(carrierId) {
     }
 }
 
-async function processInvoiceWithAI(downloadURL, carrierModel) {
+async function processInvoiceWithAI(downloadURL, carrierModel, carrierId = null) {
     try {
         console.log('🤖 Processing invoice with AI...');
 
@@ -393,14 +402,26 @@ async function processInvoiceWithAI(downloadURL, carrierModel) {
         const ocrResults = await extractTextWithVision(downloadURL);
         
         // Step 2: Enhanced extraction with Gemini
-        const geminiResults = await extractWithGemini(downloadURL, ocrResults, carrierModel);
+        console.log('🔍 DEBUGGING: About to call extractWithGemini');
+        const geminiResults = await extractWithGemini(downloadURL, ocrResults, carrierModel, carrierId);
+        console.log('🔍 DEBUGGING: Gemini results received:', {
+            hasExtractedData: !!geminiResults.extractedData,
+            extractedDataKeys: geminiResults.extractedData ? Object.keys(geminiResults.extractedData) : 'null',
+            confidence: geminiResults.confidence
+        });
         
         // Step 3: Apply trained model patterns if available
+        console.log('🔍 DEBUGGING: About to apply trained model patterns, carrierModel exists:', !!carrierModel);
         const enhancedResults = carrierModel 
             ? await applyTrainedModelPatterns(geminiResults, carrierModel)
             : geminiResults;
+        console.log('🔍 DEBUGGING: Enhanced results after pattern application:', {
+            hasExtractedData: !!enhancedResults.extractedData,
+            extractedDataKeys: enhancedResults.extractedData ? Object.keys(enhancedResults.extractedData) : 'null',
+            confidence: enhancedResults.confidence
+        });
 
-        return {
+        const finalResult = {
             ocrResults,
             geminiResults,
             enhancedResults,
@@ -408,6 +429,17 @@ async function processInvoiceWithAI(downloadURL, carrierModel) {
             extractedData: enhancedResults.extractedData || {},
             processingTime: new Date().toISOString()
         };
+        
+        console.log('🔍 DEBUGGING: Final processInvoiceWithAI result structure:', {
+            hasOcrResults: !!finalResult.ocrResults,
+            hasGeminiResults: !!finalResult.geminiResults,
+            hasEnhancedResults: !!finalResult.enhancedResults,
+            hasExtractedData: !!finalResult.extractedData,
+            extractedDataKeys: finalResult.extractedData ? Object.keys(finalResult.extractedData) : 'null',
+            confidence: finalResult.confidence
+        });
+
+        return finalResult;
 
     } catch (error) {
         console.error('AI processing error:', error);
@@ -439,7 +471,85 @@ async function extractTextWithVision(imageUrl) {
     }
 }
 
-async function extractWithGemini(imageUrl, ocrResults, carrierModel) {
+// Transform flat extraction format to structured format expected by frontend
+function transformToStructuredFormat(flatData) {
+    console.log('🔧 Transforming flat data to structured format:', flatData);
+    
+    const structuredData = {
+        carrierInformation: {
+            company: flatData.carrier || null,
+            address: flatData.carrier_address || null,
+            phone: flatData.carrier_phone || null,
+            fax: flatData.carrier_fax || null,
+            email: flatData.carrier_email || null,
+            taxNumber: flatData.carrier_tax || flatData.tax_number || null
+        },
+        invoiceDetails: {
+            invoiceNumber: flatData.invoice_number || null,
+            invoiceDate: flatData.invoice_date || null,
+            dueDate: flatData.due_date || null,
+            invoiceTerms: flatData.invoice_terms || flatData.payment_terms || null,
+            billOfLading: flatData.shipment_ids && Array.isArray(flatData.shipment_ids) 
+                ? flatData.shipment_ids.join(', ') || null 
+                : flatData.bill_of_lading || null,
+            customerNumber: flatData.customer_number || flatData.account_number || null
+        },
+        shipmentReferences: {
+            shipmentId: flatData.shipment_id || flatData.shipmentId || flatData.shipment_number || 
+                      flatData.reference_number || flatData.job_id || null,
+            purchaseOrder: flatData.shipment_references && Array.isArray(flatData.shipment_references)
+                ? flatData.shipment_references.find(ref => ref.includes('PO')) || flatData.shipment_references[0] || null
+                : flatData.purchase_order || null,
+            customerReference: flatData.customer_reference || null,
+            proNumber: flatData.pro_number || null,
+            trackingNumber: flatData.tracking_number || flatData.waybill || null,
+            jobNumber: flatData.job_number || null
+        },
+        shipper: {
+            company: flatData.shipper || null,
+            address: flatData.shipper_address || null,
+            contact: flatData.shipper_contact || null,
+            phone: flatData.shipper_phone || null
+        },
+        consignee: {
+            company: flatData.consignee || null,
+            address: flatData.consignee_address || null,
+            contact: flatData.consignee_contact || null,
+            phone: flatData.consignee_phone || null
+        },
+        packageDetails: flatData.package_details || flatData.packages || [
+            // If no package details provided, create a basic one from total info if available
+            ...(flatData.total && !flatData.package_details && !flatData.packages ? 
+                [{
+                    quantity: 1,
+                    description: 'Shipment',
+                    weight: 'Not specified',
+                    dimensions: 'Not specified'
+                }] : []
+            )
+        ],
+        charges: flatData.charges && Array.isArray(flatData.charges) ? 
+            flatData.charges.map(charge => ({
+                description: charge.description || 'Charge',
+                amount: typeof charge.amount === 'number' ? charge.amount : 
+                        (typeof charge.amount === 'string' ? parseFloat(charge.amount.replace(/[^0-9.-]/g, '')) : 0),
+                rate: charge.rate || null,
+                code: charge.code || null
+            })) : [],
+        totalAmount: {
+            subtotal: flatData.subtotal || null,
+            totalTax: flatData.total_tax || flatData.tax_amount || null,
+            amount: flatData.total || flatData.total_amount || null,
+            currency: flatData.currency || flatData.total_currency || 'CAD',
+            amountDue: flatData.amount_due || flatData.total || flatData.total_amount || null
+        }
+    };
+    
+    console.log('🔧 Structured data result:', structuredData);
+    return structuredData;
+}
+
+async function extractWithGemini(imageUrl, ocrResults, carrierModel, carrierId = null) {
     try {
         console.log('🤖 Extracting with Gemini using enhanced prompt:', imageUrl);
         
@@ -450,31 +560,149 @@ async function extractWithGemini(imageUrl, ocrResults, carrierModel) {
         
         const mimeType = imageUrl.toLowerCase().includes('.pdf') ? 'application/pdf' : 'image/jpeg';
         
-        const prompt = `
-        You are an expert AI invoice processing system. Analyze this invoice document and extract the following information. 
-        Respond ONLY with a JSON object. Ensure all fields are present, even if empty or null.
+        // Try to get carrier-specific prompt first
+        let prompt = await getCarrierSpecificPrompt(carrierId);
+        
+        // If no carrier-specific prompt, use enhanced generic prompt
+        if (!prompt) {
+            prompt = `
+You are an expert AI invoice processing system specializing in transportation, logistics, and freight carrier invoices. Analyze this document with extreme precision and extract ALL relevant information. Return ONLY a JSON object - no explanatory text before or after.
 
-        SPECIAL INSTRUCTIONS FOR POLARIS TRANSPORT CARRIERS:
-        - For billOfLading/shipment ID: Remove any prefixes like "SI:", "Shipment:", "BOL:" - extract only the actual ID (e.g., "SI: ICAL-23KDTK" should be "ICAL-23KDTK")
-        - For totalAmount: Extract the final total with currency exactly as shown (e.g., "$247.09 CAD" should be amount: 247.09, currency: "CAD")
-        - For charges: Extract ALL line items including descriptions, amounts, and rates. Look for items like freight charges, border fees, fuel surcharges, etc.
+## DOCUMENT ANALYSIS INSTRUCTIONS
+
+### STEP 1: DOCUMENT IDENTIFICATION
+- Determine if this is an invoice, bill of lading, freight bill, or shipping document
+- Identify the carrier/company from header, logo, or footer areas
+- Look for document numbers in top-right, top-left, or header sections
+
+### STEP 2: SYSTEMATIC FIELD EXTRACTION
+
+#### CARRIER INFORMATION (Usually in header/top section):
+- Extract company name exactly as written (remove "Inc.", "Ltd.", "LLC" only if needed for clarity)
+- Full address including street, city, province/state, postal/zip code, country
+- All contact details: phone, fax, email, website
+- Tax numbers, GST/HST numbers if visible
+
+#### INVOICE DETAILS (Usually top-right or center):
+- Invoice number (remove prefixes: "Invoice #", "INV:", "No.", "#")
+- Invoice date (standardize to YYYY-MM-DD format)
+- Due date or payment date if shown
+- Reference numbers, PO numbers, customer numbers
+
+#### SHIPMENT IDENTIFIERS (Multiple locations possible):
+- **SHIPMENT ID (CRITICAL)**: Look for shipment numbers, job IDs, or reference numbers that match internal systems
+- Bill of Lading (BOL) numbers - remove prefixes like "BOL:", "B/L:", "SI:"
+- Shipment IDs, waybill numbers, tracking numbers
+- Pro numbers, job numbers, reference numbers
+- Customer reference numbers, PO numbers
+
+**PRIORITY EXTRACTION**: Shipment ID is essential for matching to internal shipment records. Look for:
+- Alphanumeric codes like "IC-CUSTOMER-123ABC" 
+- Job numbers, reference numbers, or shipment numbers
+- Any identifier that could link to internal shipment tracking
+
+#### SHIPPER (Ship From) - Usually left side or top section:
+- Complete company name
+- Full address with postal/zip code
+- Contact person name and phone if shown
+- Pickup date/time if visible
+
+#### CONSIGNEE (Ship To) - Usually right side or middle section:
+- Complete company name  
+- Full address with postal/zip code
+- Contact person name and phone if shown
+- Delivery date/time if visible
+
+#### PACKAGE/FREIGHT DETAILS (Usually in table format):
+- Quantity/pieces count
+- Package type (pallets, boxes, crates, etc.)
+- Description of goods/commodities
+- Weight (total and per piece if shown)
+- Dimensions (L×W×H) if provided
+- Declared value or insurance amount
+
+#### CHARGES BREAKDOWN (Usually in table with multiple rows):
+Extract ALL line items including:
+- Base freight charges ("Freight", "Transportation", "Linehaul")
+- Fuel surcharges ("Fuel", "FSC", "Fuel Surcharge") 
+- Accessorial charges ("Liftgate", "Inside Delivery", "Residential")
+- Border/customs fees ("Border Fee", "Customs", "Brokerage")
+- Insurance charges
+- Storage/detention fees
+- Handling charges
+- Any other fees or surcharges
+
+For each charge:
+- Description exactly as written
+- Amount as pure number (remove $, commas, currency symbols)
+- Rate/percentage if shown (e.g., "2.5%", "$0.15/lb")
+
+#### PAYMENT & TERMS:
+- Payment terms ("Net 30", "Due on Receipt", "COD", "Prepaid")
+- Payment method (check, wire, credit card)
+- Due date or discount terms
+- Late fees or interest rates
+
+#### TOTALS & CURRENCY:
+- Subtotal before taxes
+- Tax amounts (GST, HST, PST, sales tax) with rates
+- Total amount including all taxes and fees
+- Currency (CAD, USD, or other)
+
+## EXTRACTION PATTERNS & RULES
+
+### NUMBER CLEANING RULES:
+- Remove currency symbols: "$1,234.56" → 1234.56
+- Remove prefixes: "Invoice #12345" → "12345"
+- Clean references: "BOL: ABC-123" → "ABC-123"
+- Parse weights: "2,500 lbs" → "2500 lbs"
+
+### DATE STANDARDIZATION:
+- Convert all dates to YYYY-MM-DD format
+- Handle formats: MM/DD/YYYY, DD/MM/YYYY, DD-MMM-YYYY
+- Examples: "Dec 15, 2024" → "2024-12-15"
+
+### ADDRESS STANDARDIZATION:
+- Include full address on single line with commas
+- Format: "123 Main St, Anytown, ON, L1A 2B3, Canada"
+- Separate company name from address
+
+### CHARGE CLASSIFICATION:
+- Group similar charges together
+- Standardize descriptions: "Fuel Sur" → "Fuel Surcharge"
+- Ensure amounts are numeric only
+- Include tax breakdown separately
+
+### VALIDATION RULES:
+- Verify total equals sum of line items + taxes
+- Check that required fields (invoice #, amount) are present
+- Ensure dates are logical (invoice date ≤ due date)
+- Validate that addresses include city and postal code
 
         {\
             "carrierInformation": {\
                 "company": "string | null",\
                 "address": "string | null",\
                 "phone": "string | null",\
-                "fax": "string | null"\
-            },\
+                "fax": "string | null",
+                "email": "string | null",
+                "taxNumber": "string | null"
+            },
             "invoiceDetails": {\
                 "invoiceNumber": "string | null",\
                 "invoiceDate": "string | null",
-                "billOfLading": "string | null (REMOVE prefixes like SI:, Shipment:, BOL:)"\
-            },\
+                "billOfLading": "string | null (REMOVE prefixes like SI:, Shipment:, BOL:)",
+                "invoiceTerms": "string | null (e.g., Net 30, Due on Receipt, COD)",
+                "customerNumber": "string | null"
+            },
             "shipmentReferences": {\
-                "purchaseOrder": "string | null",\
-                "papsLabel": "string | null"\
-            },\
+                "shipmentId": "string | null (CRITICAL: shipment ID for internal matching)",
+                "purchaseOrder": "string | null",
+                "customerReference": "string | null",
+                "proNumber": "string | null",
+                "trackingNumber": "string | null",
+                "jobNumber": "string | null"
+            },
             "shipper": {\
                 "company": "string | null",
                 "address": "string | null"\
@@ -498,12 +726,31 @@ async function extractWithGemini(imageUrl, ocrResults, carrierModel) {
                     "rate": "string | null (percentage or rate info)"\
                 }\
             ],\
-            "totalAmount": {\
+            "totalAmount": {
+                "subtotal": "number | null",
+                "totalTax": "number | null",
                 "amount": "number | null (numeric value only)",
-                "currency": "string | null (e.g., CAD, USD, CAN Funds)"\
-            }\
-        }\
+                "currency": "string | null (e.g., CAD, USD, CAN Funds)",
+                "amountDue": "number | null"
+            }
+        }
+
+## CRITICAL REQUIREMENTS:
+1. ALL fields must be present in output, use null if not found
+2. Numbers must be pure numeric values (no currency symbols)
+3. Addresses must be complete and properly formatted
+4. Dates must be in YYYY-MM-DD format
+5. Extract ALL charges found, no matter how small
+6. Verify mathematical accuracy (totals = subtotal + taxes)
+7. Use exact text from document, don't paraphrase
+8. Double-check all extracted amounts add up correctly
+9. Ensure no placeholder or example data remains
+10. Confirm all text is extracted exactly as shown on document\
         `;
+        }
+
+        const hasCarrierPrompt = prompt !== null && prompt !== undefined;
+        console.log('🔄 Using carrier-specific prompt:', hasCarrierPrompt ? 'Yes' : 'No (using generic)');
 
         const requestPayload = {
             contents: [{
@@ -541,14 +788,79 @@ async function extractWithGemini(imageUrl, ocrResults, carrierModel) {
         console.log('DEBUG: Final cleaned text before JSON.parse():', cleanedText);
 
         try {
-            const extractedData = JSON.parse(cleanedText);
-            console.log('Gemini extraction successful with enhanced prompt.');
-            return {
+            console.log('🔍 DEBUGGING: About to parse JSON from Gemini');
+            let extractedData = JSON.parse(cleanedText);
+            console.log('🔍 DEBUGGING: Successfully parsed JSON:', extractedData);
+            console.log('🔍 DEBUGGING: Extracted data keys:', Object.keys(extractedData));
+            
+            // Transform flat format to structured format if needed
+            if (extractedData.carrier && !extractedData.carrierInformation) {
+                console.log('🔧 DEBUGGING: Converting flat format to structured format');
+                console.log('🔧 DEBUGGING: Original flat data:', extractedData);
+                extractedData = transformToStructuredFormat(extractedData);
+                console.log('🔧 DEBUGGING: Transformed data keys:', Object.keys(extractedData));
+                console.log('🔧 DEBUGGING: Transformed data structure:', JSON.stringify(extractedData, null, 2));
+            }
+            
+            // Apply charge code normalization for better frontend matching
+            if (extractedData.charges && Array.isArray(extractedData.charges)) {
+                extractedData.charges = extractedData.charges.map(charge => {
+                    const description = charge.description || '';
+                    const desc = description.toLowerCase();
+                    
+                    // Map charge description to standard code
+                    let code = 'FRT'; // Default to freight
+                    if (desc.includes('freight') || desc.includes('shipping') || desc.includes('transport')) {
+                        code = 'FRT';
+                    } else if (desc.includes('fuel') || desc.includes('surcharge')) {
+                        code = 'FSC';
+                    } else if (desc.includes('handling') || desc.includes('accessorial') || desc.includes('special')) {
+                        code = 'ACC';
+                    } else if (desc.includes('border') || desc.includes('customs') || desc.includes('duty')) {
+                        code = 'BOR';
+                    } else if (desc.includes('insurance') || desc.includes('coverage')) {
+                        code = 'INS';
+                    }
+                    
+                    // Ensure amount is properly formatted as number
+                    let amount = charge.amount;
+                    if (typeof amount === 'string') {
+                        amount = parseFloat(amount.replace(/[^0-9.-]/g, ''));
+                    }
+                    if (isNaN(amount)) amount = 0;
+                    
+                    // Add code to charge for better matching
+                    return {
+                        description: description || 'Charge',
+                        amount: amount,
+                        rate: charge.rate || null,
+                        code: code,
+                        originalDescription: description
+                    };
+                });
+                
+                console.log('Applied charge code mapping to extracted charges:', extractedData.charges);
+            }
+            
+            console.log('🔍 DEBUGGING: Gemini extraction successful with enhanced prompt.');
+            console.log('🔍 DEBUGGING: About to return extraction result with keys:', Object.keys(extractedData));
+            const result = {
                 extractedData,
                 confidence: extractedData.confidence || 0.8,
                 extractionQuality: extractedData.extractionQuality || 'medium',
-                rawResponse: text
+                rawResponse: text,
+                metadata: {
+                    usedCarrierSpecificPrompt: hasCarrierPrompt,
+                    carrierId: carrierModel?.carrierId || carrierId || null
+                }
             };
+            console.log('🔍 DEBUGGING: Final extraction result structure:', {
+                hasExtractedData: !!result.extractedData,
+                extractedDataKeys: result.extractedData ? Object.keys(result.extractedData) : 'null',
+                confidence: result.confidence,
+                hasMetadata: !!result.metadata
+            });
+            return result;
         } catch (parseError) {
             console.warn('JSON parse error, using fallback extraction. Raw Gemini response:', text);
             return {
@@ -556,7 +868,11 @@ async function extractWithGemini(imageUrl, ocrResults, carrierModel) {
                 confidence: 0.5,
                 extractionQuality: 'low',
                 rawResponse: text,
-                error: 'Failed to parse AI response'
+                error: 'Failed to parse AI response',
+                metadata: {
+                    usedCarrierSpecificPrompt: hasCarrierPrompt,
+                    carrierId: carrierModel?.carrierId || carrierId || null
+                }
             };
         }
 
@@ -686,6 +1002,45 @@ function classifyChargeType(description, knownTypes) {
     if (desc.includes('accessorial') || desc.includes('handling')) return 'Accessorial';
     
     return 'Other';
+}
+
+/**
+ * Load carrier-specific prompt from database
+ */
+async function getCarrierSpecificPrompt(carrierId) {
+    if (!carrierId) {
+        console.log('⚠️ No carrierId provided for prompt lookup');
+        return null;
+    }
+
+    try {
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+        
+        console.log(`🔍 Looking for carrier-specific prompt: ${carrierId}`);
+        
+        const promptDoc = await db.collection('carrierPrompts').doc(carrierId).get();
+        
+        if (!promptDoc.exists) {
+            console.log(`📋 No carrier-specific prompt found for ${carrierId}`);
+            return null;
+        }
+
+        const promptData = promptDoc.data();
+        
+        if (!promptData.isActive) {
+            console.log(`⛔ Carrier prompt for ${carrierId} is not active`);
+            return null;
+        }
+
+        console.log(`✅ Found carrier-specific prompt for ${carrierId} (version ${promptData.version})`);
+        
+        return promptData.generatedPrompt;
+
+    } catch (error) {
+        console.error(`❌ Error loading carrier prompt for ${carrierId}:`, error);
+        return null;
+    }
 }
 
 async function calculateAccuracyMetrics(aiResults, expectedResults) {

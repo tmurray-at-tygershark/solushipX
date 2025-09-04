@@ -110,7 +110,7 @@ import { formatDateTimeForBilling } from '../../../utils/dateUtils';
 import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
 // GenerateInvoicesPage removed per latest requirements
 import BulkInvoiceGenerator from './BulkInvoiceGenerator';
-import APProcessing from './APProcessing';
+import APProcessingEnterprise from './APProcessingEnterprise';
 import CarrierInvoiceTraining from './CarrierInvoiceTraining';
 import VisualInvoiceTraining from './VisualInvoiceTraining';
 import EnhancedInvoiceTraining from './EnhancedInvoiceTraining';
@@ -2328,7 +2328,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             )}
 
             {activeTab === 'ap-processing' && (
-                <APProcessing />
+                <APProcessingEnterprise />
             )}
 
             {activeTab === 'payment-terms' && (

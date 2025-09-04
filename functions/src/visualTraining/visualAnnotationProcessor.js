@@ -26,20 +26,21 @@ exports.processVisualTrainingSample = onCall({
             throw new Error('Authentication required');
         }
 
-        const { carrierId, fileName, base64Data, annotations, metadata = {} } = request.data || {};
+        const { carrierId, fileName, base64Data, annotations, metadata = {}, carrierName } = request.data || {};
         
         if (!carrierId || !fileName || !base64Data || !annotations) {
             throw new Error('carrierId, fileName, base64Data, and annotations are required');
         }
 
-        console.log(`Processing visual training sample for carrier: ${carrierId}, file: ${fileName}`);
+        console.log(`Processing visual training sample for carrier: ${carrierId} (${carrierName}), file: ${fileName}`);
         console.log(`Annotations provided:`, Object.keys(annotations));
 
         // Initialize Firebase services
         const { db, bucket } = initServices();
 
-        // Generate unique sample ID
-        const sampleId = `visual_${Date.now()}_${uuidv4().substring(0, 8)}`;
+        // Generate unique sample ID with carrier name
+        const cleanCarrierName = (carrierName || 'unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const sampleId = `visual_${cleanCarrierName}_${Date.now()}_${uuidv4().substring(0, 8)}`;
         const filePath = `visual-training/${carrierId}/${sampleId}/${fileName.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
 
         // Upload file to storage

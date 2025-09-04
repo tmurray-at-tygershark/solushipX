@@ -416,7 +416,11 @@ const {
     getCarrierTestingHistory, 
     getTestResults 
 } = require('./src/visualTraining/invoiceTestingEngine');
+// AI-powered prompt generation
+const { generateCarrierPrompt, updateCarrierPrompt } = require('./src/visualTraining/promptGenerator');
+
 const { deleteAPUpload } = require('./src/deleteAPUpload');
+const { testPromptGenerator } = require('./src/debug/testPromptGenerator');
 
 exports.analyzeInvoiceWithVision = analyzeInvoiceWithVision;
 exports.updateTrainingFromCorrections = updateTrainingFromCorrections;
@@ -437,7 +441,10 @@ exports.processVisualTrainingSample = processVisualTrainingSample;
 exports.testCarrierModel = testCarrierModel;
 exports.getCarrierTestingHistory = getCarrierTestingHistory;
 exports.getTestResults = getTestResults;
+exports.generateCarrierPrompt = generateCarrierPrompt;
+exports.updateCarrierPrompt = updateCarrierPrompt;
 exports.deleteAPUpload = deleteAPUpload;
+exports.testPromptGenerator = testPromptGenerator;
 
 // AP Processing functions
 const { matchInvoiceToShipment } = require('./src/matchInvoiceToShipment');
@@ -1085,3 +1092,7 @@ exports.testDimWeight = testDimWeight;
 
 // AI/ML Training
 exports.directGeminiExtraction = directGeminiExtraction;
+
+// AP Processing
+const { approveAPInvoice } = require('./src/apProcessing/approveAPInvoice');
+exports.approveAPInvoice = approveAPInvoice;

@@ -56,6 +56,7 @@ export default function TestResultsComparison({ testResults, expectedResults = n
 
     const { aiResults, accuracyMetrics, recommendations, metadata } = testResults;
     const extractedData = aiResults?.enhancedResults?.extractedData || aiResults?.extractedData || {};
+    
 
     const getAccuracyColor = (accuracy) => {
         if (accuracy >= 0.9) return 'success';
@@ -93,9 +94,15 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                             Overall Accuracy
                         </Typography>
                         <Chip
-                            label={accuracyMetrics?.extractionQuality || 'Medium'}
+                            label={typeof accuracyMetrics?.extractionQuality === 'string' ? 
+                                   accuracyMetrics.extractionQuality :
+                                   accuracyMetrics?.extractionQuality?.level || 
+                                   accuracyMetrics?.extractionQuality?.name || 
+                                   'Medium'}
                             size="small"
-                            color={getQualityColor(accuracyMetrics?.extractionQuality)}
+                            color={getQualityColor(typeof accuracyMetrics?.extractionQuality === 'string' ? 
+                                                   accuracyMetrics.extractionQuality :
+                                                   accuracyMetrics?.extractionQuality?.level || 'medium')}
                             sx={{ mt: 1, fontSize: '10px' }}
                         />
                     </CardContent>
@@ -194,7 +201,12 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                     <TableRow>
                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>Carrier</TableCell>
                         <TableCell sx={{ fontSize: '12px' }}>
-                            {extractedData.carrierInformation?.company || 'Not detected'}
+                            {typeof extractedData.carrierInformation?.company === 'string' ? 
+                                extractedData.carrierInformation.company :
+                             extractedData.carrierInformation?.company?.name || 
+                             extractedData.carrier || 
+                             (typeof extractedData.carrierInformation === 'string' ? extractedData.carrierInformation : null) ||
+                             'Not detected'}
                         </TableCell>
                         {expectedResults && (
                             <TableCell sx={{ fontSize: '12px' }}>
@@ -217,7 +229,11 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                     <TableRow>
                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>Invoice Number</TableCell>
                         <TableCell sx={{ fontSize: '12px' }}>
-                            {extractedData.invoiceDetails?.invoiceNumber || 'Not detected'}
+                            {extractedData.invoiceDetails?.invoiceNumber || 
+                             extractedData.invoice_number || 
+                             extractedData.invoiceNumber ||
+                             (typeof extractedData.invoiceDetails === 'string' ? extractedData.invoiceDetails : null) ||
+                             'Not detected'}
                         </TableCell>
                         {expectedResults && (
                             <TableCell sx={{ fontSize: '12px' }}>
@@ -240,7 +256,12 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                     <TableRow>
                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>Total Amount</TableCell>
                         <TableCell sx={{ fontSize: '12px' }}>
-                            {extractedData.totalAmount?.amount ? `$${extractedData.totalAmount.amount.toFixed(2)} ${extractedData.totalAmount.currency || ''}` : 'Not detected'}
+                            {extractedData.totalAmount?.amount ? 
+                                `$${extractedData.totalAmount.amount.toFixed(2)} ${extractedData.totalAmount.currency || ''}` : 
+                                extractedData.total ? 
+                                    `$${extractedData.total}` : 
+                                    (typeof extractedData.totalAmount === 'string' ? extractedData.totalAmount : null) ||
+                                    'Not detected'}
                         </TableCell>
                         {expectedResults && (
                             <TableCell sx={{ fontSize: '12px' }}>
@@ -265,7 +286,11 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                     <TableRow>
                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>Shipment ID</TableCell>
                         <TableCell sx={{ fontSize: '12px' }}>
-                            {extractedData.invoiceDetails?.billOfLading || 'None detected'}
+                            {extractedData.invoiceDetails?.billOfLading || 
+                             extractedData.shipment_ids?.[0] ||
+                             extractedData.shipmentId ||
+                             (typeof extractedData.invoiceDetails === 'string' ? extractedData.invoiceDetails : null) ||
+                             'None detected'}
                         </TableCell>
                         {expectedResults && (
                             <TableCell sx={{ fontSize: '12px' }}>
@@ -291,7 +316,11 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                     <TableRow>
                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>Invoice Terms</TableCell>
                         <TableCell sx={{ fontSize: '12px' }}>
-                            {extractedData.invoiceDetails?.invoiceDate || 'Not detected'}
+                            {extractedData.invoiceDetails?.invoiceTerms || 
+                             extractedData.invoiceTerms ||
+                             extractedData.invoice_terms ||
+                             (typeof extractedData.invoiceDetails === 'string' ? extractedData.invoiceDetails : null) ||
+                             'Not detected'}
                         </TableCell>
                         {expectedResults && (
                             <TableCell sx={{ fontSize: '12px' }}>
@@ -315,8 +344,11 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>Shipper (Ship From)</TableCell>
                         <TableCell sx={{ fontSize: '12px' }}>
                             {extractedData.shipper?.company ?
-                                `${extractedData.shipper.company}${extractedData.shipper.address ? `, ${extractedData.shipper.address}` : ''}`
-                                : 'Not detected'}
+                                `${extractedData.shipper.company}${extractedData.shipper.address ? `, ${extractedData.shipper.address}` : ''}` :
+                             typeof extractedData.shipper === 'string' ? 
+                                extractedData.shipper :
+                             extractedData.shipper?.name ||
+                             'Not detected'}
                         </TableCell>
                         {expectedResults && (
                             <TableCell sx={{ fontSize: '12px' }}>
@@ -340,8 +372,11 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>Consignee (Ship To)</TableCell>
                         <TableCell sx={{ fontSize: '12px' }}>
                             {extractedData.consignee?.company ?
-                                `${extractedData.consignee.company}${extractedData.consignee.address ? `, ${extractedData.consignee.address}` : ''}`
-                                : 'Not detected'}
+                                `${extractedData.consignee.company}${extractedData.consignee.address ? `, ${extractedData.consignee.address}` : ''}` :
+                             typeof extractedData.consignee === 'string' ? 
+                                extractedData.consignee :
+                             extractedData.consignee?.name ||
+                             'Not detected'}
                         </TableCell>
                         {expectedResults && (
                             <TableCell sx={{ fontSize: '12px' }}>
@@ -365,9 +400,18 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>Weight & Dimensions</TableCell>
                         <TableCell sx={{ fontSize: '12px' }}>
                             {extractedData.packageDetails && extractedData.packageDetails.length > 0 ?
-                                extractedData.packageDetails.map((pkg, index) =>
-                                    `${pkg.quantity || 1}x ${pkg.description || 'Package'}: ${pkg.weight || 'No weight'}, ${pkg.dimensions || 'No dimensions'}`
-                                ).join('; ')
+                                extractedData.packageDetails.map((pkg, index) => {
+                                    const description = typeof pkg.description === 'string' ? 
+                                                       pkg.description : 
+                                                       pkg.description?.name || pkg.description?.text || 'Package';
+                                    const weight = typeof pkg.weight === 'string' || typeof pkg.weight === 'number' ? 
+                                                  pkg.weight : 
+                                                  pkg.weight?.value || pkg.weight?.amount || 'No weight';
+                                    const dimensions = typeof pkg.dimensions === 'string' ? 
+                                                      pkg.dimensions : 
+                                                      pkg.dimensions?.value || pkg.dimensions?.text || 'No dimensions';
+                                    return `${pkg.quantity || 1}x ${description}: ${weight}, ${dimensions}`;
+                                }).join('; ')
                                 : 'Not detected'}
                         </TableCell>
                         {expectedResults && (
@@ -411,14 +455,21 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                             {extractedData.charges.map((item, index) => (
                                 <TableRow key={index}>
                                     <TableCell sx={{ fontSize: '12px' }}>
-                                        {item.description || 'No description'}
+                                        {typeof item.description === 'string' ? item.description : 
+                                         item.description?.name || 
+                                         item.description?.description ||
+                                         'No description'}
                                     </TableCell>
                                     <TableCell sx={{ fontSize: '12px' }}>
-                                        {item.amount ? `$${item.amount.toFixed(2)}` : 'No amount'}
+                                        {typeof item.amount === 'number' ? `$${item.amount.toFixed(2)}` :
+                                         typeof item.amount === 'string' ? `$${parseFloat(item.amount || 0).toFixed(2)}` :
+                                         'No amount'}
                                     </TableCell>
                                     <TableCell sx={{ fontSize: '12px' }}>
                                         <Chip
-                                            label={item.rate || 'N/A'}
+                                            label={typeof item.rate === 'string' ? item.rate :
+                                                   typeof item.rate === 'object' ? item.rate?.name || item.rate?.code || 'N/A' :
+                                                   item.rate || 'N/A'}
                                             size="small"
                                             sx={{ fontSize: '10px' }}
                                         />
@@ -450,8 +501,8 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                                 <RecommendationIcon
                                     sx={{
                                         fontSize: 16,
-                                        color: getPriorityColor(rec.priority) === 'error' ? '#ef4444' :
-                                            getPriorityColor(rec.priority) === 'warning' ? '#f59e0b' : '#3b82f6'
+                                        color: getPriorityColor(typeof rec.priority === 'string' ? rec.priority : rec.priority?.level || 'info') === 'error' ? '#ef4444' :
+                                            getPriorityColor(typeof rec.priority === 'string' ? rec.priority : rec.priority?.level || 'info') === 'warning' ? '#f59e0b' : '#3b82f6'
                                     }}
                                 />
                             </ListItemIcon>
@@ -459,12 +510,15 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                                 primary={
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                                         <Typography sx={{ fontSize: '14px', fontWeight: 500 }}>
-                                            {rec.title}
+                                            {typeof rec.title === 'string' ? rec.title : 
+                                             rec.title?.name || rec.title?.text || 
+                                             'Recommendation'}
                                         </Typography>
                                         <Chip
-                                            label={rec.priority}
+                                            label={typeof rec.priority === 'string' ? rec.priority :
+                                                   rec.priority?.name || rec.priority?.level || 'info'}
                                             size="small"
-                                            color={getPriorityColor(rec.priority)}
+                                            color={getPriorityColor(typeof rec.priority === 'string' ? rec.priority : rec.priority?.level || 'info')}
                                             sx={{ fontSize: '10px' }}
                                         />
                                     </Box>
@@ -472,10 +526,14 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                                 secondary={
                                     <Box>
                                         <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 1 }}>
-                                            {rec.description}
+                                            {typeof rec.description === 'string' ? rec.description :
+                                             rec.description?.text || rec.description?.message ||
+                                             'No description available'}
                                         </Typography>
                                         <Typography sx={{ fontSize: '12px', fontWeight: 500, color: '#374151' }}>
-                                            Action: {rec.action}
+                                            Action: {typeof rec.action === 'string' ? rec.action :
+                                                     rec.action?.text || rec.action?.name ||
+                                                     'No action specified'}
                                         </Typography>
                                     </Box>
                                 }

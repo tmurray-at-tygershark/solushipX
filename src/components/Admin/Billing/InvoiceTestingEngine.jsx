@@ -200,11 +200,19 @@ export default function InvoiceTestingEngine({
                 setResultsDialogOpen(true);
                 await loadTestingHistory(); // Refresh history
 
+                // Check if carrier-specific prompt was used
+                const usedCarrierPrompt = result.data.testResults?.metadata?.usedCarrierSpecificPrompt;
+                if (usedCarrierPrompt) {
+                    console.log('🎯 Used carrier-specific AI prompt for enhanced extraction');
+                    enqueueSnackbar('Test completed with carrier-specific AI prompt!', { variant: 'success' });
+                } else {
+                    console.log('📋 Used generic AI prompt (no carrier-specific prompt available)');
+                    enqueueSnackbar('Test completed successfully!', { variant: 'success' });
+                }
+
                 if (onTestCompleted) {
                     onTestCompleted(result.data.testResults);
                 }
-
-                enqueueSnackbar('Test completed successfully!', { variant: 'success' });
             } else {
                 throw new Error(result.data.error || 'Test failed');
             }

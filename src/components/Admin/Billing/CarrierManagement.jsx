@@ -54,8 +54,10 @@ import {
     Close as CloseIcon,
     Upload as UploadIcon,
     Download as DownloadIcon,
-    GetApp as ExportIcon
+    GetApp as ExportIcon,
+    AutoAwesome as PromptIcon
 } from '@mui/icons-material';
+import CarrierPromptManager from './CarrierPromptManager';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../firebase/firebase';
 import { useSnackbar } from 'notistack';
@@ -88,6 +90,8 @@ const CarrierManagement = () => {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [bulkImportDialogOpen, setBulkImportDialogOpen] = useState(false);
     const [exportDialogOpen, setExportDialogOpen] = useState(false);
+    const [promptManagerOpen, setPromptManagerOpen] = useState(false);
+    const [selectedPromptCarrier, setSelectedPromptCarrier] = useState(null);
 
     // Form states
     const [formData, setFormData] = useState({
@@ -374,6 +378,17 @@ const CarrierManagement = () => {
         setContextCarrier(null);
     };
 
+    const handleOpenPromptManager = (carrier) => {
+        setSelectedPromptCarrier(carrier);
+        setPromptManagerOpen(true);
+        closeContextMenu();
+    };
+
+    const handleClosePromptManager = () => {
+        setPromptManagerOpen(false);
+        setSelectedPromptCarrier(null);
+    };
+
     // Memoized values
     const filteredAndSortedCarriers = useMemo(() => {
         return carriers.filter(carrier => {
@@ -508,12 +523,26 @@ const CarrierManagement = () => {
             </TableCell>
 
             <TableCell>
-                <IconButton
-                    size="small"
-                    onClick={(e) => handleContextMenu(e, carrier)}
-                >
-                    <MoreIcon fontSize="small" />
-                </IconButton>
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                    <Tooltip title="AI Prompt Manager">
+                        <IconButton
+                            size="small"
+                            onClick={() => handleOpenPromptManager(carrier)}
+                            sx={{ 
+                                color: '#8b5cf6',
+                                '&:hover': { backgroundColor: '#f3f4f6' }
+                            }}
+                        >
+                            <PromptIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    <IconButton
+                        size="small"
+                        onClick={(e) => handleContextMenu(e, carrier)}
+                    >
+                        <MoreIcon fontSize="small" />
+                    </IconButton>
+                </Box>
             </TableCell>
         </TableRow>
     );
@@ -790,6 +819,13 @@ const CarrierManagement = () => {
                     View Details
                 </ContextMenuItem>
                 <ContextMenuItem
+                    onClick={() => handleOpenPromptManager(contextCarrier)}
+                    sx={{ fontSize: '12px' }}
+                >
+                    <PromptIcon fontSize="small" sx={{ mr: 1, color: '#8b5cf6' }} />
+                    AI Prompt Manager
+                </ContextMenuItem>
+                <ContextMenuItem
                     onClick={() => {
                         openEditDialog(contextCarrier);
                         closeContextMenu();
@@ -1061,6 +1097,15 @@ const CarrierManagement = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Carrier Prompt Manager */}
+            {promptManagerOpen && selectedPromptCarrier && (
+                <CarrierPromptManager
+                    carrierId={selectedPromptCarrier.id}
+                    carrierName={selectedPromptCarrier.name}
+                    onClose={handleClosePromptManager}
+                />
+            )}
         </Box>
     );
 };

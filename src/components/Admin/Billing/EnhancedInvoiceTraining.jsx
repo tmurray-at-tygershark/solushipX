@@ -52,6 +52,7 @@ import {
     Analytics as AnalyticsIcon,
     AutoFixHigh as AIIcon,
     Psychology as BrainIcon,
+    AutoAwesome as PromptIcon,
     Business as BusinessIcon,
     Settings as SettingsIcon,
     Add as AddIcon,
@@ -71,6 +72,8 @@ import { useSnackbar } from 'notistack';
 import VisualPDFViewer from './VisualPDFViewer';
 import BoundingBoxAnnotator from './BoundingBoxAnnotator';
 import TrainingMetrics from './TrainingMetrics';
+import CarrierPromptManager from './CarrierPromptManager';
+
 import CarrierManagement from './CarrierManagement';
 import VisualAnnotationTrainer from './VisualAnnotationTrainer';
 import InvoiceTestingEngine from './InvoiceTestingEngine';
@@ -100,6 +103,10 @@ export default function EnhancedInvoiceTraining() {
 
     // Tab management
     const [activeTab, setActiveTab] = useState(0);
+    
+    // Prompt manager state
+    const [promptManagerOpen, setPromptManagerOpen] = useState(false);
+    const [selectedPromptCarrier, setSelectedPromptCarrier] = useState(null);
 
     // Training workflow state with persistence
     const [activeStep, setActiveStep] = useState(0);
@@ -925,11 +932,11 @@ export default function EnhancedInvoiceTraining() {
         <Box sx={{ p: 3 }}>
 
             {/* Tab Navigation */}
-            <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value)} sx={{ mb: 3 }}>
-                <Tab label="Trained Carriers" sx={{ fontSize: '12px' }} />
-                <Tab label="Visual Training" sx={{ fontSize: '12px' }} />
-                <Tab label="Testing & Validation" sx={{ fontSize: '12px' }} />
-            </Tabs>
+                                <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value)} sx={{ mb: 3 }}>
+                        <Tab label="Trained Carriers" sx={{ fontSize: '12px' }} />
+                        <Tab label="Visual Training" sx={{ fontSize: '12px' }} />
+                        <Tab label="Testing & Validation" sx={{ fontSize: '12px' }} />
+                    </Tabs>
 
             {/* Visual Training Tab (now index 1) */}
             {activeTab === 1 && (
@@ -1427,6 +1434,8 @@ export default function EnhancedInvoiceTraining() {
                     }}
                 />
             )}
+
+
 
             {/* Analytics Tab removed per request */}
 
