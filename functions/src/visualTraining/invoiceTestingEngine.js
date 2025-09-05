@@ -17,7 +17,7 @@ const vertex_ai = new VertexAI({
 const model = vertex_ai.getGenerativeModel({
     model: 'gemini-2.5-flash',
     generationConfig: {
-        maxOutputTokens: 8192,
+        maxOutputTokens: 32768, // Increased for large multi-shipment invoices
         temperature: 0.1,
         topP: 0.95,
         topK: 40,
@@ -494,52 +494,73 @@ function transformToStructuredFormat(flatData) {
                 : flatData.bill_of_lading || null,
             customerNumber: flatData.customer_number || flatData.account_number || null
         },
-        shipmentReferences: {
-            shipmentId: flatData.shipment_id || flatData.shipmentId || flatData.shipment_number || 
-                      flatData.reference_number || flatData.job_id || null,
-            purchaseOrder: flatData.shipment_references && Array.isArray(flatData.shipment_references)
-                ? flatData.shipment_references.find(ref => ref.includes('PO')) || flatData.shipment_references[0] || null
-                : flatData.purchase_order || null,
-            customerReference: flatData.customer_reference || null,
-            proNumber: flatData.pro_number || null,
-            trackingNumber: flatData.tracking_number || flatData.waybill || null,
-            jobNumber: flatData.job_number || null
-        },
-        shipper: {
-            company: flatData.shipper || null,
-            address: flatData.shipper_address || null,
-            contact: flatData.shipper_contact || null,
-            phone: flatData.shipper_phone || null
-        },
-        consignee: {
-            company: flatData.consignee || null,
-            address: flatData.consignee_address || null,
-            contact: flatData.consignee_contact || null,
-            phone: flatData.consignee_phone || null
-        },
-        packageDetails: flatData.package_details || flatData.packages || [
-            // If no package details provided, create a basic one from total info if available
-            ...(flatData.total && !flatData.package_details && !flatData.packages ? 
-                [{
-                    quantity: 1,
-                    description: 'Shipment',
-                    weight: 'Not specified',
-                    dimensions: 'Not specified'
-                }] : []
-            )
-        ],
-        charges: flatData.charges && Array.isArray(flatData.charges) ? 
-            flatData.charges.map(charge => ({
-                description: charge.description || 'Charge',
-                amount: typeof charge.amount === 'number' ? charge.amount : 
-                        (typeof charge.amount === 'string' ? parseFloat(charge.amount.replace(/[^0-9.-]/g, '')) : 0),
-                rate: charge.rate || null,
-                code: charge.code || null
-            })) : [],
-        totalAmount: {
+        shipments: (() => {
+            // Check if we have multiple shipments in the data
+            if (flatData.shipments && Array.isArray(flatData.shipments)) {
+                return flatData.shipments.map(shipment => ({
+                    shipmentId: shipment.shipmentId || shipment.shipment_id || shipment.order_number || null,
+                    trackingNumber: shipment.trackingNumber || shipment.tracking_number || null,
+                    proNumber: shipment.proNumber || shipment.pro_number || null,
+                    billOfLading: shipment.billOfLading || shipment.bill_of_lading || null,
+                    service: shipment.service || shipment.serviceType || null,
+                    deliveryDate: shipment.deliveryDate || shipment.delivery_date || null,
+                    shipper: {
+                        company: shipment.shipper?.company || shipment.shipper || null,
+                        address: shipment.shipper?.address || shipment.shipper_address || null
+                    },
+                    consignee: {
+                        company: shipment.consignee?.company || shipment.consignee || null,
+                        address: shipment.consignee?.address || shipment.consignee_address || null
+                    },
+                    packageDetails: shipment.packageDetails || shipment.packages || [{
+                        quantity: shipment.quantity || 1,
+                        description: shipment.description || null,
+                        weight: shipment.weight || null,
+                        dimensions: shipment.dimensions || null
+                    }],
+                    charges: shipment.charges || [],
+                    totalAmount: shipment.totalAmount || shipment.total || 0
+                }));
+            } else {
+                // Single shipment - convert legacy format to new structure
+                return [{
+                    shipmentId: flatData.shipment_id || flatData.shipmentId || flatData.shipment_number || 
+                              flatData.reference_number || flatData.job_id || null,
+                    trackingNumber: flatData.tracking_number || flatData.waybill || null,
+                    proNumber: flatData.pro_number || null,
+                    billOfLading: flatData.shipment_ids && Array.isArray(flatData.shipment_ids) 
+                        ? flatData.shipment_ids.join(', ') || null 
+                        : flatData.bill_of_lading || null,
+                    service: flatData.service || flatData.service_type || null,
+                    deliveryDate: flatData.delivery_date || null,
+                    shipper: {
+                        company: flatData.shipper || null,
+                        address: flatData.shipper_address || null
+                    },
+                    consignee: {
+                        company: flatData.consignee || null,
+                        address: flatData.consignee_address || null
+                    },
+                    packageDetails: flatData.package_details || flatData.packages || [
+                        // If no package details provided, create a basic one from total info if available
+                        ...(flatData.total && !flatData.package_details && !flatData.packages ? 
+                            [{
+                                description: 'Shipment',
+                                weight: 'Not specified',
+                                dimensions: 'Not specified'
+                            }] : []
+                        )
+                    ],
+                    charges: flatData.charges || [],
+                    totalAmount: flatData.total || flatData.totalAmount || 0
+                }];
+            }
+        })(),
+        invoiceSummary: {
+            totalShipments: flatData.shipments ? flatData.shipments.length : 1,
             subtotal: flatData.subtotal || null,
             totalTax: flatData.total_tax || flatData.tax_amount || null,
-            amount: flatData.total || flatData.total_amount || null,
+            totalAmount: flatData.total || flatData.total_amount || null,
             currency: flatData.currency || flatData.total_currency || 'CAD',
             amountDue: flatData.amount_due || flatData.total || flatData.total_amount || null
         }
@@ -695,57 +716,63 @@ For each charge:
                 "invoiceTerms": "string | null (e.g., Net 30, Due on Receipt, COD)",
                 "customerNumber": "string | null"
             },
-            "shipmentReferences": {\
-                "shipmentId": "string | null (CRITICAL: shipment ID for internal matching)",
-                "purchaseOrder": "string | null",
-                "customerReference": "string | null",
-                "proNumber": "string | null",
-                "trackingNumber": "string | null",
-                "jobNumber": "string | null"
-            },
-            "shipper": {\
-                "company": "string | null",
-                "address": "string | null"\
-            },\
-            "consignee": {\
-                "company": "string | null",
-                "address": "string | null"\
-            },\
-            "packageDetails": [\
+            "shipments": [\
                 {\
-                    "quantity": "number | null",
-                    "description": "string | null",
-                    "weight": "string | null",
-                    "dimensions": "string | null"\
+                    "shipmentId": "string | null (CRITICAL: Order No or shipment ID)",
+                    "trackingNumber": "string | null",
+                    "proNumber": "string | null",
+                    "billOfLading": "string | null",
+                    "service": "string | null (e.g., LTL RUSH, LTL DIRECT, LTL SAMEDAY)",
+                    "deliveryDate": "string | null",
+                    "shipper": {\
+                        "company": "string | null",
+                        "address": "string | null"\
+                    },\
+                    "consignee": {\
+                        "company": "string | null", 
+                        "address": "string | null"\
+                    },\
+                    "packageDetails": [\
+                        {\
+                            "quantity": "number | null",
+                            "description": "string | null",
+                            "weight": "string | null",
+                            "dimensions": "string | null"\
+                        }\
+                    ],\
+                    "charges": [\
+                        {\
+                            "description": "string | null (e.g., Base, Fuel, Weight, Wait)",
+                            "amount": "number | null (numeric value only)",
+                            "rate": "string | null"\
+                        }\
+                    ],\
+                    "totalAmount": "number | null (total for THIS shipment)"\
                 }\
             ],\
-            "charges": [\
-                {\
-                    "description": "string | null (e.g., LAPTOP, BORDER FEE, FUEL SURCHARGE)",
-                    "amount": "number | null (numeric value only)",
-                    "rate": "string | null (percentage or rate info)"\
-                }\
-            ],\
-            "totalAmount": {
+            "invoiceSummary": {
+                "totalShipments": "number | null (count of shipments)",
                 "subtotal": "number | null",
                 "totalTax": "number | null",
-                "amount": "number | null (numeric value only)",
-                "currency": "string | null (e.g., CAD, USD, CAN Funds)",
+                "totalAmount": "number | null (grand total of all shipments)",
+                "currency": "string | null (e.g., CAD, USD)",
                 "amountDue": "number | null"
             }
         }
 
-## CRITICAL REQUIREMENTS:
-1. ALL fields must be present in output, use null if not found
-2. Numbers must be pure numeric values (no currency symbols)
-3. Addresses must be complete and properly formatted
-4. Dates must be in YYYY-MM-DD format
-5. Extract ALL charges found, no matter how small
-6. Verify mathematical accuracy (totals = subtotal + taxes)
-7. Use exact text from document, don't paraphrase
-8. Double-check all extracted amounts add up correctly
-9. Ensure no placeholder or example data remains
-10. Confirm all text is extracted exactly as shown on document\
+## CRITICAL REQUIREMENTS FOR MULTI-SHIPMENT INVOICES:
+1. IF multiple shipments detected, create separate entries in "shipments" array
+2. Each shipment MUST have its own charges array
+3. Match charges to the correct shipment based on table structure
+4. Preserve shipment-specific details (Order No, destinations, services)
+5. Calculate individual shipment totals
+6. Ensure overall invoice total matches sum of all shipments
+7. Numbers must be pure numeric values (no currency symbols)
+8. Addresses must be complete and properly formatted
+9. Dates must be in YYYY-MM-DD format
+10. Extract ALL charges found, no matter how small
+11. Use exact text from document, don't paraphrase
+12. Double-check all extracted amounts add up correctly\
         `;
         }
 
@@ -862,16 +889,58 @@ For each charge:
             });
             return result;
         } catch (parseError) {
-            console.warn('JSON parse error, using fallback extraction. Raw Gemini response:', text);
+            console.warn('JSON parse error, attempting fallback extraction. Parse error:', parseError.message);
+            console.warn('Raw Gemini response length:', text.length);
+            console.warn('Cleaned text length:', cleanedText.length);
+            
+            // Try to extract partial data from incomplete JSON
+            let fallbackData = {};
+            
+            try {
+                // Extract basic fields even from incomplete JSON
+                const carrierMatch = cleanedText.match(/"company":\s*"([^"]+)"/);
+                const invoiceNumberMatch = cleanedText.match(/"invoiceNumber":\s*"([^"]+)"/);
+                const invoiceDateMatch = cleanedText.match(/"invoiceDate":\s*"([^"]+)"/);
+                const subtotalMatch = cleanedText.match(/"subtotal":\s*([0-9.]+)/);
+                const totalAmountMatch = cleanedText.match(/"amount":\s*([0-9.]+)/);
+                const currencyMatch = cleanedText.match(/"currency":\s*"([^"]+)"/);
+                
+                if (carrierMatch || invoiceNumberMatch || subtotalMatch) {
+                    fallbackData = {
+                        carrierInformation: {
+                            company: carrierMatch ? carrierMatch[1] : null
+                        },
+                        invoiceDetails: {
+                            invoiceNumber: invoiceNumberMatch ? invoiceNumberMatch[1] : null,
+                            invoiceDate: invoiceDateMatch ? invoiceDateMatch[1] : null
+                        },
+                        totalAmount: {
+                            subtotal: subtotalMatch ? parseFloat(subtotalMatch[1]) : null,
+                            amount: totalAmountMatch ? parseFloat(totalAmountMatch[1]) : null,
+                            currency: currencyMatch ? currencyMatch[1] : 'CAD'
+                        },
+                        charges: [],
+                        packageDetails: []
+                    };
+                    
+                    console.log('🔧 Extracted fallback data from incomplete JSON:', fallbackData);
+                }
+            } catch (fallbackError) {
+                console.warn('Fallback extraction also failed:', fallbackError.message);
+            }
+            
             return {
-                extractedData: {},
-                confidence: 0.5,
-                extractionQuality: 'low',
+                extractedData: fallbackData,
+                confidence: Object.keys(fallbackData).length > 0 ? 0.6 : 0.3,
+                extractionQuality: Object.keys(fallbackData).length > 0 ? 'partial' : 'low',
                 rawResponse: text,
-                error: 'Failed to parse AI response',
+                error: 'JSON parsing failed, used fallback extraction',
                 metadata: {
                     usedCarrierSpecificPrompt: hasCarrierPrompt,
-                    carrierId: carrierModel?.carrierId || carrierId || null
+                    carrierId: carrierModel?.carrierId || carrierId || null,
+                    parseError: parseError.message,
+                    responseLength: text.length,
+                    cleanedLength: cleanedText.length
                 }
             };
         }

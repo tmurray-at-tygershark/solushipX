@@ -282,15 +282,28 @@ export default function TestResultsComparison({ testResults, expectedResults = n
                         </TableCell>
                     </TableRow>
 
-                    {/* Shipment ID (using billOfLading field for data) */}
+                    {/* Shipment ID (check multiple sources including shipments array) */}
                     <TableRow>
                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>Shipment ID</TableCell>
                         <TableCell sx={{ fontSize: '12px' }}>
-                            {extractedData.invoiceDetails?.billOfLading || 
-                             extractedData.shipment_ids?.[0] ||
-                             extractedData.shipmentId ||
-                             (typeof extractedData.invoiceDetails === 'string' ? extractedData.invoiceDetails : null) ||
-                             'None detected'}
+                            {(() => {
+                                // Check for shipments array first (multi-shipment format)
+                                if (extractedData.shipments && Array.isArray(extractedData.shipments) && extractedData.shipments.length > 0) {
+                                    const shipmentIds = extractedData.shipments
+                                        .map(s => s.shipmentId || s.orderNumber || s.trackingNumber)
+                                        .filter(id => id && id !== 'N/A');
+                                    if (shipmentIds.length > 0) {
+                                        return shipmentIds.length > 1 ? `${shipmentIds.length} shipments: ${shipmentIds.join(', ')}` : shipmentIds[0];
+                                    }
+                                }
+                                
+                                // Fallback to single shipment fields
+                                return extractedData.shipmentId ||
+                                       extractedData.invoiceDetails?.billOfLading || 
+                                       extractedData.shipment_ids?.[0] ||
+                                       (typeof extractedData.invoiceDetails === 'string' ? extractedData.invoiceDetails : null) ||
+                                       'None detected';
+                            })()}
                         </TableCell>
                         {expectedResults && (
                             <TableCell sx={{ fontSize: '12px' }}>
@@ -435,57 +448,162 @@ export default function TestResultsComparison({ testResults, expectedResults = n
         </TableContainer>
     );
 
-    const renderLineItems = () => (
-        <Paper sx={{ p: 3, border: '1px solid #e5e7eb' }}>
-            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
-                Extracted Line Items
-            </Typography>
-
-            {extractedData.charges && extractedData.charges.length > 0 ? (
-                <TableContainer>
-                    <Table>
-                        <TableHead>
-                            <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                                <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Description</TableCell>
-                                <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Amount</TableCell>
-                                <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Rate</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {extractedData.charges.map((item, index) => (
-                                <TableRow key={index}>
-                                    <TableCell sx={{ fontSize: '12px' }}>
-                                        {typeof item.description === 'string' ? item.description : 
-                                         item.description?.name || 
-                                         item.description?.description ||
-                                         'No description'}
-                                    </TableCell>
-                                    <TableCell sx={{ fontSize: '12px' }}>
-                                        {typeof item.amount === 'number' ? `$${item.amount.toFixed(2)}` :
-                                         typeof item.amount === 'string' ? `$${parseFloat(item.amount || 0).toFixed(2)}` :
-                                         'No amount'}
-                                    </TableCell>
-                                    <TableCell sx={{ fontSize: '12px' }}>
-                                        <Chip
-                                            label={typeof item.rate === 'string' ? item.rate :
-                                                   typeof item.rate === 'object' ? item.rate?.name || item.rate?.code || 'N/A' :
-                                                   item.rate || 'N/A'}
-                                            size="small"
-                                            sx={{ fontSize: '10px' }}
-                                        />
-                                    </TableCell>
+    const renderLineItems = () => {
+        // Check if we have shipments array (new multi-shipment structure)
+        const shipments = extractedData.shipments || [];
+        const hasMultipleShipments = shipments.length > 1;
+        
+        if (hasMultipleShipments) {
+            return (
+                <Paper sx={{ p: 3, border: '1px solid #e5e7eb' }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                        Extracted Shipments ({shipments.length} shipments found)
+                    </Typography>
+                    
+                    {/* Summary */}
+                    <Box sx={{ mb: 3, p: 2, backgroundColor: '#f9fafb', borderRadius: 1 }}>
+                        <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>Summary</Typography>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} md={3}>
+                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                    Total Shipments: <strong>{shipments.length}</strong>
+                                </Typography>
+                            </Grid>
+                            <Grid item xs={12} md={3}>
+                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                    Total Amount: <strong>${shipments.reduce((sum, ship) => sum + (ship.totalAmount || 0), 0).toFixed(2)}</strong>
+                                </Typography>
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                    Currency: <strong>{extractedData.invoiceSummary?.currency || 'CAD'}</strong>
+                                </Typography>
+                            </Grid>
+                        </Grid>
+                    </Box>
+                    
+                    {/* Shipments Table */}
+                    <TableContainer>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '120px' }}>Shipment ID</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '100px' }}>Service</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Route</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '200px' }}>Charges</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-            ) : (
-                <Alert severity="info" sx={{ fontSize: '12px' }}>
-                    No line items detected in this invoice
-                </Alert>
-            )}
-        </Paper>
-    );
+                            </TableHead>
+                            <TableBody>
+                                {shipments.map((shipment, index) => (
+                                    <TableRow key={index} hover sx={{ '&:hover': { backgroundColor: '#f9fafb' } }}>
+                                        <TableCell sx={{ fontSize: '11px', verticalAlign: 'top' }}>
+                                            <Typography sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                {shipment.shipmentId || `Shipment ${index + 1}`}
+                                            </Typography>
+                                            {shipment.trackingNumber && (
+                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                    {shipment.trackingNumber}
+                                                </Typography>
+                                            )}
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '11px', verticalAlign: 'top' }}>
+                                            {shipment.service || 'Standard'}
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '11px', verticalAlign: 'top' }}>
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                {shipment.shipper?.company && (
+                                                    <Typography sx={{ fontSize: '10px', fontWeight: 600 }}>
+                                                        {shipment.shipper.company}
+                                                    </Typography>
+                                                )}
+                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>↓</Typography>
+                                                {shipment.consignee?.company && (
+                                                    <Typography sx={{ fontSize: '10px', fontWeight: 600 }}>
+                                                        {shipment.consignee.company}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '11px', verticalAlign: 'top', minWidth: '200px' }}>
+                                            {shipment.charges && shipment.charges.length > 0 ? (
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                                    {shipment.charges.map((charge, chargeIndex) => (
+                                                        <Typography key={chargeIndex} sx={{ fontSize: '10px', lineHeight: 1.3 }}>
+                                                            {charge.description}: ${typeof charge.amount === 'number' ? charge.amount.toFixed(2) : charge.amount || '0.00'}
+                                                        </Typography>
+                                                    ))}
+                                                </Box>
+                                            ) : (
+                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>No charges</Typography>
+                                            )}
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#059669', verticalAlign: 'top' }}>
+                                            ${(shipment.totalAmount || 0).toFixed(2)}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Paper>
+            );
+        } else {
+            // Single shipment - show legacy charges format
+            const charges = shipments.length > 0 ? shipments[0].charges : (extractedData.charges || []);
+            return (
+                <Paper sx={{ p: 3, border: '1px solid #e5e7eb' }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                        Extracted Line Items
+                    </Typography>
+
+                    {charges && charges.length > 0 ? (
+                        <TableContainer>
+                            <Table>
+                                <TableHead>
+                                    <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                                        <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Description</TableCell>
+                                        <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Amount</TableCell>
+                                        <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Rate</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {charges.map((item, index) => (
+                                        <TableRow key={index}>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                {typeof item.description === 'string' ? item.description : 
+                                                 item.description?.name || 
+                                                 item.description?.description ||
+                                                 'No description'}
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                {typeof item.amount === 'number' ? `$${item.amount.toFixed(2)}` :
+                                                 typeof item.amount === 'string' ? `$${parseFloat(item.amount || 0).toFixed(2)}` :
+                                                 'No amount'}
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                <Chip
+                                                    label={typeof item.rate === 'string' ? item.rate :
+                                                           typeof item.rate === 'object' ? item.rate?.name || item.rate?.code || 'N/A' :
+                                                           item.rate || 'N/A'}
+                                                    size="small"
+                                                    sx={{ fontSize: '10px' }}
+                                                />
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    ) : (
+                        <Alert severity="info" sx={{ fontSize: '12px' }}>
+                            No line items detected in this invoice
+                        </Alert>
+                    )}
+                </Paper>
+            );
+        }
+    };
 
     const renderRecommendations = () => (
         <Paper sx={{ p: 3, border: '1px solid #e5e7eb' }}>

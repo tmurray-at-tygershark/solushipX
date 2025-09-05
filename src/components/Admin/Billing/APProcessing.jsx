@@ -16,7 +16,15 @@ import {
     DialogTitle,
     DialogContent,
     DialogActions,
-    IconButton
+    IconButton,
+    Skeleton,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Checkbox
 } from '@mui/material';
 import {
     CloudUpload as CloudUploadIcon,
@@ -44,6 +52,272 @@ import { httpsCallable, getFunctions } from 'firebase/functions';
 import { getStorage, ref, uploadBytesResumable, uploadBytes, getDownloadURL } from 'firebase/storage';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import TestResultsComparison from './TestResultsComparison';
+
+// PDF Results Table Component - From Git backup version
+const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfViewer, onApproveAPResults, onRejectAPResults }) => {
+    const [selectedRows, setSelectedRows] = useState([]);
+    const [isExporting, setIsExporting] = useState(false);
+    const [actionMenuAnchor, setActionMenuAnchor] = useState(null);
+    const [selectedRowForAction, setSelectedRowForAction] = useState(null);
+
+    // Helper function to format currency
+    const formatCurrency = (amount, currency = 'CAD') => {
+        if (!amount && amount !== 0) return '$0.00';
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currency || 'CAD'
+        }).format(amount);
+    };
+
+    // Helper function to format date
+    const formatDate = (date) => {
+        if (!date) return 'N/A';
+        const dateObj = date.toDate ? date.toDate() : new Date(date);
+        return dateObj.toLocaleDateString();
+    };
+
+    // Normalize data for table from the new multi-shipment structure
+    const normalizeDataForTable = (results) => {
+        console.log('🔍 PdfResultsTable normalizing data:', results);
+        
+        if (!results) return [];
+
+        // Check for the new shipments structure first
+        if (results.shipments && Array.isArray(results.shipments)) {
+            console.log('📦 Found shipments array with', results.shipments.length, 'shipments');
+            return results.shipments.map((shipment, index) => ({
+                id: shipment.id || `shipment-${index}`,
+                shipmentId: shipment.shipmentId || `SHIP-${String(index + 1).padStart(3, '0')}`,
+                trackingNumber: shipment.trackingNumber || 'N/A',
+                carrier: shipment.carrier || 'Unknown',
+                service: shipment.service || 'Standard',
+                shipDate: shipment.deliveryDate || shipment.extractedAt || new Date(),
+                origin: shipment.shipFrom?.company || 'Unknown Origin',
+                destination: shipment.shipTo?.company || 'Unknown Destination',
+                weight: `${shipment.packageDetails?.[0]?.weight || 'N/A'}`,
+                dimensions: shipment.packageDetails?.[0]?.dimensions || 'N/A',
+                charges: shipment.charges || [],
+                totalAmount: shipment.totalAmount || 0,
+                currency: shipment.currency || 'CAD',
+                references: {
+                    customerRef: shipment.trackingNumber,
+                    invoiceRef: shipment.shipmentId
+                },
+                specialServices: [],
+                apStatus: 'pending',
+                matchResult: null,
+                originalData: shipment
+            }));
+        }
+
+        // Fallback to legacy structure
+        console.log('📦 Using legacy single shipment structure');
+        return [{
+            id: 'single-shipment',
+            shipmentId: results.shipmentId || 'Unknown',
+            trackingNumber: results.trackingNumber || 'N/A',
+            carrier: results.carrier || 'Unknown',
+            service: 'Standard',
+            shipDate: new Date(),
+            origin: results.shipFrom?.company || 'Unknown Origin',
+            destination: results.shipTo?.company || 'Unknown Destination',
+            weight: 'N/A',
+            dimensions: 'N/A',
+            charges: results.charges || [],
+            totalAmount: results.totalAmount || 0,
+            currency: results.currency || 'CAD',
+            references: {},
+            specialServices: [],
+            apStatus: 'pending',
+            matchResult: null,
+            originalData: results
+        }];
+    };
+
+    const tableData = normalizeDataForTable(pdfResults);
+
+    const handleSelectAll = (event) => {
+        if (event.target.checked) {
+            setSelectedRows(tableData.map(row => row.id));
+        } else {
+            setSelectedRows([]);
+        }
+    };
+
+    const handleSelectRow = (id) => {
+        setSelectedRows(prev => {
+            if (prev.includes(id)) {
+                return prev.filter(rowId => rowId !== id);
+            } else {
+                return [...prev, id];
+            }
+        });
+    };
+
+    const handleActionMenuOpen = (event, row) => {
+        setActionMenuAnchor(event.currentTarget);
+        setSelectedRowForAction(row);
+    };
+
+    const handleActionMenuClose = () => {
+        setActionMenuAnchor(null);
+        setSelectedRowForAction(null);
+    };
+
+    const handleViewDetails = () => {
+        if (selectedRowForAction) {
+            onViewShipmentDetail(selectedRowForAction);
+        }
+        handleActionMenuClose();
+    };
+
+    if (tableData.length === 0) {
+        return (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+                <DocumentIcon sx={{ fontSize: 48, color: '#9ca3af', mb: 2 }} />
+                <Typography variant="h6" sx={{ mb: 2, fontSize: '16px', fontWeight: 600 }}>
+                    No shipment data found
+                </Typography>
+                <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                    The invoice processing completed but no structured shipment data was extracted.
+                </Typography>
+            </Box>
+        );
+    }
+
+    return (
+        <Box sx={{ p: 3 }}>
+            {/* Header */}
+            <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                    Extracted Results ({tableData.length} shipments)
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                        variant="contained"
+                        color="success"
+                        size="small"
+                        onClick={() => onApproveAPResults(false)}
+                        sx={{ fontSize: '11px' }}
+                    >
+                        Approve for Billing
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => onApproveAPResults(true)}
+                        sx={{ fontSize: '11px' }}
+                    >
+                        Mark as Exception
+                    </Button>
+                </Box>
+            </Box>
+
+            {/* Results Table */}
+            <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                <Table size="small">
+                    <TableHead>
+                        <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                            <TableCell padding="checkbox">
+                                <Checkbox
+                                    indeterminate={selectedRows.length > 0 && selectedRows.length < tableData.length}
+                                    checked={tableData.length > 0 && selectedRows.length === tableData.length}
+                                    onChange={handleSelectAll}
+                                    size="small"
+                                />
+                            </TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Carrier</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Service</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Route</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '200px' }}>Charges</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Status</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {tableData.map((row) => (
+                            <TableRow key={row.id} hover sx={{ '&:hover': { backgroundColor: '#f9fafb' } }}>
+                                <TableCell padding="checkbox">
+                                    <Checkbox
+                                        checked={selectedRows.includes(row.id)}
+                                        onChange={() => handleSelectRow(row.id)}
+                                        size="small"
+                                    />
+                                </TableCell>
+                                <TableCell sx={{ fontSize: '11px' }}>{row.shipmentId}</TableCell>
+                                <TableCell sx={{ fontSize: '11px' }}>{row.carrier}</TableCell>
+                                <TableCell sx={{ fontSize: '11px' }}>{row.service}</TableCell>
+                                <TableCell sx={{ fontSize: '11px' }}>
+                                    <Box>
+                                        <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                            From: {row.origin}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                            To: {row.destination}
+                                        </Typography>
+                                    </Box>
+                                </TableCell>
+                                <TableCell sx={{ fontSize: '11px', minWidth: '200px' }}>
+                                    {row.charges.length > 0 ? (
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                            {row.charges.map((charge, index) => (
+                                                <Typography key={index} variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                                    {charge.description || charge.name}: {formatCurrency(charge.amount, charge.currency)}
+                                                </Typography>
+                                            ))}
+                                        </Box>
+                                    ) : (
+                                        <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                            No charges
+                                        </Typography>
+                                    )}
+                                </TableCell>
+                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#059669' }}>
+                                    {formatCurrency(row.totalAmount, row.currency)}
+                                </TableCell>
+                                <TableCell sx={{ fontSize: '11px' }}>
+                                    <Chip
+                                        label="Ready"
+                                        size="small"
+                                        sx={{ fontSize: '10px', height: '22px', backgroundColor: '#dbeafe', color: '#3b82f6' }}
+                                    />
+                                </TableCell>
+                                <TableCell>
+                                    <IconButton
+                                        size="small"
+                                        onClick={(event) => handleActionMenuOpen(event, row)}
+                                    >
+                                        <DocumentIcon fontSize="small" />
+                                    </IconButton>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+
+            {/* Summary */}
+            <Box sx={{ mt: 2, p: 2, backgroundColor: '#f9fafb', borderRadius: 1 }}>
+                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                    Summary
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 4 }}>
+                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                        Total Shipments: <strong>{tableData.length}</strong>
+                    </Typography>
+                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                        Total Amount: <strong>{formatCurrency(tableData.reduce((sum, row) => sum + row.totalAmount, 0))}</strong>
+                    </Typography>
+                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                        Carriers: <strong>{[...new Set(tableData.map(row => row.carrier))].join(', ')}</strong>
+                    </Typography>
+                </Box>
+            </Box>
+        </Box>
+    );
+};
 
 const APProcessing = () => {
     const { currentUser } = useAuth();
@@ -454,8 +728,7 @@ const APProcessing = () => {
     const normalizeAIDataForTable = useCallback((extractedData, uploadFile, fullAiResults) => {
         if (!extractedData) return null;
 
-        const totalAmount = extractedData.totalAmount || {};
-        const charges = extractedData.charges || [];
+        console.log('🔍 Normalizing AI data for table:', extractedData);
 
         // Helper functions for charge mapping
         const mapChargeToCode = (description) => {
@@ -477,6 +750,66 @@ const APProcessing = () => {
             if (desc.includes('insurance')) return 'Insurance';
             return description; // Return original if no mapping found
         };
+
+        // Check for multi-shipment structure first (new format)
+        if (extractedData.shipments && Array.isArray(extractedData.shipments) && extractedData.shipments.length > 0) {
+            console.log('📦 Found multi-shipment structure with', extractedData.shipments.length, 'shipments');
+            
+            const shipments = extractedData.shipments.map((shipmentData, index) => {
+                const charges = (shipmentData.charges || []).map((charge, idx) => ({
+                    id: `ai-charge-${index}-${idx}`,
+                    code: mapChargeToCode(charge.description || `Charge ${idx + 1}`),
+                    name: normalizeChargeName(charge.description || `Charge ${idx + 1}`),
+                    description: charge.description || `Charge ${idx + 1}`,
+                    amount: charge.amount || 0,
+                    currency: extractedData.invoiceSummary?.currency || 'CAD',
+                    isExtracted: true
+                }));
+
+                return {
+                    id: `ai-shipment-${index + 1}`,
+                    shipmentId: shipmentData.shipmentId || shipmentData.orderNumber || shipmentData.trackingNumber || `SHIP-${String(index + 1).padStart(3, '0')}`,
+                    trackingNumber: shipmentData.trackingNumber || shipmentData.proNumber || 'N/A',
+                    carrier: selectedCarrier,
+                    service: shipmentData.service || 'Standard',
+                    status: 'extracted',
+                    totalAmount: shipmentData.totalAmount || charges.reduce((sum, charge) => sum + (parseFloat(charge.amount) || 0), 0),
+                    currency: extractedData.invoiceSummary?.currency || 'CAD',
+                    extractionConfidence: fullAiResults?.confidence || 0.8,
+                    charges: charges,
+                    shipFrom: shipmentData.shipper || {},
+                    shipTo: shipmentData.consignee || {},
+                    packageDetails: shipmentData.packageDetails || [],
+                    deliveryDate: shipmentData.deliveryDate || shipmentData.deliveredDate,
+                    extractedAt: new Date(),
+                    fileName: uploadFile.name,
+                    source: 'ai_extraction'
+                };
+            });
+
+            return {
+                uploadInfo: {
+                    fileName: uploadFile.name,
+                    uploadDate: new Date(),
+                    carrier: selectedCarrier,
+                    processingStatus: 'completed'
+                },
+                shipments: shipments,
+                summary: {
+                    totalShipments: shipments.length,
+                    totalCharges: shipments.reduce((sum, ship) => sum + ship.charges.length, 0),
+                    totalAmount: extractedData.invoiceSummary?.totalAmount || shipments.reduce((sum, ship) => sum + ship.totalAmount, 0),
+                    currency: extractedData.invoiceSummary?.currency || 'CAD',
+                    extractionConfidence: fullAiResults?.confidence || 0.8
+                },
+                rawAiResults: fullAiResults
+            };
+        }
+
+        // Fallback to single shipment structure (legacy format)
+        console.log('📦 Using single shipment structure (legacy format)');
+        const totalAmount = extractedData.totalAmount || {};
+        const charges = extractedData.charges || [];
 
         const shipment = {
             id: `ai-shipment-${Date.now()}`,
@@ -713,9 +1046,27 @@ const APProcessing = () => {
                                     </Typography>
                     
                     {loading ? (
-                        <Box sx={{ textAlign: 'center', py: 4 }}>
-                            <CircularProgress size={24} />
-                                </Box>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {Array.from({ length: 3 }).map((_, index) => (
+                                <Card key={index} sx={{ p: 2, border: '1px solid #e5e7eb' }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <Box sx={{ flex: 1 }}>
+                                            <Skeleton width={180} height={20} sx={{ mb: 1 }} />
+                                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+                                                <Skeleton variant="rectangular" width={60} height={20} sx={{ borderRadius: 1 }} />
+                                                <Skeleton width={100} height={16} />
+                                            </Box>
+                                            <Skeleton width={120} height={16} />
+                                        </Box>
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                                            <Skeleton width={80} height={20} />
+                                            <Skeleton variant="rectangular" width={70} height={24} sx={{ borderRadius: 1 }} />
+                                            <Skeleton variant="rectangular" width={24} height={24} sx={{ borderRadius: '50%' }} />
+                                        </Box>
+                                    </Box>
+                                </Card>
+                            ))}
+                        </Box>
                     ) : uploads.length === 0 ? (
                         <Box sx={{ textAlign: 'center', py: 4 }}>
                             <DocumentIcon sx={{ fontSize: 48, color: '#9ca3af', mb: 2 }} />
@@ -736,8 +1087,9 @@ const APProcessing = () => {
                 <Dialog
                     open={showPdfResults}
                     onClose={handleClosePdfResults}
-                    maxWidth="lg"
+                    maxWidth="xl"
                     fullWidth
+                    fullScreen={window.innerWidth < 960}
                 >
                 <DialogTitle sx={{
                         fontSize: '16px',
@@ -746,38 +1098,34 @@ const APProcessing = () => {
                     alignItems: 'center',
                         justifyContent: 'space-between'
                     }}>
-                        AP Processing Results - {selectedUpload.name}
+                        AP Processing Results - {selectedUpload.fileName || selectedUpload.name}
                         <IconButton onClick={handleClosePdfResults} size="small">
                         <CloseIcon />
                     </IconButton>
                 </DialogTitle>
                 <DialogContent sx={{ p: 0 }}>
-                        {selectedUpload.aiResults && (
-                            <TestResultsComparison
-                                testResults={selectedUpload.aiResults}
-                                expectedResults={null}
+                        {selectedUpload.extractedData && (
+                            <PdfResultsTable 
+                                pdfResults={selectedUpload.extractedData}
+                                onClose={handleClosePdfResults}
+                                onViewShipmentDetail={(shipment) => {
+                                    console.log('View shipment detail:', shipment);
+                                }}
+                                onOpenPdfViewer={(url, title) => {
+                                    window.open(url, '_blank');
+                                }}
+                                onApproveAPResults={(isException) => {
+                                    console.log('Approve AP Results:', isException);
+                                    enqueueSnackbar(isException ? 'Marked as exception' : 'Approved for billing', { variant: 'success' });
+                                }}
+                                onRejectAPResults={() => {
+                                    console.log('Reject AP Results');
+                                    enqueueSnackbar('Results rejected', { variant: 'info' });
+                                }}
                             />
                         )}
                     </DialogContent>
-                    <DialogActions sx={{ p: 2, gap: 1 }}>
-                                    <Button
-                                        variant="outlined"
-                            onClick={handleClosePdfResults}
-                                                        sx={{ fontSize: '12px' }}
-                                                    >
-                            Close
-                        </Button>
-                        <Button
-                            variant="contained"
-                            color="success"
-                            onClick={() => handleApproveAPResults(selectedUpload.extractedData)}
-                            disabled={approving}
-                            sx={{ fontSize: '12px' }}
-                        >
-                            {approving ? 'Approving...' : 'Approve for Billing'}
-                        </Button>
-                </DialogActions>
-            </Dialog>
+                </Dialog>
             )}
                                                 </Box>
     );

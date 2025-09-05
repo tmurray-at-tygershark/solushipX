@@ -5,12 +5,21 @@ const { VertexAI } = require('@google-cloud/vertexai');
 // Baseline Generic AI Prompt - Applied to all carriers by default
 const BASELINE_PROMPT = `You are an expert AI invoice processing system specializing in transportation, logistics, and freight carrier invoices. Analyze this document with extreme precision and extract ALL relevant information. Return ONLY a JSON object - no explanatory text before or after.
 
+## CRITICAL: MULTI-SHIPMENT DETECTION
+If this invoice contains MULTIPLE SHIPMENTS (multiple Order Numbers, different tracking numbers, multiple shipment rows), you MUST create separate shipment entries for each one. Look for patterns like:
+- Multiple "Order No:" entries (e.g., Order No: 10245236, 10245313, 10245647)
+- Different tracking numbers
+- Multiple shipment rows in tables
+- Separate destination addresses
+- Individual charge breakdowns per shipment
+
 ## DOCUMENT ANALYSIS INSTRUCTIONS
 
 ### STEP 1: DOCUMENT IDENTIFICATION
 - Determine if this is an invoice, bill of lading, freight bill, or shipping document
 - Identify the carrier/company from header, logo, or footer areas
 - Look for document numbers in top-right, top-left, or header sections
+- **COUNT SHIPMENTS**: Determine how many separate shipments are on this invoice
 
 ### STEP 2: SYSTEMATIC FIELD EXTRACTION
 
@@ -132,57 +141,63 @@ For each charge:
         "invoiceTerms": "string | null (e.g., Net 30, Due on Receipt, COD)",
         "customerNumber": "string | null"
     },
-    "shipmentReferences": {
-        "shipmentId": "string | null (CRITICAL: shipment ID for internal matching)",
-        "purchaseOrder": "string | null",
-        "customerReference": "string | null",
-        "proNumber": "string | null",
-        "trackingNumber": "string | null",
-        "jobNumber": "string | null"
-    },
-    "shipper": {
-        "company": "string | null",
-        "address": "string | null"
-    },
-    "consignee": {
-        "company": "string | null",
-        "address": "string | null"
-    },
-    "packageDetails": [
+    "shipments": [
         {
-            "quantity": "number | null",
-            "description": "string | null",
-            "weight": "string | null",
-            "dimensions": "string | null"
+            "shipmentId": "string | null (CRITICAL: Order No or shipment ID)",
+            "trackingNumber": "string | null",
+            "proNumber": "string | null",
+            "billOfLading": "string | null",
+            "service": "string | null (e.g., LTL RUSH, LTL DIRECT, LTL SAMEDAY)",
+            "deliveryDate": "string | null",
+            "shipper": {
+                "company": "string | null",
+                "address": "string | null"
+            },
+            "consignee": {
+                "company": "string | null", 
+                "address": "string | null"
+            },
+            "packageDetails": [
+                {
+                    "quantity": "number | null",
+                    "description": "string | null",
+                    "weight": "string | null",
+                    "dimensions": "string | null"
+                }
+            ],
+            "charges": [
+                {
+                    "description": "string | null (e.g., Base, Fuel, Weight, Wait)",
+                    "amount": "number | null (numeric value only)",
+                    "rate": "string | null"
+                }
+            ],
+            "totalAmount": "number | null (total for THIS shipment)"
         }
     ],
-    "charges": [
-        {
-            "description": "string | null (e.g., LAPTOP, BORDER FEE, FUEL SURCHARGE)",
-            "amount": "number | null (numeric value only)",
-            "rate": "string | null (percentage or rate info)"
-        }
-    ],
-    "totalAmount": {
+    "invoiceSummary": {
+        "totalShipments": "number | null (count of shipments)",
         "subtotal": "number | null",
         "totalTax": "number | null",
-        "amount": "number | null (numeric value only)",
-        "currency": "string | null (e.g., CAD, USD, CAN Funds)",
+        "totalAmount": "number | null (grand total of all shipments)",
+        "currency": "string | null (e.g., CAD, USD)",
         "amountDue": "number | null"
     }
 }
 
-## CRITICAL REQUIREMENTS:
-1. ALL fields must be present in output, use null if not found
-2. Numbers must be pure numeric values (no currency symbols)
-3. Addresses must be complete and properly formatted
-4. Dates must be in YYYY-MM-DD format
-5. Extract ALL charges found, no matter how small
-6. Verify mathematical accuracy (totals = subtotal + taxes)
-7. Use exact text from document, don't paraphrase
-8. Double-check all extracted amounts add up correctly
-9. Ensure no placeholder or example data remains
-10. Confirm all text is extracted exactly as shown on document`;
+## CRITICAL REQUIREMENTS FOR MULTI-SHIPMENT INVOICES:
+1. IF multiple shipments detected, create separate entries in "shipments" array
+2. Each shipment MUST have its own charges array
+3. Match charges to the correct shipment based on table structure
+4. Preserve shipment-specific details (Order No, destinations, services)
+5. Calculate individual shipment totals
+6. Ensure overall invoice total matches sum of all shipments
+7. Numbers must be pure numeric values (no currency symbols)
+8. Addresses must be complete and properly formatted
+9. Dates must be in YYYY-MM-DD format
+10. Extract ALL charges found, no matter how small
+11. Use exact text from document, don't paraphrase
+12. Double-check all extracted amounts add up correctly`;
 
 function initServices() {
     if (admin.apps.length === 0) {

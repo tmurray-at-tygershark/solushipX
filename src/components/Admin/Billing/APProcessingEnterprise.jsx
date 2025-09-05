@@ -36,7 +36,8 @@ import {
     Tab,
     FormControl,
     InputLabel,
-    Select
+    Select,
+    Skeleton
 } from '@mui/material';
 import {
     CloudUpload as CloudUploadIcon,
@@ -843,9 +844,46 @@ const APProcessingEnterprise = () => {
                         </Box>
 
                         {loading ? (
-                            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                                <CircularProgress />
-                            </Box>
+                            <TableContainer>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                            <TableCell padding="checkbox">
+                                                <Checkbox size="small" disabled />
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>File Name</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Carrier</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Invoice #</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipper</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Consignee</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Upload Date</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Status</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {Array.from({ length: 5 }).map((_, index) => (
+                                            <TableRow key={index}>
+                                                <TableCell padding="checkbox">
+                                                    <Skeleton variant="rectangular" width={18} height={18} />
+                                                </TableCell>
+                                                <TableCell><Skeleton width={120} height={20} /></TableCell>
+                                                <TableCell><Skeleton width={100} height={20} /></TableCell>
+                                                <TableCell><Skeleton width={80} height={20} /></TableCell>
+                                                <TableCell><Skeleton width={90} height={20} /></TableCell>
+                                                <TableCell><Skeleton width={110} height={20} /></TableCell>
+                                                <TableCell><Skeleton width={110} height={20} /></TableCell>
+                                                <TableCell><Skeleton width={60} height={20} /></TableCell>
+                                                <TableCell><Skeleton width={80} height={20} /></TableCell>
+                                                <TableCell><Skeleton variant="rectangular" width={60} height={24} sx={{ borderRadius: 1 }} /></TableCell>
+                                                <TableCell><Skeleton variant="circular" width={24} height={24} /></TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
                         ) : tableData.length === 0 ? (
                             <Box sx={{ textAlign: 'center', py: 4 }}>
                                 <AssignmentIcon sx={{ fontSize: 48, color: '#9ca3af', mb: 2 }} />
