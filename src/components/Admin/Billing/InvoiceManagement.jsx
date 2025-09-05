@@ -30,7 +30,12 @@ import {
     Tooltip,
     Autocomplete,
     Avatar,
-    Menu
+    Menu,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Collapse
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -48,8 +53,16 @@ import {
     Cancel as CancelIcon,
     AttachMoney as AttachMoneyIcon,
     ArrowUpward as ArrowUpwardIcon,
-    ArrowDownward as ArrowDownwardIcon
+    ArrowDownward as ArrowDownwardIcon,
+    MoreVert as MoreVertIcon,
+    DateRange as DateRangeIcon,
+    ExpandMore as ExpandMoreIcon,
+    Close as CloseIcon
 } from '@mui/icons-material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs from 'dayjs';
 import { motion } from 'framer-motion';
 import { collection, getDocs, query, orderBy, where, doc, updateDoc, addDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
@@ -60,9 +73,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useCompany } from '../../../contexts/CompanyContext';
 import InvoiceForm from './InvoiceForm';
 import MarkAsPaidDialog from './MarkAsPaidDialog';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { getCircleLogo } from '../../../utils/logoUtils';
-import { Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import invoiceStatusService from '../../../services/invoiceStatusService';
 
 const InvoiceManagement = () => {
@@ -83,6 +94,37 @@ const InvoiceManagement = () => {
     const [selectedCompanyFilter, setSelectedCompanyFilter] = useState(null);
     const [selectedCustomerFilter, setSelectedCustomerFilter] = useState(null);
     const [selectedPaymentStatusFilter, setSelectedPaymentStatusFilter] = useState(null);
+
+    // Date filtering state
+    const [invoiceSentDateFrom, setInvoiceSentDateFrom] = useState(null);
+    const [invoiceSentDateTo, setInvoiceSentDateTo] = useState(null);
+    const [invoiceDueDateFrom, setInvoiceDueDateFrom] = useState(null);
+    const [invoiceDueDateTo, setInvoiceDueDateTo] = useState(null);
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+    // Date change handlers with proper logging
+    const handleSentDateFromChange = (newValue) => {
+        console.log('📅 Sent Date FROM changed:', newValue);
+        setInvoiceSentDateFrom(newValue);
+    };
+
+    const handleSentDateToChange = (newValue) => {
+        console.log('📅 Sent Date TO changed:', newValue);
+        setInvoiceSentDateTo(newValue);
+    };
+
+    const handleDueDateFromChange = (newValue) => {
+        console.log('📅 Due Date FROM changed:', newValue);
+        setInvoiceDueDateFrom(newValue);
+    };
+
+    const handleDueDateToChange = (newValue) => {
+        console.log('📅 Due Date TO changed:', newValue);
+        setInvoiceDueDateTo(newValue);
+    };
+
+    // CSV Export state
+    const [exportLoading, setExportLoading] = useState(false);
 
     // Sorting state
     const [sortBy, setSortBy] = useState('invoiceNumber');
@@ -570,6 +612,542 @@ const InvoiceManagement = () => {
         setStatusFilter('');
     };
 
+    // CSV Export Functions
+    const fetchShipmentData = async (shipmentId) => {
+        try {
+            console.log('🔍 Fetching shipment data for:', shipmentId);
+
+            // First try to find by document ID
+            const shipmentDocRef = doc(db, 'shipments', shipmentId);
+            const shipmentDoc = await getDocs(query(collection(db, 'shipments'), where('shipmentID', '==', shipmentId)));
+
+            if (!shipmentDoc.empty) {
+                const shipmentData = shipmentDoc.docs[0].data();
+                console.log('📦 Found shipment:', shipmentData);
+                return { id: shipmentDoc.docs[0].id, ...shipmentData };
+            }
+
+            // Fallback: try to find by shipmentID field
+            const shipmentQuery = query(collection(db, 'shipments'), where('shipmentID', '==', shipmentId));
+            const shipmentSnapshot = await getDocs(shipmentQuery);
+
+            if (!shipmentSnapshot.empty) {
+                const shipmentData = shipmentSnapshot.docs[0].data();
+                console.log('📦 Found shipment by ID field:', shipmentData);
+                return { id: shipmentSnapshot.docs[0].id, ...shipmentData };
+            }
+
+            console.warn('⚠️ Shipment not found:', shipmentId);
+            return null;
+        } catch (error) {
+            console.error('❌ Error fetching shipment:', shipmentId, error);
+            return null;
+        }
+    };
+
+    const extractShipmentFinancialData = (shipment) => {
+        console.log('💰 Extracting financial data for shipment:', shipment?.shipmentID);
+
+        if (!shipment) return {
+            quotedCost: 0,
+            quotedCharge: 0,
+            actualCost: 0,
+            actualCharge: 0,
+            currency: 'CAD',
+            profit: 0
+        };
+
+        // Helper function to check if a charge is a tax
+        const isChargeTypeTax = (charge) => {
+            const taxKeywords = ['HST', 'GST', 'PST', 'QST', 'QGST', 'TAX', 'TAXES'];
+            const chargeName = (charge.chargeName || charge.name || charge.code || '').toUpperCase();
+            return charge.isTax || taxKeywords.some(keyword => chargeName.includes(keyword));
+        };
+
+        // Helper function to calculate subtotal and taxes from charges array (only from actual customer charges)
+        const calculateSubtotalAndTax = (charges, totalAmount) => {
+            let subtotal = 0;
+            let taxes = 0;
+
+            console.log('🔍 Tax calculation input:', {
+                chargesArray: Array.isArray(charges),
+                chargesLength: charges?.length,
+                totalAmount,
+                charges: charges
+            });
+
+            if (Array.isArray(charges) && charges.length > 0) {
+                charges.forEach(charge => {
+                    const amount = parseFloat(charge.amount || charge.cost || charge.charge || 0);
+                    const chargeName = (charge.name || charge.description || charge.code || '').toLowerCase();
+
+                    // Enhanced tax detection
+                    const isTaxCharge = charge.isTax ||
+                        (charge.code && ['GST', 'HST', 'PST', 'QST', 'QGST', 'TAX', 'TAXES'].includes(charge.code.toUpperCase())) ||
+                        chargeName.includes('tax') ||
+                        chargeName.includes('gst') ||
+                        chargeName.includes('hst') ||
+                        chargeName.includes('pst') ||
+                        chargeName.includes('qst');
+
+                    console.log('🔍 Charge analysis:', {
+                        charge: charge.name || charge.code,
+                        amount,
+                        isTaxCharge
+                    });
+
+                    if (isTaxCharge) {
+                        taxes += amount;
+                    } else {
+                        subtotal += amount;
+                    }
+                });
+
+                // If we found charges but no taxes, and total is provided, estimate
+                if (taxes === 0 && totalAmount > 0) {
+                    console.log('🔍 No taxes found in charges, estimating from total');
+                    const estimatedTax = totalAmount * 0.13; // 13% average Canadian tax rate
+                    return {
+                        subtotal: totalAmount - estimatedTax,
+                        taxes: estimatedTax
+                    };
+                }
+            } else if (totalAmount > 0) {
+                // No charges array provided, estimate tax based on total amount
+                console.log('🔍 No charges array, estimating tax from total amount');
+                const estimatedTax = totalAmount * 0.13; // 13% average Canadian tax rate
+                return {
+                    subtotal: totalAmount - estimatedTax,
+                    taxes: estimatedTax
+                };
+            }
+
+            console.log('🔍 Tax calculation result:', { subtotal, taxes });
+            return { subtotal, taxes };
+        };
+
+        // Extract rate information using multiple sources
+        const getRateData = () => {
+            console.log('🔍 Analyzing shipment financial data for:', shipment.shipmentID);
+            console.log('🔍 Available data structures:', {
+                hasActualRates: !!shipment.actualRates,
+                hasMarkupRates: !!shipment.markupRates,
+                hasManualRates: !!shipment.manualRates,
+                hasSelectedRate: !!shipment.selectedRate,
+                hasBillingDetails: !!shipment.billingDetails,
+                hasUpdatedCharges: !!shipment.updatedCharges,
+                creationMethod: shipment.creationMethod
+            });
+
+            // Check for QuickShip manual rates (has separate cost and charge fields)
+            if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                console.log('🚚 Found QuickShip manual rates with separate cost/charge');
+
+                // Calculate total actual charge (includes taxes)
+                const totalActualCharge = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.actualCharge) || parseFloat(rate.charge) || 0), 0);
+
+                // Extract tax breakdown from actual charges only
+                const actualBreakdown = calculateSubtotalAndTax(shipment.manualRates, totalActualCharge);
+
+                // Extract NON-TAX amounts only from manual rates for quoted costs/charges
+                const quotedCostTotal = shipment.manualRates
+                    .filter(rate => !isChargeTypeTax(rate))
+                    .reduce((sum, rate) => sum + (parseFloat(rate.quotedCost) || parseFloat(rate.cost) || 0), 0);
+
+                const quotedChargeTotal = shipment.manualRates
+                    .filter(rate => !isChargeTypeTax(rate))
+                    .reduce((sum, rate) => sum + (parseFloat(rate.quotedCharge) || parseFloat(rate.charge) || 0), 0);
+
+                const actualCostTotal = shipment.manualRates
+                    .filter(rate => !isChargeTypeTax(rate))
+                    .reduce((sum, rate) => sum + (parseFloat(rate.actualCost) || parseFloat(rate.cost) || 0), 0);
+
+                // Use the totals directly (already tax-free since we filtered out tax items)
+                const quotedCost = quotedCostTotal;
+                const quotedCharge = quotedChargeTotal;
+                const actualCost = actualCostTotal;
+
+                // For actual charge, also use the tax-free amount (same as actualCost for QuickShip)
+                const taxFreeActualCharge = shipment.manualRates
+                    .filter(rate => !isChargeTypeTax(rate))
+                    .reduce((sum, rate) => sum + (parseFloat(rate.actualCharge) || parseFloat(rate.charge) || 0), 0);
+
+                console.log('🚚 QuickShip extracted amounts:', {
+                    quotedCostTotal,
+                    quotedChargeTotal,
+                    actualCostTotal,
+                    totalActualCharge,
+                    subtotal: actualBreakdown.subtotal,
+                    taxes: actualBreakdown.taxes
+                });
+
+                console.log('🚚 QuickShip final tax-free amounts:', {
+                    quotedCost,
+                    quotedCharge,
+                    actualCost,
+                    taxFreeActualCharge,
+                    totalActualChargeWithTaxes: totalActualCharge,
+                    profit: taxFreeActualCharge - actualCost
+                });
+
+                return {
+                    quotedCost: quotedCost,
+                    quotedCharge: quotedCharge,
+                    actualCost: actualCost,
+                    actualCharge: taxFreeActualCharge,      // Now also tax-free
+                    actualSubtotal: actualBreakdown.subtotal,
+                    actualTax: actualBreakdown.taxes,
+                    currency: shipment.manualRates[0]?.currency || 'CAD'
+                };
+            }
+
+            // Check for dual rate system (actualRates = carrier cost, markupRates = customer charge)
+            if (shipment.actualRates && shipment.markupRates) {
+                console.log('📊 Found dual rate system - actualRates (cost) + markupRates (charge)');
+
+                // Extract actual values from dual rate system (these should be tax-free for costs)
+                const actualCost = shipment.actualRates.totalCharges || 0;  // Carrier cost (no taxes)
+                const totalActualCharge = shipment.markupRates.totalCharges || 0;  // Customer charge (includes taxes)
+
+                // Extract quoted values from selectedRate (original quote) - should be tax-free
+                const quotedTotal = shipment.selectedRate?.totalCharges || shipment.selectedRate?.total || 0;
+
+                // For quoted amounts, we need to differentiate cost vs charge (both tax-free)
+                let quotedCost = shipment.selectedRate?.quotedCost || 0;
+                let quotedCharge = shipment.selectedRate?.quotedCharge || 0;
+
+                // If no separate quoted cost/charge, estimate based on the quoted total
+                if (quotedCost === 0 && quotedCharge === 0 && quotedTotal > 0) {
+                    // Use the same ratio as actual rates if available
+                    if (actualCost > 0 && totalActualCharge > 0) {
+                        const ratio = actualCost / totalActualCharge;
+                        quotedCost = quotedTotal * ratio;
+                        quotedCharge = quotedTotal;
+                    } else {
+                        // Default estimation: 85% cost, 100% charge (15% markup)
+                        quotedCost = quotedTotal * 0.85;
+                        quotedCharge = quotedTotal;
+                    }
+                }
+
+                // Calculate subtotal and tax breakdown ONLY from customer charges (markupRates)
+                const actualBreakdown = calculateSubtotalAndTax(shipment.markupRates.charges || [], totalActualCharge);
+
+                // Ensure quoted amounts are tax-free using the breakdown
+                const taxFreeQuotedCost = quotedCost > 0 ? (quotedCost * (actualBreakdown.subtotal / totalActualCharge)) : actualBreakdown.subtotal * 0.85;
+                const taxFreeQuotedCharge = quotedCharge > 0 ? (quotedCharge * (actualBreakdown.subtotal / totalActualCharge)) : actualBreakdown.subtotal;
+
+                return {
+                    quotedCost: parseFloat(taxFreeQuotedCost) || 0,      // Tax-free
+                    quotedCharge: parseFloat(taxFreeQuotedCharge) || 0,  // Tax-free
+                    actualCost: parseFloat(actualCost) || 0,             // Tax-free (carrier cost)
+                    actualCharge: parseFloat(totalActualCharge) || 0,    // Includes taxes
+                    actualSubtotal: actualBreakdown.subtotal,            // Tax-free portion of actual charge
+                    actualTax: actualBreakdown.taxes,                   // Tax portion of actual charge
+                    currency: shipment.actualRates.currency || shipment.markupRates.currency || 'CAD'
+                };
+            }
+
+
+            // Check for updatedCharges (inline edit system with quoted vs actual)
+            if (shipment.updatedCharges && Array.isArray(shipment.updatedCharges)) {
+                console.log('📝 Found updatedCharges with quoted/actual separation');
+
+                // These should be tax-free amounts
+                const quotedCost = shipment.updatedCharges.reduce((sum, charge) => sum + (parseFloat(charge.quotedCost) || 0), 0);
+                const quotedCharge = shipment.updatedCharges.reduce((sum, charge) => sum + (parseFloat(charge.quotedCharge) || 0), 0);
+                const actualCost = shipment.updatedCharges.reduce((sum, charge) => sum + (parseFloat(charge.actualCost) || 0), 0);
+                const totalActualCharge = shipment.updatedCharges.reduce((sum, charge) => sum + (parseFloat(charge.actualCharge) || 0), 0);
+
+                // Calculate subtotal and tax breakdown ONLY from actual charges
+                const actualBreakdown = calculateSubtotalAndTax(shipment.updatedCharges, totalActualCharge);
+
+                // Ensure quoted amounts are tax-free by using the breakdown ratio
+                const taxFreeQuotedCost = quotedCost > 0 ? (quotedCost * (actualBreakdown.subtotal / totalActualCharge)) : actualBreakdown.subtotal * 0.85;
+                const taxFreeQuotedCharge = quotedCharge > 0 ? (quotedCharge * (actualBreakdown.subtotal / totalActualCharge)) : actualBreakdown.subtotal;
+                const taxFreeActualCost = actualCost > 0 ? (actualCost * (actualBreakdown.subtotal / totalActualCharge)) : actualBreakdown.subtotal * 0.85;
+
+                return {
+                    quotedCost: parseFloat(taxFreeQuotedCost) || 0,       // Tax-free
+                    quotedCharge: parseFloat(taxFreeQuotedCharge) || 0,   // Tax-free
+                    actualCost: parseFloat(taxFreeActualCost) || 0,       // Tax-free
+                    actualCharge: totalActualCharge,                      // Includes taxes
+                    actualSubtotal: actualBreakdown.subtotal,            // Tax-free portion
+                    actualTax: actualBreakdown.taxes,                    // Tax portion
+                    currency: shipment.updatedCharges[0]?.currency || 'CAD'
+                };
+            }
+
+            // Check for selected rate (original quote) and billing details (actual)
+            if (shipment.selectedRate || shipment.billingDetails) {
+                console.log('📋 Found selectedRate/billingDetails system');
+
+                // Quoted amounts (from selectedRate) - should be tax-free
+                const quotedAmount = shipment.selectedRate?.totalCharges ||
+                    shipment.selectedRate?.total ||
+                    shipment.selectedRate?.amount || 0;
+
+                // Actual amounts (from billingDetails) - may include taxes
+                const actualAmount = shipment.billingDetails?.totalAmount ||
+                    shipment.billingDetails?.total ||
+                    quotedAmount;
+
+                // For systems without explicit cost/charge separation:
+                // Quoted amounts are typically tax-free estimates
+                const quotedCost = quotedAmount * 0.85;  // Tax-free estimate
+                const quotedCharge = quotedAmount;       // Tax-free estimate
+                const actualCost = actualAmount * 0.75;  // Tax-free estimate (lower due to markup + taxes)
+
+                // Calculate tax breakdown from actual charge (includes taxes)
+                const actualBreakdown = calculateSubtotalAndTax([], actualAmount);
+
+                return {
+                    quotedCost: parseFloat(quotedCost) || 0,     // Tax-free
+                    quotedCharge: parseFloat(quotedCharge) || 0, // Tax-free
+                    actualCost: parseFloat(actualCost) || 0,     // Tax-free
+                    actualCharge: parseFloat(actualAmount) || 0,  // Includes taxes
+                    actualSubtotal: actualBreakdown.subtotal,    // Tax-free portion
+                    actualTax: actualBreakdown.taxes,           // Tax portion
+                    currency: shipment.billingDetails?.currency || shipment.selectedRate?.currency || 'CAD'
+                };
+            }
+
+            console.log('⚠️ No financial data found in shipment');
+            return {
+                quotedCost: 0,
+                quotedCharge: 0,
+                actualCost: 0,
+                actualCharge: 0,
+                actualSubtotal: 0,
+                actualTax: 0,
+                currency: 'CAD'
+            };
+        };
+
+        const rateData = getRateData();
+        const profit = parseFloat(rateData.actualCharge) - parseFloat(rateData.actualCost);
+
+        console.log('💰 Final extracted financial data:', {
+            quotedCost: rateData.quotedCost,
+            quotedCharge: rateData.quotedCharge,
+            actualCost: rateData.actualCost,
+            actualCharge: rateData.actualCharge,
+            actualSubtotal: rateData.actualSubtotal,
+            actualTax: rateData.actualTax,
+            profit: profit,
+            currency: rateData.currency
+        });
+
+        return {
+            ...rateData,
+            profit
+        };
+    };
+
+    const generateCSVReport = async () => {
+        setExportLoading(true);
+        try {
+            console.log('📊 Starting CSV export for', filteredInvoices.length, 'invoices from main table');
+
+            // Simply use the already-filtered invoices from the main table
+            const exportInvoices = filteredInvoices;
+            console.log('🔍 Exporting', exportInvoices.length, 'invoices (same as displayed in table)');
+
+            const csvData = [];
+
+            // Process each invoice
+            for (const invoice of exportInvoices) {
+                console.log('📄 Processing invoice:', invoice.invoiceNumber);
+
+                // Extract shipment IDs from invoice
+                const shipmentIds = [];
+
+                if (invoice.shipments && Array.isArray(invoice.shipments)) {
+                    shipmentIds.push(...invoice.shipments);
+                } else if (invoice.shipmentIds && Array.isArray(invoice.shipmentIds)) {
+                    shipmentIds.push(...invoice.shipmentIds);
+                } else if (invoice.shipmentId) {
+                    shipmentIds.push(invoice.shipmentId);
+                } else if (invoice.items && Array.isArray(invoice.items)) {
+                    // Extract from invoice items
+                    invoice.items.forEach(item => {
+                        if (item.shipmentId) shipmentIds.push(item.shipmentId);
+                        if (item.shipmentID) shipmentIds.push(item.shipmentID);
+                    });
+                }
+
+                console.log('🚢 Found shipment IDs:', shipmentIds);
+
+                if (shipmentIds.length === 0) {
+                    console.warn('⚠️ No shipment IDs found for invoice:', invoice.invoiceNumber);
+                    // Add a row with invoice data but no shipment details
+                    csvData.push({
+                        shipmentId: 'N/A',
+                        carrier: 'Unknown',
+                        customer: invoice.customerName || 'Unknown',
+                        quotedCost: 0,
+                        quotedCharge: 0,
+                        actualCost: 0,
+                        actualCharge: 0,
+                        actualSubtotal: 0,
+                        actualTax: 0,
+                        currency: 'CAD',
+                        profit: 0,
+                        invoiceNumber: invoice.invoiceNumber,
+                        carrierEDI: 'N/A',
+                        invoiceSent: invoice.issueDate ? dayjs(invoice.issueDate).format('MM/DD/YYYY') : 'N/A',
+                        invoiceDue: invoice.dueDate ? dayjs(invoice.dueDate).format('MM/DD/YYYY') : 'N/A'
+                    });
+                    continue;
+                }
+
+                // Fetch each shipment's details
+                for (const shipmentId of shipmentIds) {
+                    const shipmentData = await fetchShipmentData(shipmentId);
+
+                    if (shipmentData) {
+                        const financialData = extractShipmentFinancialData(shipmentData);
+
+                        // Extract carrier information
+                        const getCarrierInfo = () => {
+                            if (shipmentData.selectedCarrier) return shipmentData.selectedCarrier;
+                            if (shipmentData.selectedRate?.carrier) return shipmentData.selectedRate.carrier;
+                            if (shipmentData.carrier) return shipmentData.carrier;
+                            return 'Unknown';
+                        };
+
+                        const carrier = getCarrierInfo();
+                        const carrierName = typeof carrier === 'object' ? carrier.name || carrier.carrierName || 'Unknown' : carrier;
+
+                        // Extract customer information
+                        const customerName = shipmentData.shipTo?.companyName ||
+                            shipmentData.shipTo?.company ||
+                            shipmentData.customerName ||
+                            invoice.customerName ||
+                            'Unknown';
+
+                        // Extract EDI information
+                        const carrierEDI = shipmentData.carrierBookingConfirmation?.ediReference ||
+                            shipmentData.ediData?.reference ||
+                            shipmentData.proNumber ||
+                            shipmentData.trackingNumber ||
+                            'N/A';
+
+                        csvData.push({
+                            shipmentId: shipmentData.shipmentID || shipmentId,
+                            carrier: carrierName,
+                            customer: customerName,
+                            quotedCost: financialData.quotedCost.toFixed(2),
+                            quotedCharge: financialData.quotedCharge.toFixed(2),
+                            actualCost: financialData.actualCost.toFixed(2),
+                            actualCharge: financialData.actualCharge.toFixed(2),
+                            actualSubtotal: (financialData.actualSubtotal || 0).toFixed(2),
+                            actualTax: (financialData.actualTax || 0).toFixed(2),
+                            currency: financialData.currency,
+                            profit: financialData.profit.toFixed(2),
+                            invoiceNumber: invoice.invoiceNumber,
+                            carrierEDI: carrierEDI,
+                            invoiceSent: invoice.issueDate ? dayjs(invoice.issueDate).format('MM/DD/YYYY') : 'N/A',
+                            invoiceDue: invoice.dueDate ? dayjs(invoice.dueDate).format('MM/DD/YYYY') : 'N/A'
+                        });
+                    } else {
+                        // Add row with partial data if shipment not found
+                        csvData.push({
+                            shipmentId: shipmentId,
+                            carrier: 'Unknown',
+                            customer: invoice.customerName || 'Unknown',
+                            quotedCost: 0,
+                            quotedCharge: 0,
+                            actualCost: 0,
+                            actualCharge: 0,
+                            actualSubtotal: 0,
+                            actualTax: 0,
+                            currency: 'CAD',
+                            profit: 0,
+                            invoiceNumber: invoice.invoiceNumber,
+                            carrierEDI: 'N/A',
+                            invoiceSent: invoice.issueDate ? dayjs(invoice.issueDate).format('MM/DD/YYYY') : 'N/A',
+                            invoiceDue: invoice.dueDate ? dayjs(invoice.dueDate).format('MM/DD/YYYY') : 'N/A'
+                        });
+                    }
+                }
+            }
+
+            console.log('📊 Generated CSV data with', csvData.length, 'rows');
+
+            // Generate CSV content
+            const headers = [
+                'SHIPMENT#',
+                'CARRIER',
+                'Customer',
+                'Quoted Cost',
+                'Quoted Charge',
+                'Actual Cost',
+                'Actual Charge',
+                'Actual Subtotal',
+                'Actual Tax',
+                'Currency',
+                'Profit',
+                'Invoice #',
+                'Carrier EDI',
+                'Invoice Sent',
+                'Invoice Due'
+            ];
+
+            const csvContent = [
+                headers.join(','),
+                ...csvData.map(row => [
+                    row.shipmentId,
+                    `"${row.carrier}"`,
+                    `"${row.customer}"`,
+                    row.quotedCost,
+                    row.quotedCharge,
+                    row.actualCost,
+                    row.actualCharge,
+                    row.actualSubtotal,
+                    row.actualTax,
+                    row.currency,
+                    row.profit,
+                    row.invoiceNumber,
+                    `"${row.carrierEDI}"`,
+                    row.invoiceSent,
+                    row.invoiceDue
+                ].join(','))
+            ].join('\n');
+
+            // Download CSV
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+
+            // Generate filename with proper date range handling
+            let dateRange = '';
+            if (invoiceSentDateFrom || invoiceDueDateFrom) {
+                const fromDate = dayjs(invoiceSentDateFrom || invoiceDueDateFrom).format('YYYY-MM-DD');
+                const toDate = (invoiceSentDateTo || invoiceDueDateTo) ?
+                    dayjs(invoiceSentDateTo || invoiceDueDateTo).format('YYYY-MM-DD') :
+                    dayjs().format('YYYY-MM-DD');
+                dateRange = `_${fromDate}_to_${toDate}`;
+            } else {
+                dateRange = `_${dayjs().format('YYYY-MM-DD')}`;
+            }
+
+            link.setAttribute('download', `invoice_shipment_report${dateRange}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            enqueueSnackbar(`✅ CSV export completed! ${csvData.length} shipment records exported.`, { variant: 'success' });
+
+        } catch (error) {
+            console.error('❌ CSV export error:', error);
+            enqueueSnackbar('Failed to export CSV report', { variant: 'error' });
+        }
+        setExportLoading(false);
+    };
+
     // Sort handling
     const handleSort = (column) => {
         if (sortBy === column) {
@@ -944,6 +1522,117 @@ const InvoiceManagement = () => {
             }
         }
 
+        // Apply date filters
+        console.log('🔍 Date filter values:', {
+            invoiceSentDateFrom,
+            invoiceSentDateTo,
+            invoiceDueDateFrom,
+            invoiceDueDateTo
+        });
+
+        if (invoiceSentDateFrom || invoiceSentDateTo) {
+            filtered = filtered.filter(invoice => {
+                // Try multiple possible date fields
+                let sentDate = null;
+
+                // Helper function to safely convert dates
+                const parseDate = (dateValue) => {
+                    if (!dateValue) return null;
+                    try {
+                        // Handle Firestore Timestamp
+                        if (dateValue && typeof dateValue.toDate === 'function') {
+                            return dayjs(dateValue.toDate());
+                        }
+                        // Handle regular Date objects
+                        if (dateValue instanceof Date) {
+                            return dayjs(dateValue);
+                        }
+                        // Handle timestamp objects with seconds
+                        if (dateValue && typeof dateValue === 'object' && dateValue.seconds) {
+                            return dayjs(new Date(dateValue.seconds * 1000));
+                        }
+                        // Handle string dates
+                        if (typeof dateValue === 'string') {
+                            return dayjs(dateValue);
+                        }
+                        return null;
+                    } catch (error) {
+                        console.warn('Error parsing date:', dateValue, error);
+                        return null;
+                    }
+                };
+
+                // Try different date field names
+                sentDate = parseDate(invoice.dateSent) ||
+                    parseDate(invoice.sentDate) ||
+                    parseDate(invoice.issueDate) ||
+                    parseDate(invoice.dateCreated) ||
+                    parseDate(invoice.createdAt);
+
+                if (!sentDate) return false;
+
+                // Apply date range filters with inclusive logic
+                if (invoiceSentDateFrom) {
+                    const fromDate = dayjs(invoiceSentDateFrom).startOf('day');
+                    if (sentDate.isBefore(fromDate)) return false;
+                }
+
+                if (invoiceSentDateTo) {
+                    const toDate = dayjs(invoiceSentDateTo).endOf('day');
+                    if (sentDate.isAfter(toDate)) return false;
+                }
+
+                return true;
+            });
+        }
+
+        if (invoiceDueDateFrom || invoiceDueDateTo) {
+            filtered = filtered.filter(invoice => {
+                // Helper function to safely convert dates
+                const parseDate = (dateValue) => {
+                    if (!dateValue) return null;
+                    try {
+                        // Handle Firestore Timestamp
+                        if (dateValue && typeof dateValue.toDate === 'function') {
+                            return dayjs(dateValue.toDate());
+                        }
+                        // Handle regular Date objects
+                        if (dateValue instanceof Date) {
+                            return dayjs(dateValue);
+                        }
+                        // Handle timestamp objects with seconds
+                        if (dateValue && typeof dateValue === 'object' && dateValue.seconds) {
+                            return dayjs(new Date(dateValue.seconds * 1000));
+                        }
+                        // Handle string dates
+                        if (typeof dateValue === 'string') {
+                            return dayjs(dateValue);
+                        }
+                        return null;
+                    } catch (error) {
+                        console.warn('Error parsing due date:', dateValue, error);
+                        return null;
+                    }
+                };
+
+                const dueDate = parseDate(invoice.dueDate) || parseDate(invoice.paymentDue) || parseDate(invoice.dueDt);
+                if (!dueDate) return false;
+
+                // Apply date range filters with inclusive logic
+                if (invoiceDueDateFrom) {
+                    const fromDate = dayjs(invoiceDueDateFrom).startOf('day');
+                    if (dueDate.isBefore(fromDate)) return false;
+                }
+
+                if (invoiceDueDateTo) {
+                    const toDate = dayjs(invoiceDueDateTo).endOf('day');
+                    if (dueDate.isAfter(toDate)) return false;
+                }
+
+                return true;
+            });
+        }
+
         // Apply sorting to filtered results
         const sortedFiltered = sortInvoices(filtered);
         setFilteredInvoices(sortedFiltered);
@@ -952,7 +1641,7 @@ const InvoiceManagement = () => {
         calculateMetrics(filtered);
 
         setPage(0); // Reset to first page when filters change
-    }, [invoices, searchQuery, statusFilter, selectedCompanyFilter, selectedCustomerFilter, selectedPaymentStatusFilter, sortBy, sortDirection]);
+    }, [invoices, searchQuery, statusFilter, selectedCompanyFilter, selectedCustomerFilter, selectedPaymentStatusFilter, invoiceSentDateFrom, invoiceSentDateTo, invoiceDueDateFrom, invoiceDueDateTo, sortBy, sortDirection]);
 
     if (loading) {
         return (
@@ -1183,10 +1872,12 @@ const InvoiceManagement = () => {
                             <Button
                                 variant="outlined"
                                 size="small"
-                                startIcon={<GetAppIcon />}
+                                startIcon={exportLoading ? <CircularProgress size={14} /> : <GetAppIcon />}
+                                onClick={generateCSVReport}
+                                disabled={exportLoading}
                                 sx={{ fontSize: '12px' }}
                             >
-                                Export
+                                {exportLoading ? 'Exporting...' : 'Export CSV'}
                             </Button>
                             <Button
                                 variant="outlined"
@@ -1210,11 +1901,32 @@ const InvoiceManagement = () => {
                     </Box>
 
                     <Grid container spacing={2} alignItems="center">
-                        <Grid item xs={12} md={3}>
+                        <Grid item xs={12} md={2}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                fullWidth
+                                startIcon={<DateRangeIcon />}
+                                endIcon={<ExpandMoreIcon sx={{ transform: showAdvancedFilters ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />}
+                                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                                sx={{
+                                    fontSize: '12px',
+                                    color: '#6b7280',
+                                    borderColor: '#e5e7eb',
+                                    '&:hover': {
+                                        borderColor: '#d1d5db',
+                                        backgroundColor: '#f9fafb'
+                                    }
+                                }}
+                            >
+                                Date Filters
+                            </Button>
+                        </Grid>
+                        <Grid item xs={12} md={2.5}>
                             <TextField
                                 fullWidth
                                 size="small"
-                                placeholder="Search invoices by number, company, or ID..."
+                                placeholder="Search invoices..."
                                 value={searchQuery}
                                 onChange={handleSearchChange}
                                 InputProps={{
@@ -1236,27 +1948,14 @@ const InvoiceManagement = () => {
                                 }}
                             />
                         </Grid>
-                        <Grid item xs={12} md={3}>
+                        <Grid item xs={12} md={2.5}>
                             <Autocomplete
-                                options={Array.from(new Map(invoices.map(i => {
-                                    const key = i.companyId || i.companyID || i.companyCode;
-                                    const byKey = key ? companiesMap[key] : null;
-                                    // Fallback: try to find company by name or code
-                                    const byName = !byKey && i.companyName
-                                        ? Object.values(companiesMap).find(c => (c.name || c.companyName) === i.companyName)
-                                        : null;
-                                    const byCode = !byKey && i.companyCode
-                                        ? Object.values(companiesMap).find(c => c.companyID === i.companyCode || c.code === i.companyCode)
-                                        : null;
-                                    const companyDoc = byKey || byName || byCode || null;
-                                    const logo = companyDoc ? getCircleLogo(companyDoc) : (i.companyLogo || '');
-                                    return [key || i.companyName || Math.random().toString(36).slice(2), {
-                                        id: key || (companyDoc?.companyID || companyDoc?.id) || i.companyName,
-                                        name: i.companyName,
-                                        code: i.companyCode,
-                                        logo
-                                    }];
-                                })).values())}
+                                options={Object.values(companiesMap).map(company => ({
+                                    id: company.companyID || company.id,
+                                    name: company.name || company.companyName,
+                                    code: company.companyID || company.code,
+                                    logo: getCircleLogo(company)
+                                })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))}
                                 getOptionLabel={(opt) => opt?.name || ''}
                                 value={selectedCompanyFilter}
                                 onChange={(e, val) => setSelectedCompanyFilter(val)}
@@ -1276,7 +1975,7 @@ const InvoiceManagement = () => {
                                 )}
                             />
                         </Grid>
-                        <Grid item xs={12} md={3}>
+                        <Grid item xs={12} md={2.5}>
                             <Autocomplete
                                 options={(selectedCompanyFilter?.id && customersByCompany[selectedCompanyFilter.id])
                                     ? customersByCompany[selectedCompanyFilter.id].map(c => ({
@@ -1315,7 +2014,7 @@ const InvoiceManagement = () => {
                                 )}
                             />
                         </Grid>
-                        <Grid item xs={12} md={3}>
+                        <Grid item xs={12} md={2.5}>
                             <Autocomplete
                                 options={[
                                     { id: 'all', label: 'All Statuses' },
@@ -1330,7 +2029,7 @@ const InvoiceManagement = () => {
                                 value={selectedPaymentStatusFilter}
                                 onChange={(e, val) => setSelectedPaymentStatusFilter(val)}
                                 renderInput={(params) => (
-                                    <TextField {...params} size="small" placeholder="Filter by payment status" sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }} />
+                                    <TextField {...params} size="small" placeholder="Payment status" sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }} />
                                 )}
                                 renderOption={(props, option) => (
                                     <li {...props}>
@@ -1352,6 +2051,101 @@ const InvoiceManagement = () => {
                             />
                         </Grid>
                     </Grid>
+
+                    <Collapse in={showAdvancedFilters}>
+                        <Box sx={{ mt: 2, p: 3, backgroundColor: '#f9fafb', borderRadius: 2, border: '1px solid #e5e7eb' }}>
+                            <Typography variant="subtitle2" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, color: '#374151' }}>
+                                Advanced Date Filters
+                            </Typography>
+                            <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                <Grid container spacing={2} alignItems="center">
+                                    <Grid item xs={12} md={3}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, mb: 1, color: '#374151' }}>
+                                            Invoice Sent Date
+                                        </Typography>
+                                        <DatePicker
+                                            label="From Date"
+                                            value={invoiceSentDateFrom}
+                                            onChange={handleSentDateFromChange}
+                                            slotProps={{
+                                                textField: {
+                                                    size: 'small',
+                                                    fullWidth: true,
+                                                    sx: { '& .MuiInputBase-input': { fontSize: '12px' } }
+                                                }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, mb: 1, color: 'transparent' }}>
+                                            .
+                                        </Typography>
+                                        <DatePicker
+                                            label="To Date"
+                                            value={invoiceSentDateTo}
+                                            onChange={handleSentDateToChange}
+                                            slotProps={{
+                                                textField: {
+                                                    size: 'small',
+                                                    fullWidth: true,
+                                                    sx: { '& .MuiInputBase-input': { fontSize: '12px' } }
+                                                }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, mb: 1, color: '#374151' }}>
+                                            Invoice Due Date
+                                        </Typography>
+                                        <DatePicker
+                                            label="From Date"
+                                            value={invoiceDueDateFrom}
+                                            onChange={handleDueDateFromChange}
+                                            slotProps={{
+                                                textField: {
+                                                    size: 'small',
+                                                    fullWidth: true,
+                                                    sx: { '& .MuiInputBase-input': { fontSize: '12px' } }
+                                                }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, mb: 1, color: 'transparent' }}>
+                                            .
+                                        </Typography>
+                                        <DatePicker
+                                            label="To Date"
+                                            value={invoiceDueDateTo}
+                                            onChange={handleDueDateToChange}
+                                            slotProps={{
+                                                textField: {
+                                                    size: 'small',
+                                                    fullWidth: true,
+                                                    sx: { '& .MuiInputBase-input': { fontSize: '12px' } }
+                                                }
+                                            }}
+                                        />
+                                    </Grid>
+                                </Grid>
+                                <Box sx={{ mt: 2, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                    <Button
+                                        variant="outlined"
+                                        size="small"
+                                        onClick={() => {
+                                            setInvoiceSentDateFrom(null);
+                                            setInvoiceSentDateTo(null);
+                                            setInvoiceDueDateFrom(null);
+                                            setInvoiceDueDateTo(null);
+                                        }}
+                                        sx={{ fontSize: '11px' }}
+                                    >
+                                        Clear Dates
+                                    </Button>
+                                </Box>
+                            </LocalizationProvider>
+                        </Box>
+                    </Collapse>
                 </Box>
 
                 <TableContainer>
@@ -1619,6 +2413,7 @@ const InvoiceManagement = () => {
                 invoice={markAsPaidInvoice}
                 onSuccess={handleMarkAsPaidSuccess}
             />
+
         </Box>
     );
 };
