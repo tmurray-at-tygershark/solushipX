@@ -1096,3 +1096,18 @@ exports.directGeminiExtraction = directGeminiExtraction;
 // AP Processing
 const { approveAPInvoice } = require('./src/apProcessing/approveAPInvoice');
 exports.approveAPInvoice = approveAPInvoice;
+
+// QuickShip Zone-Based Rate Management
+const {
+    getQuickShipZoneRates,
+    saveQuickShipZoneRates,
+    calculateQuickShipZoneRates
+} = require('./src/quickship/quickShipZoneRates');
+
+exports.getQuickShipZoneRates = getQuickShipZoneRates;
+exports.saveQuickShipZoneRates = saveQuickShipZoneRates;
+exports.calculateQuickShipZoneRates = calculateQuickShipZoneRates;
+
+// Map City Selector Testing
+const { testMapCitySelector } = require('./test-map-functionality');
+exports.testMapCitySelector = testMapCitySelector;

@@ -52,6 +52,8 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../../firebase';
 import { useSnackbar } from 'notistack';
 import RateCardImportDialog from './RateCardImportDialog';
+import EnhancedGeographicRateCardImport from './EnhancedGeographicRateCardImport';
+import QuickShipZoneRateManagement from './QuickShipZoneRateManagement';
 
 const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose }) => {
     const { enqueueSnackbar } = useSnackbar();
@@ -64,6 +66,8 @@ const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose }) => {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleteRateCardId, setDeleteRateCardId] = useState(null);
     const [deleteRateCardName, setDeleteRateCardName] = useState('');
+    const [showEnhancedImport, setShowEnhancedImport] = useState(false);
+    const [showZoneRateManagement, setShowZoneRateManagement] = useState(false);
 
     // Form state for rate card dialog
     const [formData, setFormData] = useState({
@@ -334,7 +338,41 @@ const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose }) => {
                                     onClick={() => setShowImportDialog(true)}
                                     sx={{ fontSize: '12px' }}
                                 >
-                                    Import from CSV
+                                    Basic Import
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={<MapIcon />}
+                                    onClick={() => setShowEnhancedImport(true)}
+                                    sx={{
+                                        fontSize: '12px',
+                                        color: '#7c3aed',
+                                        borderColor: '#7c3aed',
+                                        '&:hover': {
+                                            backgroundColor: '#f3f4f6',
+                                            borderColor: '#7c3aed'
+                                        }
+                                    }}
+                                >
+                                    Geographic Import
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={<MapIcon />}
+                                    onClick={() => setShowZoneRateManagement(true)}
+                                    sx={{
+                                        fontSize: '12px',
+                                        color: '#10b981',
+                                        borderColor: '#10b981',
+                                        '&:hover': {
+                                            backgroundColor: '#f0fdf4',
+                                            borderColor: '#10b981'
+                                        }
+                                    }}
+                                >
+                                    Zone Rate Mapping
                                 </Button>
                                 <Button
                                     variant="contained"
@@ -459,6 +497,7 @@ const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose }) => {
                                     sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
                                 >
                                     <MenuItem value="skid_based" sx={{ fontSize: '12px' }}>Skid Based</MenuItem>
+                                    <MenuItem value="geographic_skid" sx={{ fontSize: '12px' }}>Geographic Skid Matrix</MenuItem>
                                     <MenuItem value="weight_based" sx={{ fontSize: '12px' }}>Weight Based</MenuItem>
                                     <MenuItem value="zone_based" sx={{ fontSize: '12px' }}>Zone Based</MenuItem>
                                     <MenuItem value="flat" sx={{ fontSize: '12px' }}>Flat Rate</MenuItem>
@@ -853,6 +892,26 @@ const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose }) => {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Enhanced Geographic Import Dialog */}
+            <EnhancedGeographicRateCardImport
+                isOpen={showEnhancedImport}
+                onClose={() => setShowEnhancedImport(false)}
+                carrierId={carrierId}
+                carrierName={carrierName}
+                onImportComplete={() => {
+                    setShowEnhancedImport(false);
+                    loadRateCards();
+                }}
+            />
+
+            {/* Zone Rate Management Dialog */}
+            <QuickShipZoneRateManagement
+                isOpen={showZoneRateManagement}
+                onClose={() => setShowZoneRateManagement(false)}
+                carrierId={carrierId}
+                carrierName={carrierName}
+            />
         </Dialog>
     );
 };

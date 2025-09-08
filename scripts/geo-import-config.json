@@ -1,0 +1,111 @@
+{
+    "description": "Configuration for Geographic Locations Import",
+    "version": "1.0.0",
+    "import": {
+        "batchSize": 500,
+        "collections": {
+            "locations": "geoLocations",
+            "cities": "geoCities",
+            "regions": "geoProvincesStates"
+        },
+        "files": {
+            "canada": "./postal-codes-canada.json",
+            "usa": "./postal-codes-usa.json"
+        }
+    },
+    "dataStructure": {
+        "geoLocations": {
+            "description": "Complete postal/zip code database with normalized structure",
+            "fields": {
+                "city": "String - Normalized city name",
+                "provinceState": "String - Province/state code (AB, CA, etc.)",
+                "provinceStateName": "String - Full province/state name",
+                "country": "String - Country code (CA, US)",
+                "countryName": "String - Full country name",
+                "postalZipCode": "String - Postal/zip code",
+                "postalZipType": "String - 'postal' or 'zip'",
+                "latitude": "Number - Geographic latitude",
+                "longitude": "Number - Geographic longitude",
+                "searchKey": "String - Optimized search key",
+                "regionKey": "String - Country-Province/State key",
+                "cityRegionKey": "String - City-Province/State-Country key",
+                "isCanada": "Boolean - True for Canadian locations",
+                "isUS": "Boolean - True for US locations",
+                "isDomesticCanada": "Boolean - True for domestic Canada zones",
+                "isDomesticUS": "Boolean - True for domestic US zones",
+                "dataSource": "String - Source file identifier",
+                "importedAt": "String - ISO timestamp",
+                "createdAt": "Timestamp - Firestore server timestamp",
+                "updatedAt": "Timestamp - Firestore server timestamp"
+            }
+        },
+        "geoCities": {
+            "description": "Unique cities summary for faster lookups",
+            "fields": {
+                "city": "String - City name",
+                "provinceState": "String - Province/state code",
+                "provinceStateName": "String - Full province/state name",
+                "country": "String - Country code",
+                "countryName": "String - Full country name",
+                "regionKey": "String - Region identifier",
+                "cityRegionKey": "String - Unique city identifier",
+                "isCanada": "Boolean - True for Canadian cities",
+                "isUS": "Boolean - True for US cities",
+                "postalZipCodes": "Array - All postal/zip codes for this city",
+                "locationCount": "Number - Number of postal/zip codes",
+                "createdAt": "Timestamp - Firestore server timestamp"
+            }
+        },
+        "geoProvincesStates": {
+            "description": "Provinces/states summary for regional queries",
+            "fields": {
+                "provinceState": "String - Province/state code",
+                "provinceStateName": "String - Full name",
+                "country": "String - Country code",
+                "countryName": "String - Full country name",
+                "regionKey": "String - Unique region identifier",
+                "isCanada": "Boolean - True for Canadian provinces",
+                "isUS": "Boolean - True for US states",
+                "cities": "Array - All cities in this province/state",
+                "cityCount": "Number - Number of cities",
+                "locationCount": "Number - Total postal/zip codes",
+                "createdAt": "Timestamp - Firestore server timestamp"
+            }
+        }
+    },
+    "indexingStrategy": {
+        "geoLocations": [
+            "country",
+            "provinceState",
+            "city",
+            "regionKey",
+            "cityRegionKey",
+            "searchKey",
+            "isCanada",
+            "isUS",
+            "isDomesticCanada",
+            "isDomesticUS"
+        ],
+        "geoCities": [
+            "country",
+            "provinceState",
+            "regionKey",
+            "cityRegionKey",
+            "isCanada",
+            "isUS"
+        ],
+        "geoProvincesStates": [
+            "country",
+            "regionKey",
+            "isCanada",
+            "isUS"
+        ]
+    },
+    "usagePatterns": {
+        "zoneMapping": "Query by regionKey for province/state-based zones",
+        "citySearch": "Query by cityRegionKey or searchKey for city lookups",
+        "countryFilter": "Use isCanada/isUS for country-based filtering",
+        "domesticZones": "Use isDomesticCanada/isDomesticUS for domestic shipping",
+        "crossBorder": "Combine country filters for cross-border zones"
+    }
+}

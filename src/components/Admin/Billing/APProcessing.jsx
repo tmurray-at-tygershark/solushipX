@@ -79,7 +79,7 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfV
     // Normalize data for table from the new multi-shipment structure
     const normalizeDataForTable = (results) => {
         console.log('🔍 PdfResultsTable normalizing data:', results);
-        
+
         if (!results) return [];
 
         // Check for the new shipments structure first
@@ -332,7 +332,7 @@ const APProcessing = () => {
     const [selectedUpload, setSelectedUpload] = useState(null);
     const [showPdfResults, setShowPdfResults] = useState(false);
     const [pdfResults, setPdfResults] = useState([]);
-    
+
     // Carrier and AI Processing State
     const [trainedCarriers, setTrainedCarriers] = useState([]);
     const [selectedCarrier, setSelectedCarrier] = useState('');
@@ -350,7 +350,7 @@ const APProcessing = () => {
             setLoadingCarriers(true);
             const getCarriersFunc = httpsCallable(functions, 'getTrainingCarriers');
             const result = await getCarriersFunc({ status: 'active' });
-            
+
             if (result.data?.success) {
                 const carriers = result.data.data?.carriers || [];
                 setTrainedCarriers(carriers);
@@ -368,13 +368,13 @@ const APProcessing = () => {
         try {
             setLoading(true);
             console.log('🔍 Loading global AP uploads (all companies)');
-            
+
             // Load all uploads globally - carrier invoices are not company-specific
             const uploadsQuery = query(
-            collection(db, 'apUploads'),
-            orderBy('uploadDate', 'desc'),
-            limit(100)
-        );
+                collection(db, 'apUploads'),
+                orderBy('uploadDate', 'desc'),
+                limit(100)
+            );
 
             const snapshot = await getDocs(uploadsQuery);
             console.log('✅ Global uploads query succeeded');
@@ -392,15 +392,15 @@ const APProcessing = () => {
             });
 
             console.log('✅ Loaded uploads from Firestore:', uploadsData.length, 'documents');
-            console.log('📋 Upload details:', uploadsData.map(u => ({ 
-                fileName: u.fileName, 
-                uploadedByCompany: u.uploadedByCompany, 
+            console.log('📋 Upload details:', uploadsData.map(u => ({
+                fileName: u.fileName,
+                uploadedByCompany: u.uploadedByCompany,
                 status: u.processingStatus,
-                uploadDate: u.uploadDate 
+                uploadDate: u.uploadDate
             })));
-            
+
             setUploads(uploadsData);
-            } catch (error) {
+        } catch (error) {
             console.error('❌ Error loading uploads:', error);
             enqueueSnackbar(`Failed to load uploads: ${error.message}`, { variant: 'error' });
         } finally {
@@ -412,7 +412,7 @@ const APProcessing = () => {
     const saveCompletedUploadToFirestore = async (file, extractedData, aiResults) => {
         try {
             console.log('💾 Saving completed upload to Firestore...');
-            
+
             const uploadDoc = {
                 fileName: file.name,
                 // Keep company info for reference but uploads are global
@@ -421,11 +421,11 @@ const APProcessing = () => {
                 uploadDate: serverTimestamp(),
                 processingStatus: 'completed',
                 type: 'pdf',
-                
+
                 // AI Processing Results
                 extractedData: extractedData,
                 aiResults: aiResults,
-                
+
                 // Metadata
                 metadata: {
                     uploadMethod: file.processingMethod || 'direct_base64',
@@ -434,11 +434,11 @@ const APProcessing = () => {
                     processingTime: new Date().toISOString(),
                     source: 'ap-processing'
                 },
-                
+
                 // Status tracking
                 status: 'pending_approval',
                 approvalStatus: 'pending',
-                
+
                 // Timestamps
                 uploadedAt: serverTimestamp(),
                 processedAt: serverTimestamp(),
@@ -447,12 +447,12 @@ const APProcessing = () => {
 
             const docRef = await addDoc(collection(db, 'apUploads'), uploadDoc);
             console.log('✅ Upload saved to Firestore with ID:', docRef.id);
-            
+
             // Refresh the uploads list to show the newly saved upload
             await loadUploads();
-            
+
             return docRef.id;
-            
+
         } catch (error) {
             console.error('❌ Error saving upload to Firestore:', error);
             enqueueSnackbar('Warning: Upload processed but not saved permanently', { variant: 'warning' });
@@ -468,7 +468,7 @@ const APProcessing = () => {
 
         acceptedFiles.forEach(async (file) => {
             console.log('Processing file:', file.name);
-            
+
             // Create temporary upload record
             const tempUpload = {
                 id: `temp-${Date.now()}-${Math.random()}`,
@@ -492,7 +492,7 @@ const APProcessing = () => {
                     uploadDate: serverTimestamp(),
                     processingStatus: 'uploading',
                     type: 'pdf',
-                    
+
                     // Metadata
                     metadata: {
                         uploadMethod: 'direct_base64',
@@ -501,11 +501,11 @@ const APProcessing = () => {
                         processingTime: new Date().toISOString(),
                         source: 'ap-processing'
                     },
-                    
+
                     // Status tracking
                     status: 'processing',
                     approvalStatus: 'pending',
-                    
+
                     // Timestamps
                     uploadedAt: serverTimestamp(),
                     lastUpdatedAt: serverTimestamp()
@@ -517,18 +517,18 @@ const APProcessing = () => {
 
                 // Update temp record with real Firestore ID
                 setUploads(prev => prev.map(upload =>
-                    upload.id === tempUpload.id 
+                    upload.id === tempUpload.id
                         ? { ...upload, id: docRef.id, _isTemporary: false }
                         : upload
                 ));
 
                 // Start upload process with real ID
                 uploadAndProcessFile(file, docRef.id);
-                
+
             } catch (error) {
                 console.error('❌ Failed to save upload to Firestore:', error);
                 enqueueSnackbar('Warning: Upload may not persist if processing fails', { variant: 'warning' });
-                
+
                 // Still try to process with temp ID
                 uploadAndProcessFile(file, tempUpload.id);
             }
@@ -538,63 +538,63 @@ const APProcessing = () => {
     const uploadAndProcessFile = async (file, tempId) => {
         try {
             console.log('🚀 Processing file directly (bypass storage):', file.name);
-            
+
             // Process file directly with base64 to avoid Firebase Storage CORS issues
             const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
                     const base64Data = e.target.result.split(',')[1]; // Remove data:mime;base64, prefix
                     console.log('📄 File converted to base64, starting AI extraction...');
-                    
-                // Update status to processing
-                setUploads(prev => prev.map(upload =>
-                        upload.id === tempId 
+
+                    // Update status to processing
+                    setUploads(prev => prev.map(upload =>
+                        upload.id === tempId
                             ? { ...upload, processingStatus: 'processing' }
-                        : upload
-                ));
+                            : upload
+                    ));
 
                     // Process directly with base64 data
-                    const fileObj = { 
-                        name: file.name, 
+                    const fileObj = {
+                        name: file.name,
                         uploadId: tempId,
                         base64Data: base64Data,
                         processingMethod: 'direct_base64'
                     };
-                    
+
                     await runAIExtraction(fileObj);
-                    
+
                     enqueueSnackbar('File processing started successfully', { variant: 'success' });
-                    
+
                 } catch (processingError) {
                     console.error('📄 Processing failed:', processingError);
-            setUploads(prev => prev.map(upload =>
-                        upload.id === tempId 
+                    setUploads(prev => prev.map(upload =>
+                        upload.id === tempId
                             ? { ...upload, processingStatus: 'error', error: processingError.message }
-                    : upload
-            ));
+                            : upload
+                    ));
                     enqueueSnackbar(`Processing failed: ${processingError.message}`, { variant: 'error' });
                 }
             };
-            
+
             reader.onerror = () => {
                 console.error('📄 File reading failed');
-                    setUploads(prev => prev.map(upload =>
-                    upload.id === tempId 
+                setUploads(prev => prev.map(upload =>
+                    upload.id === tempId
                         ? { ...upload, processingStatus: 'error', error: 'Failed to read file' }
-                            : upload
-                    ));
+                        : upload
+                ));
                 enqueueSnackbar('Failed to read file', { variant: 'error' });
             };
-            
+
             reader.readAsDataURL(file);
 
         } catch (error) {
             console.error('💥 File processing error:', error);
-                setUploads(prev => prev.map(upload =>
-                upload.id === tempId 
+            setUploads(prev => prev.map(upload =>
+                upload.id === tempId
                     ? { ...upload, processingStatus: 'error', error: error.message }
-                        : upload
-                ));
+                    : upload
+            ));
             enqueueSnackbar(`File processing failed: ${error.message}`, { variant: 'error' });
         }
     };
@@ -607,19 +607,19 @@ const APProcessing = () => {
 
         try {
             console.log('🤖 Starting AI extraction for:', file.name);
-            console.log('📋 File object received:', { 
-                name: file.name, 
-                hasBase64: !!file.base64Data, 
+            console.log('📋 File object received:', {
+                name: file.name,
+                hasBase64: !!file.base64Data,
                 hasUrl: !!(file.url || file.downloadURL),
-                processingMethod: file.processingMethod 
+                processingMethod: file.processingMethod
             });
-            
+
             const testCarrierModel = httpsCallable(functions, 'testCarrierModel');
-            
+
             // Handle different file input types
             let base64Data = file.base64Data; // Use existing base64Data if available
             let fileName = file.name;
-            
+
             // If it's a File object, convert to base64
             if (file instanceof File) {
                 console.log('📄 Converting File object to base64...');
@@ -628,7 +628,7 @@ const APProcessing = () => {
                 base64Data = btoa(String.fromCharCode.apply(null, uint8Array));
                 fileName = file.name;
             }
-            
+
             // Validate required parameters
             if (!selectedCarrier || !fileName || !base64Data) {
                 throw new Error(`Missing required parameters: carrierId=${!!selectedCarrier}, fileName=${!!fileName}, base64Data=${!!base64Data}`);
@@ -648,8 +648,8 @@ const APProcessing = () => {
                 fileUrl: file.url || file.downloadURL || null,
                 testType: 'ap_processing',
                 expectedResults: null,
-                metadata: { 
-                    source: 'ap-processing', 
+                metadata: {
+                    source: 'ap-processing',
                     ui: 'v2',
                     enhancedExtraction: true,
                     includeAllFields: true,
@@ -659,7 +659,7 @@ const APProcessing = () => {
 
             if (result.data?.success) {
                 console.log('✅ AI extraction completed:', result.data.testResults);
-                
+
                 // Check if carrier-specific prompt was used
                 const usedCarrierPrompt = result.data.testResults?.metadata?.usedCarrierSpecificPrompt;
                 if (usedCarrierPrompt) {
@@ -669,12 +669,12 @@ const APProcessing = () => {
                     console.log('📋 AP Processing used generic AI prompt (no carrier-specific prompt available)');
                     enqueueSnackbar('AI extraction completed', { variant: 'success' });
                 }
-                
+
                 // Process the extracted data
                 const extractedData = result.data.testResults?.aiResults?.enhancedResults?.extractedData;
                 if (extractedData) {
                     const normalizedData = normalizeAIDataForTable(extractedData, file, result.data.testResults);
-                    
+
                     // Update existing Firestore record instead of creating new one
                     const uploadId = file.uploadId || file.id;
                     if (uploadId && uploadId.length > 20) { // Real Firestore ID
@@ -691,12 +691,12 @@ const APProcessing = () => {
                             console.error('❌ Failed to update Firestore record:', updateError);
                         }
                     }
-                    
+
                     // Update the upload record with completion status
                     setUploads(prev => prev.map(upload =>
                         upload.id === file.uploadId || upload.fileName === file.name
-                            ? { 
-                                ...upload, 
+                            ? {
+                                ...upload,
                                 processingStatus: 'completed',
                                 extractedData: normalizedData,
                                 aiResults: result.data.testResults
@@ -707,7 +707,7 @@ const APProcessing = () => {
                     setPdfResults([normalizedData]);
                     setShowPdfResults(true);
                 }
-                
+
                 return result.data.testResults;
             } else {
                 throw new Error(result.data?.error || 'AI extraction failed');
@@ -715,9 +715,9 @@ const APProcessing = () => {
         } catch (error) {
             console.error('❌ AI extraction error:', error);
             enqueueSnackbar(`AI extraction failed: ${error.message}`, { variant: 'error' });
-            
+
             // Update upload status to error
-            setUploads(prev => prev.map(upload => 
+            setUploads(prev => prev.map(upload =>
                 upload.id === file.uploadId || upload.fileName === file.name
                     ? { ...upload, processingStatus: 'error', error: error.message }
                     : upload
@@ -754,7 +754,7 @@ const APProcessing = () => {
         // Check for multi-shipment structure first (new format)
         if (extractedData.shipments && Array.isArray(extractedData.shipments) && extractedData.shipments.length > 0) {
             console.log('📦 Found multi-shipment structure with', extractedData.shipments.length, 'shipments');
-            
+
             const shipments = extractedData.shipments.map((shipmentData, index) => {
                 const charges = (shipmentData.charges || []).map((charge, idx) => ({
                     id: `ai-charge-${index}-${idx}`,
@@ -867,15 +867,15 @@ const APProcessing = () => {
     const handleViewResults = async (upload) => {
         try {
             setSelectedUpload(upload);
-            
+
             if (upload.extractedData) {
                 setPdfResults([upload.extractedData]);
-                } else {
+            } else {
                 setPdfResults([]);
-                }
+            }
 
-                setShowPdfResults(true);
-            } catch (error) {
+            setShowPdfResults(true);
+        } catch (error) {
             console.error('Error viewing results:', error);
             enqueueSnackbar('Failed to load results', { variant: 'error' });
         }
@@ -888,7 +888,7 @@ const APProcessing = () => {
 
     const handleApproveAPResults = async (approvalData) => {
         try {
-        setApproving(true);
+            setApproving(true);
 
             const approveAPInvoice = httpsCallable(functions, 'approveAPInvoice');
             const result = await approveAPInvoice({
@@ -903,10 +903,10 @@ const APProcessing = () => {
                 enqueueSnackbar('AP invoice approved successfully!', { variant: 'success' });
                 handleClosePdfResults();
                 loadUploads(); // Refresh the list
-                } else {
+            } else {
                 throw new Error(result.data?.error || 'Approval failed');
-                }
-            } catch (error) {
+            }
+        } catch (error) {
             console.error('Approval error:', error);
             enqueueSnackbar(`Approval failed: ${error.message}`, { variant: 'error' });
         } finally {
@@ -916,47 +916,47 @@ const APProcessing = () => {
 
     const renderUploadCard = (upload) => (
         <Card key={upload.id} elevation={0} sx={{ border: '1px solid #e5e7eb', mb: 2 }}>
-                        <CardContent sx={{ p: 2 }}>
+            <CardContent sx={{ p: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600 }}>
                             {upload.fileName}
-                                    </Typography>
+                        </Typography>
                         <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
                             {upload.uploadDate?.toLocaleDateString?.()} • {upload.carrier || 'No carrier'}
-                                    </Typography>
-                                </Box>
-                    
+                        </Typography>
+                    </Box>
+
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                                            <Chip
+                        <Chip
                             label={upload.processingStatus || 'pending'}
-                                                                size="small"
+                            size="small"
                             color={
                                 upload.processingStatus === 'completed' ? 'success' :
-                                upload.processingStatus === 'error' ? 'error' :
-                                upload.processingStatus === 'processing' ? 'warning' : 'default'
+                                    upload.processingStatus === 'error' ? 'error' :
+                                        upload.processingStatus === 'processing' ? 'warning' : 'default'
                             }
-                                                                sx={{ fontSize: '10px' }}
-                                                            />
-                        
+                            sx={{ fontSize: '10px' }}
+                        />
+
                         {upload.processingStatus === 'completed' && (
-                                    <Button
-                                        size="small"
+                            <Button
+                                size="small"
                                 variant="outlined"
                                 onClick={() => handleViewResults(upload)}
                                 sx={{ fontSize: '10px' }}
                             >
                                 View Results
-                                    </Button>
-                                                            )}
-                                                        </Box>
-                                                    </Box>
-                
+                            </Button>
+                        )}
+                    </Box>
+                </Box>
+
                 {upload.processingStatus === 'processing' && (
                     <LinearProgress sx={{ mt: 1 }} />
                 )}
             </CardContent>
-                            </Card>
+        </Card>
     );
 
     return (
@@ -965,12 +965,12 @@ const APProcessing = () => {
             <Box sx={{ px: 3, py: 2, mb: 3, borderBottom: '1px solid #e5e7eb', backgroundColor: '#f8fafc' }}>
                 <Typography variant="h4" sx={{ mb: 2, fontWeight: 600, fontSize: '22px' }}>
                     AP Processing
-                                </Typography>
+                </Typography>
                 <AdminBreadcrumb currentPage="AP Processing" />
                 <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
                     Select a trained carrier, upload an invoice, and the AI will extract all details automatically
-                                </Typography>
-                                        </Box>
+                </Typography>
+            </Box>
 
             {/* Main Content */}
             <Box sx={{ px: 3 }}>
@@ -978,7 +978,7 @@ const APProcessing = () => {
                 <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb' }}>
                     <Typography variant="h6" sx={{ mb: 2, fontSize: '14px', fontWeight: 600 }}>
                         1. Select Carrier
-                                    </Typography>
+                    </Typography>
                     <Autocomplete
                         value={trainedCarriers.find(c => c.id === selectedCarrier) || null}
                         onChange={(_, carrier) => setSelectedCarrier(carrier?.id || '')}
@@ -990,7 +990,7 @@ const APProcessing = () => {
                                 {...params}
                                 label="Select Trained Carrier"
                                 placeholder="Choose a carrier that has been trained for invoice processing"
-                                                size="small"
+                                size="small"
                                 InputProps={{
                                     ...params.InputProps,
                                     endAdornment: (
@@ -1004,21 +1004,21 @@ const APProcessing = () => {
                         )}
                         sx={{ maxWidth: 400 }}
                     />
-                            </Paper>
+                </Paper>
 
                 {/* File Upload */}
                 <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb' }}>
                     <Typography variant="h6" sx={{ mb: 2, fontSize: '14px', fontWeight: 600 }}>
                         2. Upload Invoice
-                                        </Typography>
-                    
+                    </Typography>
+
                     <Box
                         {...getRootProps()}
-                                        sx={{
+                        sx={{
                             border: '2px dashed #d1d5db',
                             borderRadius: '8px',
-                                            p: 4,
-                                            textAlign: 'center',
+                            p: 4,
+                            textAlign: 'center',
                             cursor: selectedCarrier ? 'pointer' : 'not-allowed',
                             backgroundColor: isDragActive ? '#f3f4f6' : selectedCarrier ? '#ffffff' : '#f9fafb',
                             opacity: selectedCarrier ? 1 : 0.6,
@@ -1027,24 +1027,24 @@ const APProcessing = () => {
                     >
                         <input {...getInputProps()} disabled={!selectedCarrier} />
                         <CloudUploadIcon sx={{ fontSize: 48, color: '#9ca3af', mb: 2 }} />
-                                        <Typography variant="h6" sx={{ mb: 1, fontSize: '16px', fontWeight: 600 }}>
+                        <Typography variant="h6" sx={{ mb: 1, fontSize: '16px', fontWeight: 600 }}>
                             {isDragActive ? 'Drop files here' : 'Upload Invoice PDF'}
-                                        </Typography>
+                        </Typography>
                         <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                            {selectedCarrier 
+                            {selectedCarrier
                                 ? 'Drag & drop PDF files here, or click to select'
                                 : 'Please select a carrier first'
                             }
-                                        </Typography>
-                                    </Box>
-                                </Paper>
+                        </Typography>
+                    </Box>
+                </Paper>
 
                 {/* Recent Uploads */}
                 <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb' }}>
                     <Typography variant="h6" sx={{ mb: 2, fontSize: '14px', fontWeight: 600 }}>
                         Recent Uploads
-                                    </Typography>
-                    
+                    </Typography>
+
                     {loading ? (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             {Array.from({ length: 3 }).map((_, index) => (
@@ -1072,15 +1072,15 @@ const APProcessing = () => {
                             <DocumentIcon sx={{ fontSize: 48, color: '#9ca3af', mb: 2 }} />
                             <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
                                 No uploads yet. Select a carrier and upload an invoice to get started.
-                                    </Typography>
-                                </Box>
+                            </Typography>
+                        </Box>
                     ) : (
-                                                    <Box>
+                        <Box>
                             {uploads.slice(0, 10).map(renderUploadCard)}
-                                                    </Box>
+                        </Box>
                     )}
-                                        </Paper>
-                                                    </Box>
+                </Paper>
+            </Box>
 
             {/* Results Dialog */}
             {showPdfResults && selectedUpload && (
@@ -1091,21 +1091,21 @@ const APProcessing = () => {
                     fullWidth
                     fullScreen={window.innerWidth < 960}
                 >
-                <DialogTitle sx={{
+                    <DialogTitle sx={{
                         fontSize: '16px',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
                         justifyContent: 'space-between'
                     }}>
                         AP Processing Results - {selectedUpload.fileName || selectedUpload.name}
                         <IconButton onClick={handleClosePdfResults} size="small">
-                        <CloseIcon />
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent sx={{ p: 0 }}>
+                            <CloseIcon />
+                        </IconButton>
+                    </DialogTitle>
+                    <DialogContent sx={{ p: 0 }}>
                         {selectedUpload.extractedData && (
-                            <PdfResultsTable 
+                            <PdfResultsTable
                                 pdfResults={selectedUpload.extractedData}
                                 onClose={handleClosePdfResults}
                                 onViewShipmentDetail={(shipment) => {
@@ -1127,7 +1127,7 @@ const APProcessing = () => {
                     </DialogContent>
                 </Dialog>
             )}
-                                                </Box>
+        </Box>
     );
 };
 

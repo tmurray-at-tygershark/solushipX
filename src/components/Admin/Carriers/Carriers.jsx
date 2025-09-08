@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import RateCardManagement from './components/RateCardManagement';
 import QuickShipConversionWizard from './components/QuickShipConversionWizard';
+import QuickShipZoneRateManagement from './components/QuickShipZoneRateManagement';
 import {
     Box,
     Paper,
@@ -329,7 +330,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     const { companyIdForAddress } = useCompany();
 
     // Main tab state - NEW: Two-tab system
-    const [mainTab, setMainTab] = useState(0); // 0 = Connected Carriers, 1 = Quickship Carriers
+    const [mainTab, setMainTab] = useState(0); // 0 = Quickship Carriers, 1 = Connected Carriers
 
     // Connected Carriers data states (existing functionality)
     const [carriers, setCarriers] = useState([]);
@@ -414,6 +415,10 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     // Rate management dialog states
     const [showRateCardManagement, setShowRateCardManagement] = useState(false);
     const [rateCardCarrier, setRateCardCarrier] = useState(null);
+
+    // QuickShip zone management dialog states
+    const [showZoneRateManagement, setShowZoneRateManagement] = useState(false);
+    const [zoneRateCarrier, setZoneRateCarrier] = useState(null);
 
     // Carrier routing dialog states
     const [showRoutingDialog, setShowRoutingDialog] = useState(false);
@@ -861,16 +866,21 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         setQuickshipActionMenuAnchor(null);
     };
 
-    // NEW: Rate card management handlers
+    // NEW: Rate card management handlers - opens zone management directly
     const handleManageRateCards = (carrier) => {
-        setRateCardCarrier(carrier);
-        setShowRateCardManagement(true);
+        setZoneRateCarrier(carrier);
+        setShowZoneRateManagement(true);
         setQuickshipActionMenuAnchor(null);
     };
 
     const handleCloseRateCardManagement = () => {
         setShowRateCardManagement(false);
         setRateCardCarrier(null);
+    };
+
+    const handleCloseZoneRateManagement = () => {
+        setShowZoneRateManagement(false);
+        setZoneRateCarrier(null);
     };
 
     // NEW: Carrier routing handlers
@@ -990,14 +1000,14 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     // NEW: Load companies and quickship carriers when component mounts or dependencies change
     useEffect(() => {
         fetchCompanies();
-        if (mainTab === 1) { // Only load quickship carriers when on quickship tab
+        if (mainTab === 0) { // Only load quickship carriers when on quickship tab
             fetchQuickshipCarriers();
         }
     }, [fetchCompanies, fetchQuickshipCarriers, mainTab]);
 
     // NEW: Reload quickship carriers when company filter changes
     useEffect(() => {
-        if (mainTab === 1) {
+        if (mainTab === 0) {
             fetchQuickshipCarriers();
         }
     }, [selectedCompany, fetchQuickshipCarriers, mainTab]);
@@ -1118,10 +1128,14 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         setTotalCount(filtered.length);
     }, [allCarriers, selectedTab, searchFields, filters, page, rowsPerPage]);
 
-    // Load data on component mount
+    // Load data on component mount - load quickship carriers by default since it's tab 0
     useEffect(() => {
-        fetchCarriers();
-    }, []);
+        if (mainTab === 0) {
+            fetchQuickshipCarriers();
+        } else if (mainTab === 1) {
+            fetchCarriers();
+        }
+    }, [mainTab, fetchQuickshipCarriers, fetchCarriers]);
 
     // Form handlers
     const handleOpenDialog = (carrier = null) => {
@@ -1901,15 +1915,15 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         size="small"
                         startIcon={<AddIcon />}
                         onClick={
-                            mainTab === 0 ? handleOpenAddCarrier :
-                                mainTab === 1 ? handleAddQuickshipCarrier :
+                            mainTab === 0 ? handleAddQuickshipCarrier :
+                                mainTab === 1 ? handleOpenAddCarrier :
                                     handleAddEligibilityRule
                         }
-                        disabled={mainTab === 1 && (selectedCompany === 'all' || !selectedCompany)}
+                        disabled={mainTab === 0 && (selectedCompany === 'all' || !selectedCompany)}
                         sx={{ fontSize: '12px' }}
                     >
-                        {mainTab === 0 ? 'Add Connected Carrier' :
-                            mainTab === 1 ? 'Add Quickship Carrier' :
+                        {mainTab === 0 ? 'Add Quickship Carrier' :
+                            mainTab === 1 ? 'Add Connected Carrier' :
                                 'Add Eligibility Rule'}
                     </Button>
                 </Box>
@@ -1930,11 +1944,11 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         }}
                     >
                         <Tab
-                            label="Connected Carriers"
+                            label="Quickship Carriers"
                             value={0}
                         />
                         <Tab
-                            label="Quickship Carriers"
+                            label="Connected Carriers"
                             value={1}
                         />
                         <Tab
@@ -1945,7 +1959,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 </Box>
 
                 {/* Connected Carriers Sub-tabs and Filters Row - Only show when on Connected Carriers tab */}
-                {mainTab === 0 && (
+                {mainTab === 1 && (
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Tabs
                             value={selectedTab}
@@ -1981,7 +1995,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 )}
 
                 {/* Connected Carriers Filters Panel - Only show when on Connected Carriers tab */}
-                {mainTab === 0 && (
+                {mainTab === 1 && (
                     <Collapse in={filtersOpen}>
                         <Paper sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
                             <Grid container spacing={2}>
@@ -2049,6 +2063,9 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
             {/* Content Section - Show different content based on main tab */}
             <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                 {mainTab === 0 ? (
+                    // Quickship Carriers Content
+                    renderQuickshipCarriersView()
+                ) : (
                     // Connected Carriers Content
                     <>
                         <Box sx={{ width: '100%', px: 2 }}>
@@ -2217,14 +2234,11 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                             />
                         </Box>
                     </>
-                ) : (
-                    // Quickship Carriers Content
-                    renderQuickshipCarriersView()
                 )}
             </Box>
 
             {/* Pagination Section - Only for Connected Carriers */}
-            {mainTab === 0 && (
+            {mainTab === 1 && (
                 <Box sx={{ flexShrink: 0 }}>
                     <CarriersPagination
                         totalCount={totalCount}
@@ -2285,11 +2299,11 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                 variant="contained"
                                 size="small"
                                 startIcon={<AddIcon />}
-                                onClick={mainTab === 0 ? handleOpenAddCarrier : handleAddQuickshipCarrier}
-                                disabled={mainTab === 1 && (selectedCompany === 'all' || !selectedCompany)}
+                                onClick={mainTab === 0 ? handleAddQuickshipCarrier : handleOpenAddCarrier}
+                                disabled={mainTab === 0 && (selectedCompany === 'all' || !selectedCompany)}
                                 sx={{ fontSize: '12px' }}
                             >
-                                {mainTab === 0 ? 'Add Connected Carrier' : 'Add Quickship Carrier'}
+                                {mainTab === 0 ? 'Add Quickship Carrier' : 'Add Connected Carrier'}
                             </Button>
                         </Box>
 
@@ -2309,18 +2323,18 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                 }}
                             >
                                 <Tab
-                                    label="Connected Carriers"
+                                    label="Quickship Carriers"
                                     value={0}
                                 />
                                 <Tab
-                                    label="Quickship Carriers"
+                                    label="Connected Carriers"
                                     value={1}
                                 />
                             </Tabs>
                         </Box>
 
                         {/* Connected Carriers Sub-tabs and Filters Row - Only show when on Connected Carriers tab */}
-                        {mainTab === 0 && (
+                        {mainTab === 1 && (
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Tabs
                                     value={selectedTab}
@@ -2356,7 +2370,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         )}
 
                         {/* Quickship Carriers Company Filter Row - Only show when on Quickship Carriers tab */}
-                        {mainTab === 1 && (
+                        {mainTab === 0 && (
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <FormControl size="small" sx={{ minWidth: 200 }}>
                                     <InputLabel sx={{ fontSize: '12px' }}>Filter by Company</InputLabel>
@@ -2432,7 +2446,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         )}
 
                         {/* Connected Carriers Filters Panel */}
-                        {mainTab === 0 && (
+                        {mainTab === 1 && (
                             <Collapse in={filtersOpen}>
                                 <Paper sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
                                     <Grid container spacing={2}>
@@ -2500,6 +2514,9 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                     {/* Content Section - Show different content based on main tab */}
                     <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                         {mainTab === 0 ? (
+                            // Quickship Carriers Content
+                            renderQuickshipCarriersView()
+                        ) : (
                             // Connected Carriers Content
                             <Box sx={{ width: '100%', px: 2 }}>
                                 {loading ? (
@@ -2655,14 +2672,11 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                     </Table>
                                 )}
                             </Box>
-                        ) : (
-                            // Quickship Carriers Content
-                            renderQuickshipCarriersView()
                         )}
                     </Box>
 
                     {/* Pagination Section - Only for Connected Carriers */}
-                    {mainTab === 0 && (
+                    {mainTab === 1 && (
                         <Box sx={{ flexShrink: 0 }}>
                             <CarriersPagination
                                 totalCount={totalCount}
@@ -3549,6 +3563,14 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 onClose={handleCloseRateCardManagement}
                 carrierId={rateCardCarrier?.id}
                 carrierName={rateCardCarrier?.name}
+            />
+
+            {/* QuickShip Zone Rate Management Dialog */}
+            <QuickShipZoneRateManagement
+                isOpen={showZoneRateManagement}
+                onClose={handleCloseZoneRateManagement}
+                carrierId={zoneRateCarrier?.id}
+                carrierName={zoneRateCarrier?.name}
             />
 
             {/* Carrier Routing Dialog */}
