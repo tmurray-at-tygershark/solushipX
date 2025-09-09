@@ -64,12 +64,23 @@ const SmartCitySelector = ({
         setLoading(true);
         try {
             if (selectedCities && selectedCities.length > 0) {
-                // Add status field to each city (default to enabled)
-                const citiesWithStatus = selectedCities.map(city => ({
-                    ...city,
-                    status: city.status || 'enabled',
-                    id: city.searchKey || city.id
-                }));
+                // Add status field to each city and remove duplicates
+                const seenIds = new Set();
+                const citiesWithStatus = selectedCities
+                    .filter(city => {
+                        const cityId = city.searchKey || city.id;
+                        if (seenIds.has(cityId)) {
+                            console.warn(`🚨 [SmartCitySelector] Removing duplicate on load: ${city.city} (${cityId})`);
+                            return false;
+                        }
+                        seenIds.add(cityId);
+                        return true;
+                    })
+                    .map(city => ({
+                        ...city,
+                        status: city.status || 'enabled',
+                        id: city.searchKey || city.id
+                    }));
 
                 setActivatedCities(citiesWithStatus);
                 setFilteredCities(citiesWithStatus);
@@ -227,26 +238,48 @@ const SmartCitySelector = ({
         }
     }, [sortBy]);
 
-    // Handle map selection completion
+    // Handle map selection completion - FIXED to handle both addition and deletion
     const handleMapSelectionComplete = useCallback((incomingCities) => {
-        // Merge with current activated cities
-        const existingIds = new Set(activatedCities.map(c => c.id));
-        const newCities = incomingCities.filter(c => !existingIds.has(c.id || c.searchKey));
+        console.log(`🗺️ [SmartCitySelector] Map selection complete:`, {
+            currentActivated: activatedCities.length,
+            incomingCities: incomingCities.length,
+            incomingCityNames: incomingCities.map(c => c.city).slice(0, 5)
+        });
 
-        if (newCities.length > 0) {
-            const citiesWithStatus = newCities.map(city => ({
+        // FIXED: Replace entire activated cities list with incoming cities
+        // This handles both addition (more cities) and deletion (fewer cities)
+        // DUPLICATE PREVENTION: Remove duplicates by searchKey/id
+        const seenIds = new Set();
+        const citiesWithStatus = incomingCities
+            .filter(city => {
+                const cityId = city.searchKey || city.id;
+                if (seenIds.has(cityId)) {
+                    console.warn(`🚨 [SmartCitySelector] Duplicate city detected: ${city.city} (${cityId})`);
+                    return false;
+                }
+                seenIds.add(cityId);
+                return true;
+            })
+            .map(city => ({
                 ...city,
                 status: 'enabled',
                 id: city.searchKey || city.id
             }));
 
-            const updatedCities = [...activatedCities, ...citiesWithStatus];
-            setActivatedCities(updatedCities);
-            onSelectionComplete(updatedCities);
+        console.log(`🔄 [SmartCitySelector] Replacing ${activatedCities.length} cities with ${citiesWithStatus.length} cities`);
 
-            enqueueSnackbar(`✅ Added ${newCities.length} cities from map`, { variant: 'success' });
-            setActiveTab(0); // Switch back to manage cities tab
+        setActivatedCities(citiesWithStatus);
+        onSelectionComplete(citiesWithStatus);
+
+        const changeType = citiesWithStatus.length > activatedCities.length ? 'Added' :
+            citiesWithStatus.length < activatedCities.length ? 'Removed' : 'Updated';
+        const changeCount = Math.abs(citiesWithStatus.length - activatedCities.length);
+
+        if (changeCount > 0) {
+            enqueueSnackbar(`✅ ${changeType} ${changeCount} cities from map`, { variant: 'success' });
         }
+
+        setActiveTab(0); // Switch back to manage cities tab
     }, [activatedCities, onSelectionComplete, enqueueSnackbar]);
 
     // Pagination
@@ -269,9 +302,19 @@ const SmartCitySelector = ({
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     InputProps={{
-                        startAdornment: <SearchIcon sx={{ color: '#9ca3af', mr: 1 }} />
+                        startAdornment: <SearchIcon sx={{ color: '#9ca3af', mr: 1 }} />,
+                        sx: { fontSize: '12px' }
                     }}
-                    sx={{ fontSize: '12px' }}
+                    InputLabelProps={{
+                        sx: { fontSize: '12px' }
+                    }}
+                    sx={{
+                        fontSize: '12px',
+                        '& input::placeholder': {
+                            fontSize: '12px',
+                            opacity: 0.7
+                        }
+                    }}
                 />
             </Grid>
             <Grid item xs={6} md={3}>
@@ -620,11 +663,23 @@ const SmartCitySelector = ({
                         id: city.searchKey || city.id
                     }));
 
-                    const updatedCities = [...activatedCities, ...citiesWithStatus];
-                    console.log('🏙️ [SmartCitySelector] Updated cities count:', updatedCities.length);
+                    // DUPLICATE PREVENTION: Combine and remove duplicates
+                    const allCities = [...activatedCities, ...citiesWithStatus];
+                    const seenIds = new Set();
+                    const deduplicatedCities = allCities.filter(city => {
+                        const cityId = city.searchKey || city.id;
+                        if (seenIds.has(cityId)) {
+                            console.warn(`🚨 [SmartCitySelector] Duplicate city filtered: ${city.city} (${cityId})`);
+                            return false;
+                        }
+                        seenIds.add(cityId);
+                        return true;
+                    });
 
-                    setActivatedCities(updatedCities);
-                    onSelectionComplete(updatedCities);
+                    console.log('🏙️ [SmartCitySelector] Updated cities count:', deduplicatedCities.length);
+
+                    setActivatedCities(deduplicatedCities);
+                    onSelectionComplete(deduplicatedCities);
 
                     // Clear search filters to ensure newly added cities are visible
                     setSearchTerm('');
@@ -659,7 +714,7 @@ const SmartCitySelector = ({
 
 // Add City Dialog Component
 const AddCityDialog = ({ open, onClose, onCityAdd, zoneCategory, existingCityIds }) => {
-    const { searchCities } = useGeographicData();
+    const { searchCities, getCityByPostalCode } = useGeographicData();
     const { enqueueSnackbar } = useSnackbar();
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -667,7 +722,7 @@ const AddCityDialog = ({ open, onClose, onCityAdd, zoneCategory, existingCityIds
     const [loading, setLoading] = useState(false);
     const [selectedCities, setSelectedCities] = useState([]);
 
-    // Search for cities to add
+    // Enhanced search for cities including postal/zip codes
     const handleSearch = useCallback(async () => {
         if (!searchTerm.trim()) {
             setSearchResults([]);
@@ -676,19 +731,54 @@ const AddCityDialog = ({ open, onClose, onCityAdd, zoneCategory, existingCityIds
 
         setLoading(true);
         try {
-            const results = await searchCities(searchTerm);
+            let results = [];
+
+            // Check if search term looks like a postal/zip code (more specific patterns)
+            const trimmedTerm = searchTerm.trim();
+            const isCanadianPostal = /^[A-Za-z]\d[A-Za-z](\s?\d[A-Za-z]\d)?$/i.test(trimmedTerm); // K1A 0A6 or K1A
+            const isUSZip = /^\d{5}(-?\d{4})?$/.test(trimmedTerm); // 12345 or 12345-6789
+            const isPostalCode = isCanadianPostal || isUSZip;
+
+            if (isPostalCode) {
+                // Search by postal/zip code first
+                console.log(`🔍 [AddCityDialog] Searching postal code: "${trimmedTerm}" (Canadian: ${isCanadianPostal}, US: ${isUSZip})`);
+                const postalResult = await getCityByPostalCode(trimmedTerm);
+                console.log(`🔍 [AddCityDialog] Postal code result:`, postalResult);
+                if (postalResult) {
+                    results = [postalResult];
+                }
+            }
+
+            // Also search by city name (always do this for comprehensive results)
+            const cityResults = await searchCities(searchTerm);
+
+            // Combine results and remove duplicates
+            const allResults = [...results, ...cityResults];
+            const uniqueResults = allResults.filter((city, index, self) =>
+                index === self.findIndex(c => (c.searchKey || c.id) === (city.searchKey || city.id))
+            );
+
             // Filter out cities that are already activated
-            const newCities = results.filter(city =>
+            const newCities = uniqueResults.filter(city =>
                 !existingCityIds.has(city.searchKey || city.id)
             );
+
             setSearchResults(newCities);
+
+            console.log(`🔍 [AddCityDialog] Search results for "${searchTerm}":`, {
+                isPostalCode,
+                totalResults: uniqueResults.length,
+                availableResults: newCities.length,
+                searchType: isPostalCode ? 'postal/zip + city' : 'city only'
+            });
+
         } catch (error) {
             console.error('Search error:', error);
             enqueueSnackbar('Search failed', { variant: 'error' });
         } finally {
             setLoading(false);
         }
-    }, [searchTerm, searchCities, existingCityIds, enqueueSnackbar]);
+    }, [searchTerm, searchCities, getCityByPostalCode, existingCityIds, enqueueSnackbar]);
 
     // Auto-search when term changes
     useEffect(() => {
@@ -706,6 +796,18 @@ const AddCityDialog = ({ open, onClose, onCityAdd, zoneCategory, existingCityIds
             }
         });
     }, []);
+
+    // Handle select all / deselect all
+    const handleSelectAll = useCallback(() => {
+        const allSelected = selectedCities.length === searchResults.length;
+        if (allSelected) {
+            // Deselect all
+            setSelectedCities([]);
+        } else {
+            // Select all
+            setSelectedCities(searchResults);
+        }
+    }, [selectedCities.length, searchResults]);
 
     const handleAddSelectedCities = useCallback(() => {
         if (selectedCities.length === 0) {
@@ -735,13 +837,24 @@ const AddCityDialog = ({ open, onClose, onCityAdd, zoneCategory, existingCityIds
                 <Box sx={{ mb: 2 }}>
                     <TextField
                         fullWidth
-                        placeholder="Search for cities to add..."
+                        size="small"
+                        placeholder="Search cities by name, postal code, or zip code..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         InputProps={{
-                            startAdornment: <SearchIcon sx={{ color: '#9ca3af', mr: 1 }} />
+                            startAdornment: <SearchIcon sx={{ color: '#9ca3af', mr: 1 }} />,
+                            sx: { fontSize: '12px' }
                         }}
-                        sx={{ fontSize: '12px' }}
+                        InputLabelProps={{
+                            sx: { fontSize: '12px' }
+                        }}
+                        sx={{
+                            fontSize: '12px',
+                            '& input::placeholder': {
+                                fontSize: '12px',
+                                opacity: 0.7
+                            }
+                        }}
                     />
                 </Box>
 
