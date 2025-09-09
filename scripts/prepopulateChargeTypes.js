@@ -43,8 +43,7 @@ const EXISTING_CHARGE_TYPES = [
     { code: 'HST NL', label: 'HST Newfoundland', category: 'taxes', taxable: false, commissionable: false, enabled: true, isCore: false, displayOrder: 17 },
     { code: 'HST PE', label: 'HST Prince Edward Island', category: 'taxes', taxable: false, commissionable: false, enabled: true, isCore: false, displayOrder: 18 },
     
-    // Provincial PST
-    { code: 'PST BC', label: 'PST BC', category: 'taxes', taxable: false, commissionable: false, enabled: true, isCore: false, displayOrder: 19 },
+    // Provincial PST (PST BC removed - freight services PST exempt in BC)
     { code: 'PST SK', label: 'PST Saskatchewan', category: 'taxes', taxable: false, commissionable: false, enabled: true, isCore: false, displayOrder: 20 },
     { code: 'PST MB', label: 'PST Manitoba', category: 'taxes', taxable: false, commissionable: false, enabled: true, isCore: false, displayOrder: 21 },
     

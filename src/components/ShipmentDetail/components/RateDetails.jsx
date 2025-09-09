@@ -767,6 +767,13 @@ const RateDetails = ({
             try {
                 // Load exchange rates once for all calculations
                 const shipmentDate = shipment?.bookedAt || shipment?.createdAt || shipment?.shipmentDate;
+                console.log('📅 [RateDetails] Shipment date for exchange rates:', {
+                    shipmentDate,
+                    bookedAt: shipment?.bookedAt,
+                    createdAt: shipment?.createdAt,
+                    shipmentInfoDate: shipment?.shipmentDate
+                });
+
                 const rates = shipmentDate
                     ? await currencyConversionService.getRatesForDate(new Date(shipmentDate))
                     : await currencyConversionService.getLatestRates();
@@ -855,14 +862,22 @@ const RateDetails = ({
 
         // Get exchange rates for conversion
         const shipmentDate = shipment?.bookedAt || shipment?.createdAt || shipment?.shipmentDate;
+        console.log('💱 [Totals] Loading exchange rates for totals calculation:', { shipmentDate });
+
         let rates = exchangeRates;
         if (!rates) {
             try {
                 rates = shipmentDate
                     ? await currencyConversionService.getRatesForDate(new Date(shipmentDate))
                     : await currencyConversionService.getLatestRates();
+                console.log('💱 [Totals] Exchange rates loaded for totals:', {
+                    USD: rates.USD,
+                    provider: rates.provider,
+                    isFallback: rates.isFallback,
+                    timestamp: rates.timestamp
+                });
             } catch (error) {
-                console.error('Failed to load rates for totals calculation:', error);
+                console.error('❌ [Totals] Failed to load rates for totals calculation:', error);
                 rates = currencyConversionService.getFallbackRates();
             }
         }
@@ -1917,7 +1932,7 @@ const RateDetails = ({
                                                             );
                                                         })()
                                                     ) : (
-                                                        // SIMPLIFIED: Direct profit calculation (Actual Charge - Actual Cost)
+                                                        // REVERTED: Keep individual line item profits in USD (original behavior)
                                                         !item.isMarkup ? (() => {
                                                             // Tax charges show $0.00
                                                             if (item.isTax || isTaxCharge(item.code)) {
@@ -1932,7 +1947,7 @@ const RateDetails = ({
                                                                 );
                                                             }
 
-                                                            // Simple calculation: Actual Charge - Actual Cost
+                                                            // Simple calculation: Actual Charge - Actual Cost (in original currency)
                                                             const actualCost = parseFloat(item.actualCost) || 0;
                                                             const actualCharge = parseFloat(item.actualCharge) || 0;
                                                             const profit = actualCharge - actualCost;
@@ -2127,22 +2142,29 @@ const RateDetails = ({
                                         {canViewFinancials && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700, verticalAlign: 'top' }}>
                                                 {(() => {
-                                                    // SIMPLIFIED: Direct total profit calculation excluding tax items
-                                                    let totalNonTaxActualCost = 0;
-                                                    let totalNonTaxActualCharge = 0;
+                                                    // FIXED: Direct total profit calculation with USD to CAD conversion
+                                                    let totalNonTaxActualCostUSD = 0;
+                                                    let totalNonTaxActualChargeUSD = 0;
 
-                                                    // Calculate totals excluding tax items
+                                                    // Calculate totals excluding tax items (in original USD)
                                                     localRateBreakdown.forEach(item => {
                                                         // Skip tax charges
                                                         if (item.isTax || isTaxCharge(item.code)) {
                                                             return;
                                                         }
 
-                                                        totalNonTaxActualCost += parseFloat(item.actualCost) || 0;
-                                                        totalNonTaxActualCharge += parseFloat(item.actualCharge) || 0;
+                                                        totalNonTaxActualCostUSD += parseFloat(item.actualCost) || 0;
+                                                        totalNonTaxActualChargeUSD += parseFloat(item.actualCharge) || 0;
                                                     });
 
-                                                    const profit = totalNonTaxActualCharge - totalNonTaxActualCost;
+                                                    // Calculate profit in USD first
+                                                    const profitUSD = totalNonTaxActualChargeUSD - totalNonTaxActualCostUSD;
+
+                                                    // Convert USD profit to CAD using actual exchange rates
+                                                    const usdToCadRate = exchangeRates?.USD ? (1 / exchangeRates.USD) : 1.38; // 1 USD = X CAD
+                                                    const profit = profitUSD * usdToCadRate;
+
+                                                    console.log(`💱 [TOTAL] Profit conversion: $${profitUSD} USD × ${usdToCadRate.toFixed(3)} = $${profit.toFixed(2)} CAD`);
                                                     const isProfit = profit > 0;
                                                     const isLoss = profit < 0;
                                                     const prefix = isProfit ? '+' : (isLoss ? '-' : '');
@@ -2178,8 +2200,20 @@ const RateDetails = ({
 
                                                                         if (hasConversions && exchangeRatesUsed) {
                                                                             // Show exchange rate if available and not 1:1
+                                                                            // Check for USD to CAD conversion rate
                                                                             const usdRate = exchangeRatesUsed.USD;
+                                                                            console.log('🔍 Exchange rate debug:', {
+                                                                                exchangeRatesUsed,
+                                                                                usdRate,
+                                                                                hasConversions,
+                                                                                isFallback: exchangeRatesUsed.isFallback
+                                                                            });
+
                                                                             if (usdRate && usdRate !== 1 && !isNaN(usdRate)) {
+                                                                                // If this is fallback data, warn about using hardcoded rate
+                                                                                if (exchangeRatesUsed.isFallback) {
+                                                                                    console.warn('⚠️ Using fallback exchange rate instead of actual rate from shipment date');
+                                                                                }
                                                                                 return `Converted @ ${usdRate.toFixed(3)}`;
                                                                             }
                                                                             return `Converted to ${baseCurrency}`;

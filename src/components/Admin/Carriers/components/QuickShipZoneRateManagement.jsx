@@ -693,15 +693,6 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
     const renderPickupLocations = () => {
         return (
             <Box sx={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Chip
-                        color="primary"
-                        size="small"
-                        label={`${(zoneConfig.pickupZones?.selectedCities?.length || 0)} cities selected`}
-                        onClick={() => openSelectorDialog('pickupZones')}
-                        sx={{ cursor: 'pointer' }}
-                    />
-                </Box>
                 {loading ? (
                     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                         <CircularProgress />

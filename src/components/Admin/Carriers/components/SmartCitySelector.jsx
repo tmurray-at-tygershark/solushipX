@@ -44,10 +44,10 @@ const SmartCitySelector = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [countryFilter, setCountryFilter] = useState('');
     const [provinceStateFilter, setProvinceStateFilter] = useState('');
-    const [sortBy, setSortBy] = useState('');
+    const [sortBy, setSortBy] = useState('city');
     const [sortDirection, setSortDirection] = useState('asc');
     const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(25);
+    const [rowsPerPage, setRowsPerPage] = useState(1000);
 
     // Data State
     const [activatedCities, setActivatedCities] = useState([]); // Cities already added to this zone
@@ -546,7 +546,7 @@ const SmartCitySelector = ({
                         setRowsPerPage(parseInt(e.target.value, 10));
                         setPage(0);
                     }}
-                    rowsPerPageOptions={[10, 25, 50, 100]}
+                    rowsPerPageOptions={[25, 50, 100, 500, 1000]}
                     sx={{
                         '& .MuiTablePagination-toolbar': { fontSize: '12px' },
                         '& .MuiTablePagination-selectLabel': { fontSize: '12px' },
@@ -622,12 +622,6 @@ const SmartCitySelector = ({
                         Manage activated cities for {zoneCategory === 'pickupZones' ? 'pickup' : 'delivery'} locations
                     </Typography>
                 </Box>
-                <Chip
-                    label={`${activatedCities.length} cities activated`}
-                    color="primary"
-                    size="small"
-                    sx={{ fontSize: '11px' }}
-                />
             </Box>
 
             {/* Tabs */}
@@ -677,6 +671,8 @@ const SmartCitySelector = ({
                 open={addCityDialogOpen}
                 onClose={() => setAddCityDialogOpen(false)}
                 onCityAdd={(newCities) => {
+                    console.log('🏙️ [SmartCitySelector] Adding cities:', newCities.map(c => c.city));
+
                     const citiesWithStatus = newCities.map(city => ({
                         ...city,
                         status: 'enabled',
@@ -684,10 +680,17 @@ const SmartCitySelector = ({
                     }));
 
                     const updatedCities = [...activatedCities, ...citiesWithStatus];
+                    console.log('🏙️ [SmartCitySelector] Updated cities count:', updatedCities.length);
+
                     setActivatedCities(updatedCities);
                     onSelectionComplete(updatedCities);
 
-                    enqueueSnackbar(`✅ Added ${newCities.length} cities`, { variant: 'success' });
+                    // Clear search filters to ensure newly added cities are visible
+                    setSearchTerm('');
+                    setCountryFilter('');
+                    setProvinceStateFilter('');
+
+                    enqueueSnackbar(`✅ Added ${newCities.length} cities - ${newCities.map(c => c.city).join(', ')}`, { variant: 'success' });
                     setAddCityDialogOpen(false);
                 }}
                 zoneCategory={zoneCategory}
@@ -839,7 +842,11 @@ const AddCityDialog = ({ open, onClose, onCityAdd, zoneCategory, existingCityIds
                                             <TableCell padding="checkbox">
                                                 <Checkbox
                                                     checked={!!isSelected}
-                                                    onChange={() => handleCitySelect(city)}
+                                                    onChange={(e) => {
+                                                        e.stopPropagation(); // Prevent row click
+                                                        handleCitySelect(city);
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()} // Prevent row click
                                                     size="small"
                                                 />
                                             </TableCell>

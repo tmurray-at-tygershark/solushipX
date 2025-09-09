@@ -1023,8 +1023,8 @@ const InvoiceManagement = () => {
                                     { code: 'HST ON', name: 'HST Ontario', isTax: true },
                                     { code: 'HST', name: 'HST', isTax: true },
                                     { code: 'GST', name: 'GST', isTax: true },
-                                    { code: 'QST', name: 'QST Quebec', isTax: true },
-                                    { code: 'PST BC', name: 'PST British Columbia', isTax: true }
+                                    { code: 'QST', name: 'QST Quebec', isTax: true }
+                                    // PST BC removed - freight/transportation services are PST exempt in BC
                                 ];
 
                                 shipmentWithCorrectTaxes = updateShipmentWithTaxes(shipmentData, basicChargeTypes);

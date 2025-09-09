@@ -6,55 +6,48 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-    Box, Typography, Button, Chip, CircularProgress, Card, Fab, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions,
-    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton
+    Box, Typography, Button, Chip, CircularProgress, Card, Fab, Tooltip,
+    Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, ListItemText
 } from '@mui/material';
 import {
     PanTool as PanToolIcon,
-    CropFree as SelectIcon,
     Crop32 as RectangleIcon,
     RadioButtonUnchecked as CircleIcon,
     Pentagon as PolygonIcon,
-    Delete as DeleteIcon,
-    Clear as ClearAllIcon,
-    Done as DoneIcon,
-    Visibility as PreviewIcon,
-    Add as AddIcon
+    Delete as DeleteIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { loadGoogleMaps } from '../../../../utils/googleMapsLoader';
-import { collection, query, where, getDocs, limit, orderBy, startAfter, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, orderBy, startAfter } from 'firebase/firestore';
 import { db } from '../../../../firebase';
 
 const MapCitySelector = ({
     selectedCities = [],
     onSelectionComplete,
     zoneCategory = 'pickupZones',
-    embedded = false,
-    onMapAreaSave,
-    onDone,
-    initialAreas = [],
-    carrierId
+    onDone
 }) => {
     const { enqueueSnackbar } = useSnackbar();
     const mapRef = useRef(null);
     const googleMapRef = useRef(null);
     const drawingManagerRef = useRef(null);
-    const tempShapesRef = useRef([]);
     const cityMarkersRef = useRef([]);
+    const deleteModeRef = useRef(false); // Track current delete mode state
 
     // State Management
     const [mapLoaded, setMapLoaded] = useState(false);
-    const [savedShapes, setSavedShapes] = useState([]); // Shapes stored in database
-    const [tempShapes, setTempShapes] = useState([]); // Temporary shapes before save
     const [cityMarkers, setCityMarkers] = useState([]); // Visual markers for cities
     const [loading, setLoading] = useState(true);
     const [mapMode, setMapMode] = useState('pan');
+    const [deleteMode, setDeleteMode] = useState(false); // Toggle between add/delete mode
     const [drawingToolsReady, setDrawingToolsReady] = useState(false);
-    const [selectedShape, setSelectedShape] = useState(null);
-    const [shapePreviewOpen, setShapePreviewOpen] = useState(false);
-    const [shapePreviewCities, setShapePreviewCities] = useState([]);
     const [detecting, setDetecting] = useState(false);
+
+    // Confirmation dialog state
+    const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+    const [pendingCities, setPendingCities] = useState([]);
+    const [pendingOverlay, setPendingOverlay] = useState(null);
+    const [pendingAction, setPendingAction] = useState('add'); // 'add' or 'delete'
 
     // City dataset cache
     const citiesCacheRef = useRef({ loaded: false, cities: [] });
@@ -131,48 +124,6 @@ const MapCitySelector = ({
         return data;
     }, [loadAllCitiesWithCoordinates]);
 
-    // Load saved shapes from database
-    const loadSavedShapes = useCallback(async () => {
-        if (!carrierId) return;
-        try {
-            const q = query(
-                collection(db, 'carrierMapShapes'),
-                where('carrierId', '==', carrierId),
-                where('zoneCategory', '==', zoneCategory)
-            );
-            const snap = await getDocs(q);
-            const shapes = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setSavedShapes(shapes);
-        } catch (error) {
-            console.warn('Failed to load saved shapes:', error);
-        }
-    }, [carrierId, zoneCategory]);
-
-    // Save shape to database
-    const saveShapeToDatabase = useCallback(async (shapeData) => {
-        if (!carrierId) return;
-        try {
-            await addDoc(collection(db, 'carrierMapShapes'), {
-                carrierId,
-                zoneCategory,
-                ...shapeData,
-                createdAt: new Date()
-            });
-        } catch (error) {
-            console.error('Failed to save shape:', error);
-            enqueueSnackbar('Failed to save shape', { variant: 'error' });
-        }
-    }, [carrierId, zoneCategory, enqueueSnackbar]);
-
-    // Delete shape from database
-    const deleteShapeFromDatabase = useCallback(async (shapeId) => {
-        try {
-            await deleteDoc(doc(db, 'carrierMapShapes', shapeId));
-        } catch (error) {
-            console.error('Failed to delete shape:', error);
-            enqueueSnackbar('Failed to delete shape', { variant: 'error' });
-        }
-    }, [enqueueSnackbar]);
 
     // Render city markers on map (persistent during drawing)
     const renderCityMarkers = useCallback(() => {
@@ -230,61 +181,10 @@ const MapCitySelector = ({
         }).filter(Boolean);
 
         console.log(`✅ [MapCitySelector] Created ${newMarkers.length} markers out of ${selectedCities.length} cities`);
+        console.log(`📍 [MapCitySelector] City list:`, selectedCities.map(c => c.city).slice(0, 10));
         setCityMarkers(newMarkers);
     }, [selectedCities, enqueueSnackbar]);
 
-    // Render saved shapes on map
-    const renderSavedShapes = useCallback(() => {
-        if (!googleMapRef.current || !savedShapes.length) return;
-
-        savedShapes.forEach(shape => {
-            let overlay = null;
-
-            if (shape.type === 'polygon' && shape.path?.length) {
-                overlay = new window.google.maps.Polygon({
-                    paths: shape.path,
-                    fillColor: '#3b82f6',
-                    fillOpacity: 0.1,
-                    strokeColor: '#1d4ed8',
-                    strokeWeight: 2,
-                    editable: false,
-                    draggable: false,
-                    clickable: true
-                });
-            } else if (shape.type === 'rectangle' && shape.bounds) {
-                overlay = new window.google.maps.Rectangle({
-                    bounds: shape.bounds,
-                    fillColor: '#ef4444',
-                    fillOpacity: 0.1,
-                    strokeColor: '#dc2626',
-                    strokeWeight: 2,
-                    editable: false,
-                    draggable: false,
-                    clickable: true
-                });
-            } else if (shape.type === 'circle' && shape.center && shape.radius) {
-                overlay = new window.google.maps.Circle({
-                    center: shape.center,
-                    radius: shape.radius,
-                    fillColor: '#10b981',
-                    fillOpacity: 0.1,
-                    strokeColor: '#059669',
-                    strokeWeight: 2,
-                    editable: false,
-                    draggable: false,
-                    clickable: true
-                });
-            }
-
-            if (overlay) {
-                overlay.setMap(googleMapRef.current);
-
-                overlay.addListener('click', () => {
-                    enqueueSnackbar(`📐 Saved ${shape.type}: ${shape.name}`, { variant: 'info' });
-                });
-            }
-        });
-    }, [savedShapes, enqueueSnackbar]);
 
     // Find cities in shapes
     const findCitiesInShape = useCallback(async (overlay, type) => {
@@ -323,97 +223,148 @@ const MapCitySelector = ({
         }
     }, [getAllCitiesWithCoordinatesCached]);
 
-    // Handle shape completion
+    // Show confirmation dialog for any action
+    const showConfirmationDialog = useCallback(async (overlay, type, isDeleteMode) => {
+        try {
+            console.log(`${isDeleteMode ? '🗑️' : '➕'} [Confirm] Finding cities in ${type}, deleteMode: ${isDeleteMode}`);
+            const citiesFound = await findCitiesInShape(overlay, type);
+
+            if (citiesFound.length === 0) {
+                enqueueSnackbar('No cities found in this area', { variant: 'info' });
+                overlay.setMap(null);
+                return;
+            }
+
+            if (isDeleteMode) {
+                // Filter to only cities that are actually selected for deletion
+                const citiesToDelete = citiesFound.filter(city =>
+                    selectedCities.some(selected =>
+                        (selected.searchKey || selected.id) === (city.searchKey || city.id)
+                    )
+                );
+
+                if (citiesToDelete.length === 0) {
+                    enqueueSnackbar('No selected cities found in this area to delete', { variant: 'info' });
+                    overlay.setMap(null);
+                    return;
+                }
+
+                setPendingCities(citiesToDelete);
+                setPendingAction('delete');
+            } else {
+                // Filter to only new cities for addition
+                const existingKeys = new Set(selectedCities.map(c => c.searchKey || c.id));
+                const newCities = citiesFound.filter(city => !existingKeys.has(city.searchKey || city.id));
+
+                if (newCities.length === 0) {
+                    enqueueSnackbar('All cities in this area are already selected', { variant: 'info' });
+                    overlay.setMap(null);
+                    return;
+                }
+
+                setPendingCities(newCities);
+                setPendingAction('add');
+            }
+
+            // Show confirmation dialog
+            setPendingOverlay(overlay);
+            setConfirmDialogOpen(true);
+
+        } catch (error) {
+            console.error('❌ Error processing cities:', error);
+            enqueueSnackbar('Failed to process cities', { variant: 'error' });
+            overlay.setMap(null);
+        }
+    }, [findCitiesInShape, selectedCities, enqueueSnackbar]);
+
+    // Confirm action from dialog
+    const confirmAction = useCallback(() => {
+        try {
+            if (pendingAction === 'delete') {
+                // Remove cities from current selection
+                const cityIdsToDelete = new Set(pendingCities.map(c => c.searchKey || c.id));
+                const remainingCities = selectedCities.filter(city =>
+                    !cityIdsToDelete.has(city.searchKey || city.id)
+                );
+
+                console.log('🗑️ [Confirm] BEFORE deletion:', {
+                    totalCities: selectedCities.length,
+                    citiesToDelete: pendingCities.length,
+                    remainingCities: remainingCities.length,
+                    deletedCityNames: pendingCities.map(c => c.city).slice(0, 5)
+                });
+
+                // Update parent component with remaining cities
+                onSelectionComplete(remainingCities);
+
+                console.log('🗑️ [Confirm] AFTER deletion - called onSelectionComplete with', remainingCities.length, 'cities');
+
+                enqueueSnackbar(`🗑️ Deleted ${pendingCities.length} cities from ${zoneCategory}`, {
+                    variant: 'warning'
+                });
+            } else {
+                // Add cities to selection
+                const newCitiesList = [...selectedCities, ...pendingCities];
+                console.log('➕ [Confirm] Adding cities:', {
+                    currentCities: selectedCities.length,
+                    citiesToAdd: pendingCities.length,
+                    newTotal: newCitiesList.length
+                });
+
+                onSelectionComplete(newCitiesList);
+
+                enqueueSnackbar(`✅ Added ${pendingCities.length} cities to ${zoneCategory}`, {
+                    variant: 'success'
+                });
+            }
+
+            // Close dialog and clean up
+            setConfirmDialogOpen(false);
+            setPendingCities([]);
+            setPendingAction('add');
+
+            // Remove the drawing overlay
+            if (pendingOverlay) {
+                pendingOverlay.setMap(null);
+                setPendingOverlay(null);
+            }
+
+        } catch (error) {
+            console.error('❌ Error confirming action:', error);
+            enqueueSnackbar('Failed to complete action', { variant: 'error' });
+        }
+    }, [pendingAction, pendingCities, selectedCities, onSelectionComplete, zoneCategory, pendingOverlay, enqueueSnackbar]);
+
+    // Cancel action from dialog
+    const cancelAction = useCallback(() => {
+        setConfirmDialogOpen(false);
+        setPendingCities([]);
+        setPendingAction('add');
+
+        // Remove the drawing overlay
+        if (pendingOverlay) {
+            pendingOverlay.setMap(null);
+            setPendingOverlay(null);
+        }
+    }, [pendingOverlay]);
+
+    // Handle shape completion - show confirmation for all actions
     const handleShapeComplete = useCallback(async (overlay, type) => {
-        console.log('🎯 [Perfect] handleShapeComplete called:', { overlay, type, tempShapesLength: tempShapes.length });
+        // Get current delete mode state from ref (not captured state)
+        const currentDeleteMode = deleteModeRef.current;
+        console.log('🎯 [DEBUG] handleShapeComplete called with REF deleteMode:', currentDeleteMode);
+        console.log('🎯 [DEBUG] Current state:', { overlay, type, currentDeleteMode, selectedCitiesCount: selectedCities.length });
 
-        const id = `temp_${type}_${Date.now()}`;
-        const name = `${type.charAt(0).toUpperCase() + type.slice(1)} ${tempShapes.length + 1}`;
+        // Always show confirmation dialog for both add and delete
+        await showConfirmationDialog(overlay, type, currentDeleteMode);
 
-        // Add to temporary shapes (not saved yet)
-        const newShape = { id, type, overlay, name, temporary: true };
-        console.log('🎯 [Perfect] Adding new temp shape:', newShape);
-
-        setTempShapes(prev => {
-            const updated = [...prev, newShape];
-            console.log('🎯 [Perfect] Updated tempShapes:', updated.length);
-            return updated;
-        });
-
-        // Auto-switch to pan mode but keep the overlay visible
+        // Auto-switch to pan mode
         setMapMode('pan');
         if (drawingManagerRef.current) {
             drawingManagerRef.current.setDrawingMode(null);
         }
+    }, [showConfirmationDialog, selectedCities.length]); // Removed deleteMode from dependencies
 
-        console.log('🎯 [Perfect] Shape should now be visible on map');
-        enqueueSnackbar(`✅ Created ${name} - use "Add Cities" to include its cities`, { variant: 'success' });
-    }, [tempShapes.length, enqueueSnackbar]);
-
-    // Add cities from a specific shape
-    const addCitiesFromShape = useCallback(async (shape) => {
-        const cities = await findCitiesInShape(shape.overlay, shape.type);
-
-        if (cities.length === 0) {
-            enqueueSnackbar('No cities found in this shape', { variant: 'warning' });
-            return;
-        }
-
-        // Add cities to selection (avoiding duplicates)
-        const existingKeys = new Set(selectedCities.map(c => c.searchKey || c.id));
-        const newCities = cities.filter(city => !existingKeys.has(city.searchKey || city.id));
-
-        if (newCities.length === 0) {
-            enqueueSnackbar('All cities in this shape are already selected', { variant: 'info' });
-            return;
-        }
-
-        onSelectionComplete([...selectedCities, ...newCities]);
-        enqueueSnackbar(`✅ Added ${newCities.length} cities from ${shape.name}`, { variant: 'success' });
-    }, [selectedCities, onSelectionComplete, findCitiesInShape, enqueueSnackbar]);
-
-    // Save temporary shape permanently
-    const saveShape = useCallback(async (tempShape) => {
-        const shapeData = {
-            name: tempShape.name,
-            type: tempShape.type
-        };
-
-        if (tempShape.type === 'polygon') {
-            shapeData.path = tempShape.overlay.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() }));
-        } else if (tempShape.type === 'rectangle') {
-            const bounds = tempShape.overlay.getBounds();
-            const ne = bounds.getNorthEast();
-            const sw = bounds.getSouthWest();
-            shapeData.bounds = { north: ne.lat(), east: ne.lng(), south: sw.lat(), west: sw.lng() };
-        } else if (tempShape.type === 'circle') {
-            const center = tempShape.overlay.getCenter();
-            shapeData.center = { lat: center.lat(), lng: center.lng() };
-            shapeData.radius = tempShape.overlay.getRadius();
-        }
-
-        await saveShapeToDatabase(shapeData);
-
-        // Remove from temp and reload saved shapes
-        setTempShapes(prev => prev.filter(s => s.id !== tempShape.id));
-        await loadSavedShapes();
-
-        enqueueSnackbar(`💾 Saved ${tempShape.name}`, { variant: 'success' });
-    }, [saveShapeToDatabase, loadSavedShapes, enqueueSnackbar]);
-
-    // Delete temporary shape
-    const deleteTempShape = useCallback((tempShape) => {
-        tempShape.overlay?.setMap(null);
-        setTempShapes(prev => prev.filter(s => s.id !== tempShape.id));
-        enqueueSnackbar(`🗑️ Deleted ${tempShape.name}`, { variant: 'info' });
-    }, [enqueueSnackbar]);
-
-    // Delete saved shape
-    const deleteSavedShape = useCallback(async (savedShape) => {
-        await deleteShapeFromDatabase(savedShape.id);
-        await loadSavedShapes();
-        enqueueSnackbar(`🗑️ Deleted saved ${savedShape.name}`, { variant: 'info' });
-    }, [deleteShapeFromDatabase, loadSavedShapes, enqueueSnackbar]);
 
     // Map initialization
     const initializeMap = useCallback(async () => {
@@ -527,25 +478,25 @@ const MapCitySelector = ({
                 drawingControl: false,
                 map: map,
                 polygonOptions: {
-                    fillColor: '#3b82f6',
+                    fillColor: '#10b981', // Green for add mode (default)
                     fillOpacity: 0.2,
-                    strokeColor: '#1d4ed8',
+                    strokeColor: '#059669',
                     strokeWeight: 2,
                     editable: true,
                     draggable: true,
                     clickable: true
                 },
                 rectangleOptions: {
-                    fillColor: '#ef4444',
+                    fillColor: '#10b981', // Green for add mode (default)
                     fillOpacity: 0.2,
-                    strokeColor: '#dc2626',
+                    strokeColor: '#059669',
                     strokeWeight: 2,
                     editable: true,
                     draggable: true,
                     clickable: true
                 },
                 circleOptions: {
-                    fillColor: '#10b981',
+                    fillColor: '#10b981', // Green for add mode (default)
                     fillOpacity: 0.2,
                     strokeColor: '#059669',
                     strokeWeight: 2,
@@ -554,6 +505,33 @@ const MapCitySelector = ({
                     clickable: true
                 }
             });
+
+            // Update drawing manager options - green for add, red for delete
+            const updateDrawingOptions = (isDeleteMode) => {
+                const fillColor = isDeleteMode ? '#ef4444' : '#10b981'; // Red for delete, green for add
+                const strokeColor = isDeleteMode ? '#dc2626' : '#059669'; // Dark red for delete, dark green for add
+
+                drawingManager.setOptions({
+                    polygonOptions: {
+                        ...drawingManager.get('polygonOptions'),
+                        fillColor: fillColor,
+                        strokeColor: strokeColor
+                    },
+                    rectangleOptions: {
+                        ...drawingManager.get('rectangleOptions'),
+                        fillColor: fillColor,
+                        strokeColor: strokeColor
+                    },
+                    circleOptions: {
+                        ...drawingManager.get('circleOptions'),
+                        fillColor: fillColor,
+                        strokeColor: strokeColor
+                    }
+                });
+            };
+
+            // Store function for later use
+            drawingManager.updateDrawingOptions = updateDrawingOptions;
 
             drawingManagerRef.current = drawingManager;
 
@@ -584,8 +562,6 @@ const MapCitySelector = ({
 
             setDrawingToolsReady(true);
 
-            // Load saved shapes and render them
-            await loadSavedShapes();
 
         } catch (error) {
             console.error('❌ Map initialization failed:', error);
@@ -594,7 +570,7 @@ const MapCitySelector = ({
             setLoading(false);
             setMapLoaded(true);
         }
-    }, [handleShapeComplete, loadSavedShapes, enqueueSnackbar]);
+    }, [handleShapeComplete, enqueueSnackbar]);
 
     // Initialize map and city markers
     useEffect(() => {
@@ -614,32 +590,36 @@ const MapCitySelector = ({
 
     // Update city markers when selected cities change (but not during drawing)
     useEffect(() => {
+        console.log(`🔄 [MapCitySelector] selectedCities prop changed:`, {
+            count: selectedCities.length,
+            mapLoaded,
+            mapMode,
+            cities: selectedCities.map(c => c.city).slice(0, 5)
+        });
+
         if (mapLoaded && googleMapRef.current && mapMode !== 'draw') {
             renderCityMarkers();
         }
     }, [mapLoaded, selectedCities.length, mapMode, renderCityMarkers]); // Don't update during drawing
 
-    // Render saved shapes when they change
-    useEffect(() => {
-        if (mapLoaded) {
-            renderSavedShapes();
-        }
-    }, [mapLoaded, renderSavedShapes]);
 
-    // Sync state with refs for cleanup
-    useEffect(() => {
-        tempShapesRef.current = tempShapes;
-    }, [tempShapes]);
 
     useEffect(() => {
         cityMarkersRef.current = cityMarkers;
     }, [cityMarkers]);
 
+    // Update drawing colors when delete mode changes and sync ref
+    useEffect(() => {
+        deleteModeRef.current = deleteMode; // Keep ref in sync
+        if (drawingManagerRef.current && drawingManagerRef.current.updateDrawingOptions) {
+            drawingManagerRef.current.updateDrawingOptions(deleteMode);
+        }
+    }, [deleteMode]);
+
     // Cleanup - only run on component unmount
     useEffect(() => {
         return () => {
-            // Clean up all overlays when component unmounts
-            tempShapesRef.current.forEach(shape => shape.overlay?.setMap(null));
+            // Clean up city markers when component unmounts
             cityMarkersRef.current.forEach(marker => marker.setMap(null));
         };
     }, []); // Empty dependency array - only run on mount/unmount
@@ -668,11 +648,6 @@ const MapCitySelector = ({
         }
     }, []);
 
-    const clearAllTempShapes = useCallback(() => {
-        tempShapes.forEach(shape => shape.overlay?.setMap(null));
-        setTempShapes([]);
-        enqueueSnackbar('Cleared all temporary shapes', { variant: 'info' });
-    }, [tempShapes, enqueueSnackbar]);
 
     return (
         <Box sx={{
@@ -713,39 +688,51 @@ const MapCitySelector = ({
                 <Box sx={{ width: '100%', height: 1, bgcolor: '#e5e7eb', my: 1 }} />
 
                 {/* Rectangle Tool */}
-                <Tooltip title="Draw Rectangle" placement="right">
+                <Tooltip title={deleteMode ? "Draw Rectangle to Delete Cities" : "Draw Rectangle to Add Cities"} placement="right">
                     <Fab
                         size="small"
-                        color={mapMode === 'rectangle' ? 'error' : 'default'}
+                        color={mapMode === 'rectangle' ? (deleteMode ? 'error' : 'success') : 'default'}
                         onClick={() => setDrawingMode('rectangle')}
                         disabled={!drawingToolsReady}
-                        sx={{ width: 40, height: 40 }}
+                        sx={{
+                            width: 40,
+                            height: 40,
+                            backgroundColor: mapMode === 'rectangle' ? (deleteMode ? '#ef4444' : '#10b981') : undefined
+                        }}
                     >
                         <RectangleIcon fontSize="small" />
                     </Fab>
                 </Tooltip>
 
                 {/* Circle Tool */}
-                <Tooltip title="Draw Circle" placement="right">
+                <Tooltip title={deleteMode ? "Draw Circle to Delete Cities" : "Draw Circle to Add Cities"} placement="right">
                     <Fab
                         size="small"
-                        color={mapMode === 'circle' ? 'success' : 'default'}
+                        color={mapMode === 'circle' ? (deleteMode ? 'error' : 'success') : 'default'}
                         onClick={() => setDrawingMode('circle')}
                         disabled={!drawingToolsReady}
-                        sx={{ width: 40, height: 40 }}
+                        sx={{
+                            width: 40,
+                            height: 40,
+                            backgroundColor: mapMode === 'circle' ? (deleteMode ? '#ef4444' : '#10b981') : undefined
+                        }}
                     >
                         <CircleIcon fontSize="small" />
                     </Fab>
                 </Tooltip>
 
                 {/* Polygon Tool */}
-                <Tooltip title="Draw Polygon" placement="right">
+                <Tooltip title={deleteMode ? "Draw Polygon to Delete Cities" : "Draw Polygon to Add Cities"} placement="right">
                     <Fab
                         size="small"
-                        color={mapMode === 'polygon' ? 'info' : 'default'}
+                        color={mapMode === 'polygon' ? (deleteMode ? 'error' : 'success') : 'default'}
                         onClick={() => setDrawingMode('polygon')}
                         disabled={!drawingToolsReady}
-                        sx={{ width: 40, height: 40 }}
+                        sx={{
+                            width: 40,
+                            height: 40,
+                            backgroundColor: mapMode === 'polygon' ? (deleteMode ? '#ef4444' : '#10b981') : undefined
+                        }}
                     >
                         <PolygonIcon fontSize="small" />
                     </Fab>
@@ -753,18 +740,29 @@ const MapCitySelector = ({
 
                 <Box sx={{ width: '100%', height: 1, bgcolor: '#e5e7eb', my: 1 }} />
 
-                {/* Clear Temp Shapes */}
-                <Tooltip title="Clear Temporary Shapes" placement="right">
+                {/* Delete Mode Toggle */}
+                <Tooltip title={deleteMode ? "Switch to Add Mode" : "Switch to Delete Mode"} placement="right">
                     <Fab
                         size="small"
-                        color="error"
-                        onClick={clearAllTempShapes}
-                        disabled={tempShapes.length === 0}
-                        sx={{ width: 40, height: 40 }}
+                        color={deleteMode ? "error" : "default"}
+                        onClick={() => {
+                            const newDeleteMode = !deleteMode;
+                            console.log('🔄 [DEBUG] Toggling delete mode:', deleteMode, '->', newDeleteMode);
+                            setDeleteMode(newDeleteMode);
+                        }}
+                        sx={{
+                            width: 40,
+                            height: 40,
+                            backgroundColor: deleteMode ? '#ef4444' : undefined,
+                            '&:hover': {
+                                backgroundColor: deleteMode ? '#dc2626' : undefined
+                            }
+                        }}
                     >
-                        <ClearAllIcon fontSize="small" />
+                        <DeleteIcon fontSize="small" />
                     </Fab>
                 </Tooltip>
+
             </Box>
 
             {/* Status Bar */}
@@ -779,25 +777,22 @@ const MapCitySelector = ({
             }}>
                 <Card sx={{ px: 2, py: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Chip
+                        label={deleteMode ? "🗑️ DELETE MODE" : "➕ ADD MODE"}
+                        color={deleteMode ? "error" : "success"}
+                        size="small"
+                        sx={{
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            backgroundColor: deleteMode ? '#fef2f2' : '#f0fdf4',
+                            color: deleteMode ? '#dc2626' : '#16a34a'
+                        }}
+                    />
+                    <Chip
                         label={`${selectedCities.length} cities`}
                         color="primary"
                         size="small"
                         sx={{ fontSize: '11px' }}
                     />
-                    <Chip
-                        label={`${savedShapes.length} saved shapes`}
-                        color="success"
-                        size="small"
-                        sx={{ fontSize: '11px' }}
-                    />
-                    {tempShapes.length > 0 && (
-                        <Chip
-                            label={`${tempShapes.length} temp`}
-                            color="warning"
-                            size="small"
-                            sx={{ fontSize: '11px' }}
-                        />
-                    )}
                 </Card>
 
                 {/* Action Buttons */}
@@ -813,109 +808,6 @@ const MapCitySelector = ({
                 </Card>
             </Box>
 
-            {/* Temporary Shapes Panel */}
-            {tempShapes.length > 0 && (
-                <Box sx={{
-                    position: 'absolute',
-                    bottom: 20,
-                    left: 20,
-                    width: 350,
-                    zIndex: 1000
-                }}>
-                    <Card sx={{ p: 2 }}>
-                        <Typography sx={{ fontSize: '14px', fontWeight: 600, mb: 1 }}>
-                            Temporary Shapes ({tempShapes.length})
-                        </Typography>
-                        {tempShapes.map((shape) => (
-                            <Box key={shape.id} sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                p: 1,
-                                border: '1px solid #e5e7eb',
-                                borderRadius: 1,
-                                mb: 1
-                            }}>
-                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                    {shape.name}
-                                </Typography>
-                                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                    <Button
-                                        size="small"
-                                        startIcon={<AddIcon />}
-                                        onClick={() => addCitiesFromShape(shape)}
-                                        sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
-                                    >
-                                        Add Cities
-                                    </Button>
-                                    <Button
-                                        size="small"
-                                        variant="outlined"
-                                        onClick={() => saveShape(shape)}
-                                        sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
-                                    >
-                                        Save
-                                    </Button>
-                                    <IconButton
-                                        size="small"
-                                        color="error"
-                                        onClick={() => deleteTempShape(shape)}
-                                        sx={{ width: 24, height: 24 }}
-                                    >
-                                        <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                </Box>
-                            </Box>
-                        ))}
-                    </Card>
-                </Box>
-            )}
-
-            {/* Saved Shapes Panel */}
-            {savedShapes.length > 0 && (
-                <Box sx={{
-                    position: 'absolute',
-                    bottom: 20,
-                    right: 20,
-                    width: 300,
-                    zIndex: 1000
-                }}>
-                    <Card sx={{ p: 2 }}>
-                        <Typography sx={{ fontSize: '14px', fontWeight: 600, mb: 1 }}>
-                            Saved Shapes ({savedShapes.length})
-                        </Typography>
-                        {savedShapes.slice(0, 5).map((shape) => (
-                            <Box key={shape.id} sx={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                p: 1,
-                                border: '1px solid #e5e7eb',
-                                borderRadius: 1,
-                                mb: 1,
-                                bgcolor: '#f8fafc'
-                            }}>
-                                <Typography sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                    {shape.name}
-                                </Typography>
-                                <IconButton
-                                    size="small"
-                                    color="error"
-                                    onClick={() => deleteSavedShape(shape)}
-                                    sx={{ width: 20, height: 20 }}
-                                >
-                                    <DeleteIcon fontSize="small" />
-                                </IconButton>
-                            </Box>
-                        ))}
-                        {savedShapes.length > 5 && (
-                            <Typography sx={{ fontSize: '10px', color: '#6b7280', textAlign: 'center' }}>
-                                +{savedShapes.length - 5} more shapes
-                            </Typography>
-                        )}
-                    </Card>
-                </Box>
-            )}
 
             {/* Loading Overlay */}
             {loading && (
@@ -957,6 +849,93 @@ const MapCitySelector = ({
                     </Card>
                 </Box>
             )}
+
+            {/* Professional Confirmation Dialog */}
+            <Dialog
+                open={confirmDialogOpen}
+                onClose={cancelAction}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{
+                    fontSize: '18px',
+                    fontWeight: 600,
+                    color: pendingAction === 'delete' ? '#dc2626' : '#059669',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                }}>
+                    {pendingAction === 'delete' ? '🗑️ Delete Cities' : '➕ Add Cities'} Confirmation
+                </DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: '14px', mb: 2, color: '#374151' }}>
+                        You are about to {pendingAction === 'delete' ? 'remove' : 'add'} <strong>{pendingCities.length} cities</strong> {pendingAction === 'delete' ? 'from' : 'to'} your {zoneCategory}:
+                    </Typography>
+
+                    <Box sx={{
+                        maxHeight: 200,
+                        overflow: 'auto',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 1,
+                        bgcolor: pendingAction === 'delete' ? '#fef2f2' : '#f0fdf4'
+                    }}>
+                        <List dense>
+                            {pendingCities.slice(0, 20).map((city, index) => (
+                                <ListItem key={city.searchKey || city.id} sx={{ py: 0.5 }}>
+                                    <ListItemText
+                                        primary={`${city.city}, ${city.provinceState}`}
+                                        secondary={city.country === 'CA' ? '🇨🇦 Canada' : city.country === 'US' ? '🇺🇸 United States' : city.country}
+                                        sx={{
+                                            '& .MuiListItemText-primary': { fontSize: '13px', fontWeight: 500 },
+                                            '& .MuiListItemText-secondary': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </ListItem>
+                            ))}
+                            {pendingCities.length > 20 && (
+                                <ListItem sx={{ py: 0.5 }}>
+                                    <ListItemText
+                                        primary={`... and ${pendingCities.length - 20} more cities`}
+                                        sx={{
+                                            '& .MuiListItemText-primary': {
+                                                fontSize: '12px',
+                                                fontStyle: 'italic',
+                                                color: '#6b7280'
+                                            }
+                                        }}
+                                    />
+                                </ListItem>
+                            )}
+                        </List>
+                    </Box>
+
+                    <Typography sx={{ fontSize: '12px', mt: 2, color: pendingAction === 'delete' ? '#dc2626' : '#059669', fontWeight: 500 }}>
+                        {pendingAction === 'delete'
+                            ? '⚠️ This action cannot be undone. The cities will be removed from your zone configuration.'
+                            : '✅ These cities will be added to your zone configuration.'
+                        }
+                    </Typography>
+                </DialogContent>
+                <DialogActions sx={{ p: 2, gap: 1 }}>
+                    <Button
+                        onClick={cancelAction}
+                        variant="outlined"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={confirmAction}
+                        variant="contained"
+                        color={pendingAction === 'delete' ? 'error' : 'success'}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {pendingAction === 'delete' ? 'Delete' : 'Add'} {pendingCities.length} Cities
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

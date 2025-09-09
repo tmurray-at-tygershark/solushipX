@@ -35,7 +35,9 @@ class CurrencyConversionService {
             const snapshot = await getDocs(ratesQuery);
             
             if (snapshot.empty) {
-                console.warn('No currency rates found, using fallback rates');
+                console.warn('❌ [Currency] No currency rates found in database!');
+                console.warn('   This indicates the daily currency sync is not working properly');
+                console.warn('   Check if fetchDailyCurrencyRates cloud function is running');
                 return this.getFallbackRates();
             }
 
@@ -87,6 +89,8 @@ class CurrencyConversionService {
                 return await this.getLatestRates();
             }
 
+            console.log(`🔍 [Currency] Looking for exchange rates for date: ${targetDate.toDateString()}`);
+
             // Query rates for the specific date
             const ratesQuery = query(
                 collection(db, 'currencyRates'),
@@ -101,14 +105,22 @@ class CurrencyConversionService {
             
             if (!snapshot.empty) {
                 const rateData = snapshot.docs[0].data();
-                console.log(`📈 Historical rates found for ${targetDate.toDateString()}`);
-                return {
+                const rates = {
                     ...rateData.rates,
                     baseCurrency: rateData.baseCurrency,
                     timestamp: rateData.timestamp?.toDate(),
-                    provider: rateData.provider
+                    provider: rateData.provider,
+                    isHistorical: true
                 };
+                console.log(`✅ [Currency] Historical rates found for ${targetDate.toDateString()}:`, {
+                    USD: rates.USD,
+                    provider: rates.provider,
+                    timestamp: rates.timestamp
+                });
+                return rates;
             }
+
+            console.log(`⚠️ [Currency] No rates found for ${targetDate.toDateString()}, looking for closest previous date...`);
 
             // If no rates for specific date, find closest previous date
             const closestQuery = query(
@@ -202,11 +214,13 @@ class CurrencyConversionService {
      * Fallback rates if API is unavailable
      */
     getFallbackRates() {
+        console.warn('⚠️ [Currency] Using FALLBACK exchange rates - this should not happen in production!');
+        console.warn('   These are hardcoded rates and not accurate for financial calculations');
         return {
             baseCurrency: 'CAD',
-            USD: 0.73,  // 1 CAD = 0.73 USD (approximate)
-            EUR: 0.68,  // 1 CAD = 0.68 EUR (approximate)
-            GBP: 0.58,  // 1 CAD = 0.58 GBP (approximate)
+            USD: 0.73,  // 1 CAD = 0.73 USD (approximate) - HARDCODED!
+            EUR: 0.68,  // 1 CAD = 0.68 EUR (approximate) - HARDCODED!
+            GBP: 0.58,  // 1 CAD = 0.58 GBP (approximate) - HARDCODED!
             timestamp: new Date(),
             provider: 'fallback',
             isFallback: true

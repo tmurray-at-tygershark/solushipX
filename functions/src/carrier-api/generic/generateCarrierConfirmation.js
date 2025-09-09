@@ -278,7 +278,8 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         
         const taxCodes = [
             'HST', 'GST', 'QST', 'QGST', 'HST ON', 'HST BC', 'HST NB', 
-            'HST NS', 'HST NL', 'HST PE', 'PST BC', 'PST SK', 'PST MB'
+            'HST NS', 'HST NL', 'HST PE', 'PST SK', 'PST MB'
+            // 'PST BC' removed - freight/transportation services are PST exempt in BC
         ];
         
         return taxCodes.includes(code.toUpperCase());

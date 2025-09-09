@@ -37,13 +37,13 @@ export const CANADIAN_TAX_CONFIG = {
         totalRate: 14.0
     },
     
-    // GST + PST Provinces (dual tax)
+    // BC - GST Only for Freight/Transportation Services (PST exempt)
     'BC': {
         taxes: [
-            { code: 'GST', name: 'GST British Columbia', rate: 5.0, type: 'GST' },
-            { code: 'PST BC', name: 'PST British Columbia', rate: 7.0, type: 'PST' }
+            { code: 'GST', name: 'GST British Columbia', rate: 5.0, type: 'GST' }
+            // PST removed - freight/transportation services are PST exempt in BC
         ],
-        totalRate: 12.0
+        totalRate: 5.0
     },
     'MB': {
         taxes: [
@@ -332,7 +332,8 @@ export const isTaxCharge = (code) => {
     
     const taxCodes = [
         'HST', 'GST', 'QST', 'QGST', 'HST ON', 'HST BC', 'HST NB', 
-        'HST NS', 'HST NL', 'HST PE', 'PST BC', 'PST SK', 'PST MB'
+        'HST NS', 'HST NL', 'HST PE', 'PST SK', 'PST MB'
+        // 'PST BC' removed - freight/transportation services are PST exempt in BC
     ];
     
     return taxCodes.includes(code.toUpperCase());
@@ -469,7 +470,8 @@ export const updateShipmentWithTaxes = (shipmentData, chargeTypes) => {
 export const validateTaxChargeTypes = (chargeTypes) => {
     const requiredTaxCodes = [
         'HST', 'GST', 'QST', 'HST ON', 'HST BC', 'HST NB', 
-        'HST NS', 'HST NL', 'HST PE', 'PST BC', 'PST SK', 'PST MB'
+        'HST NS', 'HST NL', 'HST PE', 'PST SK', 'PST MB'
+        // 'PST BC' removed - freight/transportation services are PST exempt in BC
     ];
     
     const existingCodes = chargeTypes.map(ct => ct.code.toUpperCase());

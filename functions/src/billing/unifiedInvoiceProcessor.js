@@ -1091,9 +1091,9 @@ function isTaxCharge(code) {
     'HST_ON', 'HST_BC', 'HST_NB', 'HST_NS', 'HST_NL', 'HST_PE',
     'HST ONTARIO', 'HST ONTARIO', 'HST QUEBEC', 'HST ALBERTA',
         
-        // Provincial PST variations
-        'PST BC', 'PST SK', 'PST MB', 'PST QC',
-        'PST_BC', 'PST_SK', 'PST_MB', 'PST_QC',
+        // Provincial PST variations (PST BC removed - freight services PST exempt)
+        'PST SK', 'PST MB', 'PST QC',
+        'PST_SK', 'PST_MB', 'PST_QC',
         
         // Generic tax terms
         'TAX', 'TAXES', 'SALES TAX', 'SALESTAX',

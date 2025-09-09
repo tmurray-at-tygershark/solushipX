@@ -33,7 +33,7 @@ const CANADIAN_TAX_CONFIG = {
     'NL': { taxes: [{ code: 'HST NL', name: 'HST Newfoundland and Labrador', rate: 15.0, type: 'HST' }], totalRate: 15.0 },
     'PE': { taxes: [{ code: 'HST PE', name: 'HST Prince Edward Island', rate: 15.0, type: 'HST' }], totalRate: 15.0 },
     'NS': { taxes: [{ code: 'HST NS', name: 'HST Nova Scotia', rate: 14.0, type: 'HST' }], totalRate: 14.0 },
-    'BC': { taxes: [{ code: 'GST', name: 'GST British Columbia', rate: 5.0, type: 'GST' }, { code: 'PST BC', name: 'PST British Columbia', rate: 7.0, type: 'PST' }], totalRate: 12.0 },
+    'BC': { taxes: [{ code: 'GST', name: 'GST British Columbia', rate: 5.0, type: 'GST' }], totalRate: 5.0 }, // PST exempt for freight services
     'MB': { taxes: [{ code: 'GST', name: 'GST Manitoba', rate: 5.0, type: 'GST' }, { code: 'PST MB', name: 'PST Manitoba', rate: 7.0, type: 'PST' }], totalRate: 12.0 },
     'SK': { taxes: [{ code: 'GST', name: 'GST Saskatchewan', rate: 5.0, type: 'GST' }, { code: 'PST SK', name: 'PST Saskatchewan', rate: 6.0, type: 'PST' }], totalRate: 11.0 },
     'QC': { taxes: [{ code: 'GST', name: 'GST Quebec', rate: 5.0, type: 'GST' }, { code: 'QST', name: 'QST Quebec', rate: 9.975, type: 'QST' }], totalRate: 14.975 },
@@ -55,7 +55,7 @@ const log = (message, data = null) => {
 };
 
 // Tax charge codes that should be excluded from tax calculation base
-const TAX_CODES = ['HST', 'GST', 'QST', 'HST ON', 'HST BC', 'HST NB', 'HST NS', 'HST NL', 'HST PE', 'PST BC', 'PST SK', 'PST MB'];
+const TAX_CODES = ['HST', 'GST', 'QST', 'HST ON', 'HST BC', 'HST NB', 'HST NS', 'HST NL', 'HST PE', 'PST SK', 'PST MB']; // PST BC removed
 
 const isTaxCharge = (code) => {
     return TAX_CODES.includes(code?.toUpperCase());
@@ -263,7 +263,7 @@ const main = async () => {
         log(`Loaded ${chargeTypes.length} charge types`);
 
         // Validate that required tax charge types exist
-        const requiredTaxCodes = ['HST', 'GST', 'QST', 'HST ON', 'HST BC', 'HST NB', 'HST NS', 'HST NL', 'HST PE', 'PST BC', 'PST SK', 'PST MB'];
+        const requiredTaxCodes = ['HST', 'GST', 'QST', 'HST ON', 'HST BC', 'HST NB', 'HST NS', 'HST NL', 'HST PE', 'PST SK', 'PST MB']; // PST BC removed
         const existingCodes = chargeTypes.map(ct => ct.code.toUpperCase());
         const missingCodes = requiredTaxCodes.filter(code => !existingCodes.includes(code));
         
