@@ -916,6 +916,7 @@ const {
     createRegion,
     getZoneSets,
     createZoneSet,
+    deleteZoneSet,
     getZoneMaps,
     resolveZone
 } = require('./src/configuration/enterpriseZoneManagement');
@@ -924,6 +925,7 @@ exports.getRegions = getRegions;
 exports.createRegion = createRegion;
 exports.getZoneSets = getZoneSets;
 exports.createZoneSet = createZoneSet;
+exports.deleteZoneSet = deleteZoneSet;
 exports.getZoneMaps = getZoneMaps;
 exports.resolveZone = resolveZone;
 
@@ -1111,3 +1113,6 @@ exports.calculateQuickShipZoneRates = calculateQuickShipZoneRates;
 // Map City Selector Testing
 const { testMapCitySelector } = require('./test-map-functionality');
 exports.testMapCitySelector = testMapCitySelector;
+// Comprehensive Zone Import System
+const { importAllComprehensiveZones } = require('./src/configuration/masterZoneImportComplete');
+exports.importAllComprehensiveZones = importAllComprehensiveZones;

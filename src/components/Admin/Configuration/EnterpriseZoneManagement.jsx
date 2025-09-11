@@ -4,7 +4,7 @@
  * Regions → ZoneSets → Zone Maps → Carrier Bindings → Overrides
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Box,
     Typography,
@@ -45,7 +45,9 @@ import {
     TableSortLabel,
     InputAdornment,
     List,
-    ListItem
+    ListItem,
+    Checkbox,
+    Autocomplete
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -54,16 +56,17 @@ import {
     MoreVert as MoreVertIcon,
     Public as RegionIcon,
     Map as ZoneSetIcon,
-    Route as ZoneMapIcon,
     Override as OverrideIcon,
     Info as InfoIcon,
     LocationCity as CityIcon,
     Search as SearchIcon,
     Clear as ClearIcon,
-    Label as ZoneIcon
+    Label as ZoneIcon,
+    ImportExport as ImportExportIcon
 } from '@mui/icons-material';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../../firebase';
+import { collection, getDocs, orderBy, query, where, limit, startAfter, getCountFromServer, doc, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { functions, db } from '../../../firebase';
 import { useSnackbar } from 'notistack';
 
 const EnterpriseZoneManagement = () => {
@@ -91,27 +94,11 @@ const EnterpriseZoneManagement = () => {
     const [editingZoneSet, setEditingZoneSet] = useState(null);
     const [zoneSetForm, setZoneSetForm] = useState({
         name: '',
-        geography: '',
-        version: 1,
         description: '',
-        zoneCount: 0,
-        coverage: 'regional',
-        serviceTypes: [],
+        selectedZones: [], // Array of zone IDs
         enabled: true
     });
 
-    // Zone Maps state
-    const [zoneMaps, setZoneMaps] = useState([]);
-    const [zoneMapDialogOpen, setZoneMapDialogOpen] = useState(false);
-    const [editingZoneMap, setEditingZoneMap] = useState(null);
-    const [zoneMapForm, setZoneMapForm] = useState({
-        zoneSetId: '',
-        originRegionId: '',
-        destinationRegionId: '',
-        zoneCode: '',
-        serviceType: '',
-        enabled: true
-    });
 
 
     // Cities state
@@ -220,11 +207,24 @@ const EnterpriseZoneManagement = () => {
     // Zone coverage search state
     const [zoneCoverageSearch, setZoneCoverageSearch] = useState('');
     const [zoneCoverageSuggestions, setZoneCoverageSuggestions] = useState([]);
+    const zoneCoverageSearchTimeout = useRef(null);
 
     // Zones state (individual zones within zone sets)
     const [zones, setZones] = useState([]);
+    const [filteredZones, setFilteredZones] = useState([]);
+    const [zoneSearchTerm, setZoneSearchTerm] = useState(''); // Actual search term for database
+    const [zoneSearchDisplay, setZoneSearchDisplay] = useState(''); // Display value for input
+    const [zoneCountryFilter, setZoneCountryFilter] = useState('');
+    const [zoneProvinceFilter, setZoneProvinceFilter] = useState('');
+    const [zoneSuggestions, setZoneSuggestions] = useState([]);
+    const [showZoneSuggestions, setShowZoneSuggestions] = useState(false);
     const [zoneDialogOpen, setZoneDialogOpen] = useState(false);
     const [editingZone, setEditingZone] = useState(null);
+
+    // Zone pagination state
+    const [zonePage, setZonePage] = useState(0);
+    const [zoneRowsPerPage, setZoneRowsPerPage] = useState(100);
+    const [totalZones, setTotalZones] = useState(0);
     const [zoneForm, setZoneForm] = useState({
         zoneCode: '',
         zoneName: '',
@@ -238,6 +238,22 @@ const EnterpriseZoneManagement = () => {
     // Action menu state
     const [actionMenuAnchor, setActionMenuAnchor] = useState(null);
     const [selectedItem, setSelectedItem] = useState(null);
+
+    // Zone deletion state
+    const [deleteZoneDialogOpen, setDeleteZoneDialogOpen] = useState(false);
+    const [deletingZone, setDeletingZone] = useState(null);
+
+    // Zone set deletion state
+    const [deleteZoneSetDialogOpen, setDeleteZoneSetDialogOpen] = useState(false);
+    const [deletingZoneSet, setDeletingZoneSet] = useState(null);
+
+    // Region deletion state
+    const [deleteRegionDialogOpen, setDeleteRegionDialogOpen] = useState(false);
+    const [deletingRegion, setDeletingRegion] = useState(null);
+
+    // Filter options state (loaded from database)
+    const [availableCountries, setAvailableCountries] = useState([]);
+    const [availableProvinces, setAvailableProvinces] = useState([]);
 
     // Region types
     const regionTypes = [
@@ -263,14 +279,69 @@ const EnterpriseZoneManagement = () => {
         { value: 'ocean', label: 'Ocean' }
     ];
 
+    // Load filter options from all zones in database
+    const loadFilterOptions = useCallback(async () => {
+        try {
+            // Get all zones to build filter options
+            const allZonesQuery = query(collection(db, 'zones'), orderBy('country'), orderBy('stateProvince'));
+            const allZonesSnapshot = await getDocs(allZonesQuery);
+
+            const countries = new Set();
+            const provincesByCountry = new Map();
+
+            allZonesSnapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.country) {
+                    countries.add(data.country);
+
+                    if (data.stateProvince) {
+                        if (!provincesByCountry.has(data.country)) {
+                            provincesByCountry.set(data.country, new Set());
+                        }
+                        provincesByCountry.get(data.country).add(data.stateProvince);
+                    }
+                }
+            });
+
+            setAvailableCountries(Array.from(countries).sort());
+
+            // Convert to object with sorted arrays
+            const provincesObj = {};
+            provincesByCountry.forEach((provinces, country) => {
+                provincesObj[country] = Array.from(provinces).sort();
+            });
+            setAvailableProvinces(provincesObj);
+
+            console.log('🌍 Loaded filter options:', {
+                countries: Array.from(countries),
+                provinces: provincesObj
+            });
+
+        } catch (error) {
+            console.error('Error loading filter options:', error);
+        }
+    }, []);
+
     // Load data based on active tab
     useEffect(() => {
         if (activeTab === 0) {
             loadRegions();
         } else if (activeTab === 1) {
+            loadCities(cityPage, cityRowsPerPage, citySearchTerm, cityCountryFilter, cityProvinceFilter, citySortBy, citySortDirection);
+        } else if (activeTab === 2) {
+            loadZones(zonePage, zoneRowsPerPage, zoneSearchTerm, zoneCountryFilter, zoneProvinceFilter);
+            // Load filter options when zones tab is first accessed
+            if (availableCountries.length === 0) {
+                loadFilterOptions();
+            }
+        } else if (activeTab === 3) {
             loadZoneSets();
+            // Also load all zones for zone name resolution in zone sets table
+            if (zones.length < 500) { // Only if we don't already have a comprehensive zone list
+                loadZones(0, 1000, '', '', ''); // Load all zones for name lookup
+            }
         }
-    }, [activeTab]);
+    }, [activeTab, cityPage, cityRowsPerPage, citySearchTerm, cityCountryFilter, cityProvinceFilter, citySortBy, citySortDirection, zonePage, zoneRowsPerPage, zoneSearchTerm, zoneCountryFilter, zoneProvinceFilter, availableCountries.length, loadFilterOptions, zones.length]);
 
     // Load regions
     const loadRegions = useCallback(async () => {
@@ -291,6 +362,211 @@ const EnterpriseZoneManagement = () => {
             setLoading(false);
         }
     }, [enqueueSnackbar]);
+
+    // Load zones
+    const loadZones = useCallback(async (page = 0, pageSize = 100, searchTerm = '', countryFilter = '', provinceFilter = '') => {
+        setLoading(true);
+        try {
+            // Build the base query
+            let baseQuery = query(collection(db, 'zones'), orderBy('zoneName'));
+
+            // Apply filters if provided
+            if (countryFilter) {
+                baseQuery = query(baseQuery, where('country', '==', countryFilter));
+            }
+            if (provinceFilter) {
+                baseQuery = query(baseQuery, where('stateProvince', '==', provinceFilter));
+            }
+
+            // Get total count for pagination
+            const countSnapshot = await getCountFromServer(baseQuery);
+            const totalCount = countSnapshot.data().count;
+            setTotalZones(totalCount);
+
+            // Apply pagination
+            const paginatedQuery = query(baseQuery, limit(pageSize));
+
+            // If not the first page, we need to get the starting point
+            if (page > 0) {
+                const offsetQuery = query(baseQuery, limit(page * pageSize));
+                const offsetSnapshot = await getDocs(offsetQuery);
+                const lastDoc = offsetSnapshot.docs[offsetSnapshot.docs.length - 1];
+                if (lastDoc) {
+                    const finalQuery = query(baseQuery, startAfter(lastDoc), limit(pageSize));
+                    const zonesSnapshot = await getDocs(finalQuery);
+                    processZonesData(zonesSnapshot, searchTerm);
+                } else {
+                    setZones([]);
+                    setFilteredZones([]);
+                }
+            } else {
+                const zonesSnapshot = await getDocs(paginatedQuery);
+                processZonesData(zonesSnapshot, searchTerm);
+            }
+
+            console.log(`🌍 Loaded zones: page ${page + 1}, ${pageSize} per page, total: ${totalCount}`);
+
+        } catch (error) {
+            console.error('Error loading zones:', error);
+            enqueueSnackbar('Error loading zones', { variant: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    }, [enqueueSnackbar]);
+
+    // Helper function to process zones data
+    const processZonesData = (zonesSnapshot, searchTerm) => {
+        const zonesData = [];
+        zonesSnapshot.forEach(doc => {
+            zonesData.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+
+        // Apply client-side search filtering if search term is provided
+        let filteredData = zonesData;
+        if (searchTerm && searchTerm.trim()) {
+            const searchLower = searchTerm.toLowerCase();
+            filteredData = zonesData.filter(zone => {
+                const nameMatch = zone.zoneName?.toLowerCase().includes(searchLower);
+                const codeMatch = zone.zoneId?.toLowerCase().includes(searchLower) ||
+                    zone.zoneCode?.toLowerCase().includes(searchLower);
+                const provinceMatch = zone.stateProvince?.toLowerCase().includes(searchLower);
+                return nameMatch || codeMatch || provinceMatch;
+            });
+        }
+
+        setZones(zonesData);
+        setFilteredZones(filteredData);
+    };
+
+    // Load zone cities for editing
+    const loadZoneCities = useCallback(async (zoneId) => {
+        if (!zoneId) return;
+
+        try {
+            const zoneCitiesQuery = query(
+                collection(db, 'zoneCities'),
+                where('zoneId', '==', zoneId)
+            );
+            const zoneCitiesSnapshot = await getDocs(zoneCitiesQuery);
+
+            const cities = [];
+            const postalCodes = [];
+
+            zoneCitiesSnapshot.forEach(doc => {
+                const cityData = doc.data();
+
+                // Add to cities array
+                cities.push({
+                    id: doc.id,
+                    name: cityData.city,
+                    province: cityData.province,
+                    country: cityData.country,
+                    postalCode: cityData.primaryPostal,
+                    latitude: cityData.latitude,
+                    longitude: cityData.longitude,
+                    matchType: cityData.matchType
+                });
+
+                // Add unique postal codes
+                if (cityData.primaryPostal && !postalCodes.some(p => p.code === cityData.primaryPostal)) {
+                    postalCodes.push({
+                        code: cityData.primaryPostal,
+                        city: cityData.city,
+                        province: cityData.province,
+                        country: cityData.country
+                    });
+                }
+            });
+
+            // Update zone form with loaded cities
+            setZoneForm(prev => ({
+                ...prev,
+                cities: cities,
+                postalCodes: postalCodes
+            }));
+
+            console.log(`🌍 Loaded ${cities.length} cities for zone ${zoneId}`);
+
+        } catch (error) {
+            console.error('Error loading zone cities:', error);
+            enqueueSnackbar('Error loading zone cities', { variant: 'error' });
+        }
+    }, [enqueueSnackbar]);
+
+    // Zone search and filtering - now triggers server-side reload
+    const filterZones = useCallback(() => {
+        // Reset to first page when filters change
+        setZonePage(0);
+        // Reload zones with current filters
+        loadZones(0, zoneRowsPerPage, zoneSearchTerm, zoneCountryFilter, zoneProvinceFilter);
+    }, [zoneSearchTerm, zoneCountryFilter, zoneProvinceFilter, zoneRowsPerPage, loadZones]);
+
+    // Generate zone search suggestions
+    const generateZoneSuggestions = useCallback((searchTerm) => {
+        if (!searchTerm || searchTerm.length < 2) {
+            setZoneSuggestions([]);
+            return;
+        }
+
+        const searchLower = searchTerm.toLowerCase();
+        const suggestions = zones
+            .filter(zone =>
+                zone.zoneCode?.toLowerCase().includes(searchLower) ||
+                zone.zoneName?.toLowerCase().includes(searchLower) ||
+                zone.primaryCity?.toLowerCase().includes(searchLower) ||
+                zone.stateProvince?.toLowerCase().includes(searchLower)
+            )
+            .slice(0, 10)
+            .map(zone => ({
+                id: zone.id,
+                zoneCode: zone.zoneCode,
+                zoneName: zone.zoneName,
+                location: `${zone.primaryCity}, ${zone.stateProvince}, ${zone.country}`,
+                displayText: `${zone.zoneCode} - ${zone.zoneName} (${zone.primaryCity}, ${zone.stateProvince})`
+            }));
+
+        setZoneSuggestions(suggestions);
+    }, [zones]);
+
+    // Debounced search effect - updates search term after user stops typing
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            setZoneSearchTerm(zoneSearchDisplay);
+        }, 800); // Longer delay for better UX
+
+        return () => clearTimeout(timeoutId);
+    }, [zoneSearchDisplay]);
+
+    // Zone search effects - triggers database query only when search term changes
+    useEffect(() => {
+        // Reset to first page when search changes
+        setZonePage(0);
+        // Trigger database search
+        filterZones();
+    }, [zoneSearchTerm, filterZones]);
+
+    // Immediate filtering for dropdown filters
+    useEffect(() => {
+        filterZones();
+    }, [zoneCountryFilter, zoneProvinceFilter, filterZones]);
+
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            generateZoneSuggestions(zoneSearchDisplay);
+        }, 300);
+        return () => clearTimeout(timeoutId);
+    }, [zoneSearchDisplay, generateZoneSuggestions]);
+
+    // Refresh zones when Zone Set dialog opens to get latest metadata
+    useEffect(() => {
+        if (zoneSetDialogOpen) {
+            console.log('🔄 Zone Set dialog opened - refreshing zones to get latest metadata');
+            loadZones(0, 1000, '', '', ''); // Load more zones for selection
+        }
+    }, [zoneSetDialogOpen, loadZones]);
 
     // Load zone sets
     const loadZoneSets = useCallback(async () => {
@@ -353,12 +629,8 @@ const EnterpriseZoneManagement = () => {
         setEditingZoneSet(null);
         setZoneSetForm({
             name: '',
-            geography: '',
-            version: 1,
             description: '',
-            zoneCount: 0,
-            coverage: 'regional',
-            serviceTypes: [],
+            selectedZones: [],
             enabled: true
         });
         setZoneSetDialogOpen(true);
@@ -366,20 +638,206 @@ const EnterpriseZoneManagement = () => {
 
     // Handle save zone set
     const handleSaveZoneSet = async () => {
-        if (!zoneSetForm.name || !zoneSetForm.geography) {
-            enqueueSnackbar('Name and geography are required', { variant: 'error' });
+        if (!zoneSetForm.name) {
+            enqueueSnackbar('Name is required', { variant: 'error' });
+            return;
+        }
+
+        if (zoneSetForm.selectedZones.length === 0) {
+            enqueueSnackbar('At least one zone must be selected', { variant: 'error' });
             return;
         }
 
         try {
             const createZoneSet = httpsCallable(functions, 'createZoneSet');
-            await createZoneSet(zoneSetForm);
+            await createZoneSet({
+                ...zoneSetForm,
+                zoneCount: zoneSetForm.selectedZones.length
+            });
             enqueueSnackbar('Zone set created successfully', { variant: 'success' });
             setZoneSetDialogOpen(false);
             loadZoneSets();
         } catch (error) {
             console.error('Error saving zone set:', error);
             enqueueSnackbar(error.message || 'Failed to save zone set', { variant: 'error' });
+        }
+    };
+
+    // Handle delete zone set
+    const handleDeleteZoneSet = async () => {
+        if (!deletingZoneSet) return;
+
+        try {
+            const deleteZoneSet = httpsCallable(functions, 'deleteZoneSet');
+            await deleteZoneSet({ zoneSetId: deletingZoneSet.id });
+
+            enqueueSnackbar('Zone set deleted successfully', { variant: 'success' });
+            setDeleteZoneSetDialogOpen(false);
+            setDeletingZoneSet(null);
+            loadZoneSets();
+        } catch (error) {
+            console.error('Error deleting zone set:', error);
+            enqueueSnackbar(error.message || 'Failed to delete zone set', { variant: 'error' });
+        }
+    };
+
+    // Handle delete region
+    const handleDeleteRegion = async () => {
+        if (!deletingRegion) return;
+
+        try {
+            // For now, use direct Firestore deletion since there might not be a cloud function
+            const regionRef = doc(db, 'regions', deletingRegion.id);
+            await deleteDoc(regionRef);
+
+            enqueueSnackbar('Region deleted successfully', { variant: 'success' });
+            setDeleteRegionDialogOpen(false);
+            setDeletingRegion(null);
+            loadRegions();
+        } catch (error) {
+            console.error('Error deleting region:', error);
+            enqueueSnackbar(error.message || 'Failed to delete region', { variant: 'error' });
+        }
+    };
+
+    // Handle save zone
+    const handleSaveZone = async () => {
+        if (!zoneForm.zoneCode || !zoneForm.zoneName) {
+            enqueueSnackbar('Zone Code and Zone Name are required', { variant: 'error' });
+            return;
+        }
+
+        try {
+            let zoneId;
+
+            if (editingZone) {
+                // Update existing zone
+                zoneId = editingZone.id;
+                const zoneRef = doc(db, 'zones', zoneId);
+                // Calculate unique cities count
+                const uniqueCities = new Set();
+                zoneForm.cities.forEach(city => {
+                    uniqueCities.add(`${city.name}-${city.province}-${city.country}`);
+                });
+
+                await updateDoc(zoneRef, {
+                    zoneCode: zoneForm.zoneCode,
+                    zoneName: zoneForm.zoneName,
+                    description: zoneForm.description,
+                    enabled: zoneForm.enabled,
+                    updatedAt: new Date(),
+                    metadata: {
+                        ...editingZone.metadata,
+                        totalCities: uniqueCities.size,
+                        totalPostalCodes: zoneForm.postalCodes.length
+                    }
+                });
+
+                // Clear existing zone cities
+                const existingCitiesQuery = query(
+                    collection(db, 'zoneCities'),
+                    where('zoneId', '==', zoneId)
+                );
+                const existingCitiesSnapshot = await getDocs(existingCitiesQuery);
+
+                // Delete existing zone cities in batches
+                const deleteBatch = [];
+                existingCitiesSnapshot.forEach(doc => {
+                    deleteBatch.push(deleteDoc(doc.ref));
+                });
+                if (deleteBatch.length > 0) {
+                    await Promise.all(deleteBatch);
+                }
+
+            } else {
+                // Create new zone
+                // Calculate unique cities count
+                const uniqueCities = new Set();
+                zoneForm.cities.forEach(city => {
+                    uniqueCities.add(`${city.name}-${city.province}-${city.country}`);
+                });
+
+                const newZoneRef = await addDoc(collection(db, 'zones'), {
+                    zoneCode: zoneForm.zoneCode,
+                    zoneName: zoneForm.zoneName,
+                    description: zoneForm.description,
+                    enabled: zoneForm.enabled,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                    metadata: {
+                        totalCities: uniqueCities.size,
+                        totalPostalCodes: zoneForm.postalCodes.length,
+                        importSource: 'manual_entry'
+                    }
+                });
+                zoneId = newZoneRef.id;
+            }
+
+            // Save zone cities to zoneCities collection
+            if (zoneForm.postalCodes.length > 0) {
+                const zoneCitiesBatch = [];
+
+                zoneForm.postalCodes.forEach(postal => {
+                    // Create base document
+                    const zoneCityDoc = {
+                        zoneId: zoneId,
+                        zoneCode: zoneForm.zoneCode,
+                        city: postal.city,
+                        province: postal.province,
+                        country: postal.country,
+                        primaryPostal: postal.code,
+                        matchType: 'coordinate',
+                        createdAt: new Date()
+                    };
+
+                    // Only add coordinates if they exist
+                    if (postal.latitude !== undefined && postal.longitude !== undefined &&
+                        postal.latitude !== null && postal.longitude !== null) {
+                        zoneCityDoc.latitude = postal.latitude;
+                        zoneCityDoc.longitude = postal.longitude;
+                    }
+
+                    zoneCitiesBatch.push(addDoc(collection(db, 'zoneCities'), zoneCityDoc));
+                });
+
+                // Execute all zone city saves
+                await Promise.all(zoneCitiesBatch);
+                console.log(`💾 Saved ${zoneCitiesBatch.length} zone cities for ${zoneForm.zoneName}`);
+            }
+
+            enqueueSnackbar(
+                editingZone ? 'Zone updated successfully' : 'Zone created successfully',
+                { variant: 'success' }
+            );
+
+            setZoneDialogOpen(false);
+
+            // Reload zones with current pagination to show updated metadata
+            loadZones(zonePage, zoneRowsPerPage, zoneSearchTerm, zoneCountryFilter, zoneProvinceFilter);
+
+        } catch (error) {
+            console.error('Error saving zone:', error);
+            enqueueSnackbar(error.message || 'Failed to save zone', { variant: 'error' });
+        }
+    };
+
+    // Handle zone deletion
+    const handleDeleteZone = async () => {
+        if (!deletingZone) return;
+
+        try {
+            const zoneRef = doc(db, 'zones', deletingZone.id);
+            await deleteDoc(zoneRef);
+
+            enqueueSnackbar('Zone deleted successfully', { variant: 'success' });
+            setDeleteZoneDialogOpen(false);
+            setDeletingZone(null);
+
+            // Reload zones with current pagination
+            loadZones(zonePage, zoneRowsPerPage, zoneSearchTerm, zoneCountryFilter, zoneProvinceFilter);
+        } catch (error) {
+            console.error('Error deleting zone:', error);
+            enqueueSnackbar(error.message || 'Failed to delete zone', { variant: 'error' });
         }
     };
 
@@ -428,17 +886,27 @@ const EnterpriseZoneManagement = () => {
                     enabled: cityData.enabled !== false
                 });
                 setCityDialogOpen(true);
-            } else if (activeTab === 2) { // Zone Sets is now the 3rd tab (index 2)
+            } else if (activeTab === 2) { // Zones is now the 3rd tab (index 2)
+                // Edit Zone
+                setEditingZone(selectedItem);
+                loadZoneCities(selectedItem.id);
+                setZoneForm({
+                    zoneCode: selectedItem.zoneCode || '',
+                    zoneName: selectedItem.zoneName || '',
+                    description: selectedItem.description || '',
+                    cities: [],
+                    postalCodes: [],
+                    provinces: [],
+                    enabled: selectedItem.enabled !== false
+                });
+                setZoneDialogOpen(true);
+            } else if (activeTab === 3) { // Zone Sets is now the 4th tab (index 3)
                 // Edit Zone Set
                 setEditingZoneSet(selectedItem);
                 setZoneSetForm({
                     name: selectedItem.name,
-                    geography: selectedItem.geography,
-                    version: selectedItem.version || 1,
                     description: selectedItem.description || '',
-                    zoneCount: selectedItem.zoneCount || 0,
-                    coverage: selectedItem.coverage || 'regional',
-                    serviceTypes: selectedItem.serviceTypes || [],
+                    selectedZones: selectedItem.selectedZones || [],
                     enabled: selectedItem.enabled !== false
                 });
                 setZoneSetDialogOpen(true);
@@ -449,14 +917,26 @@ const EnterpriseZoneManagement = () => {
 
     const handleDeleteItem = () => {
         if (selectedItem) {
-            if (window.confirm(`Are you sure you want to delete ${selectedItem.name || selectedItem.code || selectedItem.data?.city}?`)) {
-                if (activeTab === 1) { // Cities is now the 2nd tab (index 1)
-                    // Delete City
+            if (activeTab === 0) { // Regions tab
+                // Delete Region - use proper dialog
+                setDeletingRegion(selectedItem);
+                setDeleteRegionDialogOpen(true);
+            } else if (activeTab === 1) { // Cities is now the 2nd tab (index 1)
+                // Delete City
+                if (window.confirm(`Are you sure you want to delete ${selectedItem.data?.city}?`)) {
                     handleDeleteCity(selectedItem.data);
-                } else {
-                    // TODO: Implement delete functionality for other tabs
-                    enqueueSnackbar('Delete functionality coming soon', { variant: 'info' });
                 }
+            } else if (activeTab === 2) { // Zones tab
+                // Delete Zone - use proper dialog
+                setDeletingZone(selectedItem);
+                setDeleteZoneDialogOpen(true);
+            } else if (activeTab === 3) { // Zone Sets tab
+                // Delete Zone Set - use proper dialog
+                setDeletingZoneSet(selectedItem);
+                setDeleteZoneSetDialogOpen(true);
+            } else {
+                // TODO: Implement delete functionality for other tabs
+                enqueueSnackbar('Delete functionality coming soon', { variant: 'info' });
             }
         }
         handleCloseActionMenu();
@@ -872,15 +1352,49 @@ const EnterpriseZoneManagement = () => {
         setZoneDialogOpen(true);
     };
 
+    // Bulk zone import handler
+    const handleBulkZoneImport = async () => {
+        try {
+            setLoading(true);
+
+            // Call cloud function to import all comprehensive zones
+            const importAllComprehensiveZones = httpsCallable(functions, 'importAllComprehensiveZones');
+
+            enqueueSnackbar('Starting import of 600+ comprehensive zones...', { variant: 'info' });
+
+            const result = await importAllComprehensiveZones({
+                clearExisting: true // Clear existing zones before import
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `Successfully imported ${result.data.successfulZones} zones covering every shipping destination in North America!`,
+                    { variant: 'success', persist: true }
+                );
+
+                console.log('🎉 Zone import complete:', result.data);
+            } else {
+                enqueueSnackbar('Zone import failed', { variant: 'error' });
+            }
+
+        } catch (error) {
+            console.error('❌ Bulk zone import error:', error);
+            enqueueSnackbar(`Import failed: ${error.message}`, { variant: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Zone coverage search handlers
-    const handleZoneCoverageSearch = async () => {
-        if (!zoneCoverageSearch.trim() || zoneCoverageSearch.trim().length < 2) return;
+    const handleZoneCoverageSearch = async (searchTerm = null) => {
+        const searchValue = searchTerm || zoneCoverageSearch;
+        if (!searchValue.trim() || searchValue.trim().length < 2) return;
 
         try {
             const { collection, getDocs, query, where, limit: firestoreLimit } = await import('firebase/firestore');
             const { db } = await import('../../../firebase');
 
-            const trimmedSearch = zoneCoverageSearch.trim();
+            const trimmedSearch = searchValue.trim();
 
             // Detect search type
             const isPostalCode = /^[A-Za-z]\d[A-Za-z]/.test(trimmedSearch); // Canadian postal pattern
@@ -903,10 +1417,15 @@ const EnterpriseZoneManagement = () => {
                 );
 
                 const postalSnapshot = await getDocs(postalQuery);
-                suggestions = postalSnapshot.docs.map(doc => ({
-                    ...doc.data(),
-                    type: 'postal'
-                }));
+                suggestions = postalSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        ...data,
+                        type: 'postal',
+                        displayText: `${data.postalZipCode} - ${data.city}, ${data.provinceStateName}`,
+                        coordinates: data.latitude && data.longitude ? `${data.latitude}, ${data.longitude}` : null
+                    };
+                });
             } else {
                 // Search by city name
                 const searchTitle = trimmedSearch.charAt(0).toUpperCase() + trimmedSearch.slice(1).toLowerCase();
@@ -921,7 +1440,7 @@ const EnterpriseZoneManagement = () => {
 
                 const citySnapshot = await getDocs(cityQuery);
 
-                // Group by city to avoid duplicates
+                // Group by city to avoid duplicates and count postal codes
                 const citiesMap = new Map();
                 citySnapshot.docs.forEach(doc => {
                     const data = doc.data();
@@ -933,13 +1452,31 @@ const EnterpriseZoneManagement = () => {
                             provinceStateName: data.provinceStateName,
                             countryName: data.countryName,
                             country: data.country,
-                            postalCode: data.postalZipCode,
+                            postalCodes: [data.postalZipCode],
+                            latitude: data.latitude,
+                            longitude: data.longitude,
                             type: 'city'
                         });
+                    } else {
+                        // Add postal code to existing city
+                        const existing = citiesMap.get(cityKey);
+                        if (data.postalZipCode && !existing.postalCodes.includes(data.postalZipCode)) {
+                            existing.postalCodes.push(data.postalZipCode);
+                        }
+                        // Update coordinates if not set
+                        if (!existing.latitude && data.latitude) {
+                            existing.latitude = data.latitude;
+                            existing.longitude = data.longitude;
+                        }
                     }
                 });
 
-                suggestions = Array.from(citiesMap.values());
+                suggestions = Array.from(citiesMap.values()).map(city => ({
+                    ...city,
+                    postalCodeCount: city.postalCodes.length,
+                    displayText: `${city.city}, ${city.provinceStateName}`,
+                    coordinates: city.latitude && city.longitude ? `${city.latitude}, ${city.longitude}` : null
+                }));
             }
 
             setZoneCoverageSuggestions(suggestions);
@@ -950,45 +1487,122 @@ const EnterpriseZoneManagement = () => {
         }
     };
 
-    const handleAddZoneCoverage = (item) => {
+    const handleAddZoneCoverage = async (item) => {
         if (item.type === 'city') {
-            // Add city to zone
-            const newCity = {
-                name: item.city,
-                province: item.provinceStateName,
-                country: item.countryName,
-                postalCode: item.postalCode
-            };
+            // Add city with ALL its postal codes
+            try {
+                // Check for duplicates first
+                const exists = zoneForm.cities.some(city =>
+                    city.name === item.city && city.province === item.provinceStateName
+                );
 
-            // Check for duplicates
-            const exists = zoneForm.cities.some(city =>
-                city.name === newCity.name && city.province === newCity.province
-            );
+                if (exists) {
+                    enqueueSnackbar(`${item.city}, ${item.provinceStateName} already in zone`, { variant: 'info' });
+                    setZoneCoverageSearch('');
+                    setZoneCoverageSuggestions([]);
+                    return;
+                }
 
-            if (!exists) {
+                // Fetch all postal codes for this city
+                const { collection, getDocs, query, where } = await import('firebase/firestore');
+                const { db } = await import('../../../firebase');
+
+                const cityQuery = query(
+                    collection(db, 'geoLocations'),
+                    where('city', '==', item.city),
+                    where('provinceStateName', '==', item.provinceStateName),
+                    where('countryName', '==', item.countryName)
+                );
+
+                const citySnapshot = await getDocs(cityQuery);
+                const allPostalCodes = [];
+
+                citySnapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (data.postalZipCode) {
+                        allPostalCodes.push({
+                            code: data.postalZipCode,
+                            city: data.city,
+                            province: data.provinceStateName,
+                            country: data.countryName,
+                            latitude: data.latitude,
+                            longitude: data.longitude
+                        });
+                    }
+                });
+
+                // Remove duplicates based on postal code
+                const uniquePostalCodes = allPostalCodes.filter((postal, index, self) =>
+                    index === self.findIndex(p => p.code === postal.code)
+                );
+
+                // Create individual city entries for each postal code (matching expected data structure)
+                const existingPostalCodes = zoneForm.postalCodes.map(p => p.code);
+                const newPostalCodes = uniquePostalCodes.filter(postal =>
+                    !existingPostalCodes.includes(postal.code)
+                );
+
+                // Create city entries - one per postal code
+                const newCityEntries = uniquePostalCodes.map(postal => ({
+                    name: postal.city,
+                    province: postal.province,
+                    country: postal.country,
+                    postalCode: postal.code,
+                    latitude: postal.latitude,
+                    longitude: postal.longitude,
+                    matchType: 'coordinate'
+                }));
+
+                // Filter out existing entries
+                const existingCityKeys = zoneForm.cities.map(c => `${c.name}-${c.province}-${c.postalCode}`);
+                const newCityEntriesFiltered = newCityEntries.filter(city =>
+                    !existingCityKeys.includes(`${city.name}-${city.province}-${city.postalCode}`)
+                );
+
                 setZoneForm(prev => ({
                     ...prev,
-                    cities: [...prev.cities, newCity]
+                    cities: [...prev.cities, ...newCityEntriesFiltered],
+                    postalCodes: [...prev.postalCodes, ...newPostalCodes]
                 }));
-                enqueueSnackbar(`Added ${newCity.name}, ${newCity.province} to zone`, { variant: 'success' });
-            } else {
-                enqueueSnackbar(`${newCity.name}, ${newCity.province} already in zone`, { variant: 'info' });
+
+                enqueueSnackbar(
+                    `Added ${item.city}, ${item.provinceStateName} with ${uniquePostalCodes.length} postal codes to zone`,
+                    { variant: 'success' }
+                );
+
+            } catch (error) {
+                console.error('Error adding city to zone:', error);
+                enqueueSnackbar('Failed to add city to zone', { variant: 'error' });
             }
         } else if (item.type === 'postal') {
-            // Add postal code to zone
+            // Add single postal code to zone
             const newPostal = {
                 code: item.postalZipCode,
                 city: item.city,
                 province: item.provinceStateName,
-                country: item.countryName
+                country: item.countryName,
+                latitude: item.latitude,
+                longitude: item.longitude
             };
 
             // Check for duplicates
             const exists = zoneForm.postalCodes.some(postal => postal.code === newPostal.code);
 
             if (!exists) {
+                // Add to postal codes list
+                const newCityEntry = {
+                    name: item.city,
+                    province: item.provinceStateName,
+                    country: item.countryName,
+                    postalCode: item.postalZipCode,
+                    latitude: item.latitude,
+                    longitude: item.longitude,
+                    matchType: 'postal'
+                };
+
                 setZoneForm(prev => ({
                     ...prev,
+                    cities: [...prev.cities, newCityEntry],
                     postalCodes: [...prev.postalCodes, newPostal]
                 }));
                 enqueueSnackbar(`Added postal code ${newPostal.code} to zone`, { variant: 'success' });
@@ -1003,25 +1617,35 @@ const EnterpriseZoneManagement = () => {
     };
 
     const handleRemoveZoneCoverage = (type, index) => {
-        setZoneForm(prev => ({
-            ...prev,
-            [type]: prev[type].filter((_, i) => i !== index)
-        }));
+        setZoneForm(prev => {
+            const updated = {
+                ...prev,
+                [type]: prev[type].filter((_, i) => i !== index)
+            };
+
+            // If removing a city, update postal codes list
+            if (type === 'cities') {
+                const remainingCities = updated.cities;
+                const uniquePostalCodes = [];
+
+                remainingCities.forEach(city => {
+                    if (city.postalCode && !uniquePostalCodes.some(p => p.code === city.postalCode)) {
+                        uniquePostalCodes.push({
+                            code: city.postalCode,
+                            city: city.name,
+                            province: city.province,
+                            country: city.country
+                        });
+                    }
+                });
+
+                updated.postalCodes = uniquePostalCodes;
+            }
+
+            return updated;
+        });
     };
 
-    // Zone Map handlers
-    const handleAddZoneMap = () => {
-        setEditingZoneMap(null);
-        setZoneMapForm({
-            zoneSetId: '',
-            originRegionId: '',
-            destinationRegionId: '',
-            zoneCode: '',
-            serviceType: '',
-            enabled: true
-        });
-        setZoneMapDialogOpen(true);
-    };
 
 
     // Render regions tab
@@ -1048,31 +1672,6 @@ const EnterpriseZoneManagement = () => {
                 </Button>
             </Box>
 
-            {/* Info Cards */}
-            <Grid container spacing={2} sx={{ mb: 3 }}>
-                {regionTypes.slice(0, 4).map((type) => (
-                    <Grid item xs={12} md={3} key={type.value}>
-                        <Card sx={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-                            <CardContent sx={{ p: 2 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                    <RegionIcon sx={{ fontSize: '16px', color: '#3b82f6' }} />
-                                    <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>
-                                        {type.label}
-                                    </Typography>
-                                </Box>
-                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                    {type.description}
-                                </Typography>
-                                <Chip
-                                    label={`${regions.filter(r => r.type === type.value).length} regions`}
-                                    size="small"
-                                    sx={{ fontSize: '10px', mt: 1 }}
-                                />
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                ))}
-            </Grid>
 
             {/* Regions Table */}
             <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
@@ -1176,11 +1775,9 @@ const EnterpriseZoneManagement = () => {
                     <TableHead>
                         <TableRow sx={{ bgcolor: '#f8fafc' }}>
                             <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Name</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Geography</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Version</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Coverage</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Services</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Zones</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Description</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Selected Zones</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Zone Count</TableCell>
                             <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status</TableCell>
                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '80px' }}>Actions</TableCell>
                         </TableRow>
@@ -1188,13 +1785,13 @@ const EnterpriseZoneManagement = () => {
                     <TableBody>
                         {loading ? (
                             <TableRow>
-                                <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                                <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
                                     <CircularProgress size={20} />
                                 </TableCell>
                             </TableRow>
                         ) : zoneSets.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                                <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
                                     <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
                                         No zone sets configured. Add zone sets to get started.
                                     </Typography>
@@ -1206,42 +1803,37 @@ const EnterpriseZoneManagement = () => {
                                     <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
                                         {zoneSet.name}
                                     </TableCell>
-                                    <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace' }}>
-                                        {zoneSet.geography}
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        {zoneSet.description || 'No description'}
                                     </TableCell>
                                     <TableCell sx={{ fontSize: '12px' }}>
-                                        <Chip
-                                            label={`v${zoneSet.version}`}
-                                            size="small"
-                                            sx={{ fontSize: '10px' }}
-                                        />
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                            {(zoneSet.selectedZones || []).slice(0, 3).map((zoneId) => {
+                                                const zone = zones.find(z => z.id === zoneId);
+                                                const zoneName = zone?.zoneName || zone?.zoneCode || `Zone ${zoneId.slice(0, 6)}`;
+                                                return (
+                                                    <Chip
+                                                        key={zoneId}
+                                                        label={zoneName}
+                                                        size="small"
+                                                        sx={{ fontSize: '9px' }}
+                                                        title={zone ? `${zone.zoneName} (${zone.stateProvince}, ${zone.country})` : zoneName}
+                                                    />
+                                                );
+                                            })}
+                                            {(zoneSet.selectedZones || []).length > 3 && (
+                                                <Chip
+                                                    label={`+${(zoneSet.selectedZones || []).length - 3} more`}
+                                                    size="small"
+                                                    sx={{ fontSize: '9px' }}
+                                                    color="default"
+                                                    variant="outlined"
+                                                />
+                                            )}
+                                        </Box>
                                     </TableCell>
                                     <TableCell sx={{ fontSize: '12px' }}>
-                                        <Chip
-                                            label={zoneSet.coverage}
-                                            size="small"
-                                            sx={{ fontSize: '10px' }}
-                                        />
-                                    </TableCell>
-                                    <TableCell sx={{ fontSize: '12px' }}>
-                                        {zoneSet.serviceTypes.slice(0, 2).map(service => (
-                                            <Chip
-                                                key={service}
-                                                label={service.toUpperCase()}
-                                                size="small"
-                                                sx={{ fontSize: '9px', mr: 0.5, mb: 0.5 }}
-                                            />
-                                        ))}
-                                        {zoneSet.serviceTypes.length > 2 && (
-                                            <Chip
-                                                label={`+${zoneSet.serviceTypes.length - 2}`}
-                                                size="small"
-                                                sx={{ fontSize: '9px' }}
-                                            />
-                                        )}
-                                    </TableCell>
-                                    <TableCell sx={{ fontSize: '12px' }}>
-                                        {zoneSet.zoneCount || 0} zones
+                                        {(zoneSet.selectedZones || []).length} zones
                                     </TableCell>
                                     <TableCell>
                                         <Chip
@@ -1268,57 +1860,6 @@ const EnterpriseZoneManagement = () => {
         </Box>
     );
 
-    const renderZoneMapsTab = () => (
-        <Box>
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                mb: 2
-            }}>
-                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                    Origin/destination zone mappings for rate calculation
-                </Typography>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={handleAddZoneMap}
-                    size="small"
-                    sx={{ fontSize: '12px' }}
-                >
-                    Zone Map
-                </Button>
-            </Box>
-
-            <Alert severity="info" sx={{ fontSize: '12px', mb: 2 }}>
-                Zone Maps allow you to define how origin and destination regions map to specific zone codes for rate calculation.
-                For example: "Ontario, Canada → Zone A" or "New York → Zone 1".
-            </Alert>
-
-            <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
-                <Table size="small">
-                    <TableHead>
-                        <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Zone Set</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Origin</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Destination</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Zone Code</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Service Type</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'center' }}>Actions</TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        <TableRow>
-                            <TableCell colSpan={7} sx={{ textAlign: 'center', fontSize: '12px', py: 4, color: '#6b7280' }}>
-                                No zone maps configured. Zone maps will be available once zone sets are created.
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
-            </TableContainer>
-        </Box>
-    );
 
     // Zones Tab - Individual zones within zone sets
     const renderZonesTab = () => (
@@ -1332,21 +1873,213 @@ const EnterpriseZoneManagement = () => {
                 <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
                     Independent zones with city/region assignments. Zone Sets will collect these zones together.
                 </Typography>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={handleAddZone}
-                    size="small"
-                    sx={{ fontSize: '12px' }}
-                >
-                    Zone
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                        variant="outlined"
+                        startIcon={<ImportExportIcon />}
+                        onClick={handleBulkZoneImport}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                        disabled={loading}
+                    >
+                        Import 600+ Zones
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddZone}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Zone
+                    </Button>
+                </Box>
             </Box>
 
-            <Alert severity="info" sx={{ fontSize: '12px', mb: 2 }}>
-                Create independent zones first (e.g., "GTA Zone", "Southern Ontario Zone"), then group them into Zone Sets.
-                Each zone defines specific cities, postal codes, or provinces it covers.
-            </Alert>
+
+            {/* Zone Search and Filters */}
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid item xs={12} md={6}>
+                    <Box sx={{ position: 'relative' }}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            placeholder="Search zones by code, name, city, or province..."
+                            value={zoneSearchDisplay}
+                            onChange={(e) => setZoneSearchDisplay(e.target.value)}
+                            onFocus={() => {
+                                if (zoneSuggestions.length > 0) {
+                                    setShowZoneSuggestions(true);
+                                }
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    // Immediate search on Enter
+                                    setZoneSearchTerm(zoneSearchDisplay);
+                                    setShowZoneSuggestions(false);
+                                } else if (e.key === 'Escape') {
+                                    setZoneSearchDisplay('');
+                                    setZoneSearchTerm('');
+                                    setShowZoneSuggestions(false);
+                                }
+                            }}
+                            onBlur={(e) => {
+                                // Delay hiding suggestions to allow clicking on them
+                                setTimeout(() => {
+                                    if (!e.relatedTarget || !e.relatedTarget.closest('[data-zone-suggestion]')) {
+                                        setShowZoneSuggestions(false);
+                                    }
+                                }, 150);
+                            }}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: zoneSearchDisplay && (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => {
+                                                setZoneSearchDisplay('');
+                                                setZoneSearchTerm('');
+                                                setShowZoneSuggestions(false);
+                                            }}
+                                        >
+                                            <ClearIcon fontSize="small" />
+                                        </IconButton>
+                                    </InputAdornment>
+                                ),
+                                sx: { fontSize: '12px' }
+                            }}
+                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                        />
+
+                        {/* Zone Search Suggestions */}
+                        {showZoneSuggestions && zoneSuggestions.length > 0 && (
+                            <Paper
+                                sx={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 1000,
+                                    maxHeight: '300px',
+                                    overflowY: 'auto',
+                                    border: '1px solid #e0e0e0'
+                                }}
+                            >
+                                {/* Close button for zone suggestions */}
+                                <Box sx={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    px: 1,
+                                    py: 0.5,
+                                    borderBottom: '1px solid #e0e0e0',
+                                    bgcolor: '#f8fafc'
+                                }}>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        {zoneSuggestions.length} zone matches
+                                    </Typography>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setShowZoneSuggestions(false)}
+                                        sx={{ p: 0.25 }}
+                                    >
+                                        <ClearIcon sx={{ fontSize: '14px' }} />
+                                    </IconButton>
+                                </Box>
+                                <List dense>
+                                    {zoneSuggestions.map((suggestion) => (
+                                        <ListItem
+                                            key={suggestion.id}
+                                            button
+                                            onClick={() => {
+                                                setZoneSearchTerm(suggestion.displayText);
+                                                setShowZoneSuggestions(false);
+                                            }}
+                                            sx={{ py: 0.5 }}
+                                            data-zone-suggestion="true"
+                                        >
+                                            <ListItemText
+                                                primary={suggestion.displayText}
+                                                secondary={suggestion.location}
+                                                primaryTypographyProps={{ fontSize: '12px' }}
+                                                secondaryTypographyProps={{ fontSize: '11px' }}
+                                            />
+                                        </ListItem>
+                                    ))}
+                                </List>
+                            </Paper>
+                        )}
+                    </Box>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
+                        <Select
+                            value={zoneCountryFilter}
+                            onChange={(e) => {
+                                setZoneCountryFilter(e.target.value);
+                                // Clear province filter when country changes
+                                setZoneProvinceFilter('');
+                            }}
+                            label="Country"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }}>All Countries</MenuItem>
+                            {availableCountries.map(country => (
+                                <MenuItem key={country} value={country} sx={{ fontSize: '12px' }}>
+                                    {country === 'Canada' ? '🇨🇦 ' : country === 'United States' ? '🇺🇸 ' : ''}{country}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Province/State</InputLabel>
+                        <Select
+                            value={zoneProvinceFilter}
+                            onChange={(e) => setZoneProvinceFilter(e.target.value)}
+                            label="Province/State"
+                            sx={{ fontSize: '12px' }}
+                            disabled={!zoneCountryFilter}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }}>All Provinces/States</MenuItem>
+                            {zoneCountryFilter && availableProvinces[zoneCountryFilter] &&
+                                availableProvinces[zoneCountryFilter].map(province => (
+                                    <MenuItem key={province} value={province} sx={{ fontSize: '12px' }}>
+                                        {province}
+                                    </MenuItem>
+                                ))
+                            }
+                        </Select>
+                    </FormControl>
+                </Grid>
+            </Grid>
+
+            {/* Results Summary */}
+            {zoneSearchTerm || zoneCountryFilter || zoneProvinceFilter ? (
+                <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                        Showing {filteredZones.length} zones on this page of {totalZones} total
+                        {zoneSearchTerm && ` matching "${zoneSearchTerm}"`}
+                        {zoneCountryFilter && ` in ${zoneCountryFilter}`}
+                        {zoneProvinceFilter && ` - ${zoneProvinceFilter}`}
+                    </Typography>
+                </Box>
+            ) : (
+                totalZones > 0 && (
+                    <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                            Showing {filteredZones.length} zones on this page of {totalZones} total
+                        </Typography>
+                    </Box>
+                )
+            )}
 
             <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
                 <Table size="small">
@@ -1355,25 +2088,137 @@ const EnterpriseZoneManagement = () => {
                             <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Zone Code</TableCell>
                             <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Zone Name</TableCell>
                             <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Cities</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Postal Codes</TableCell>
-                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Provinces</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Zip/Postal Codes</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>State/Provinces</TableCell>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Country</TableCell>
                             <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status</TableCell>
                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'center' }}>Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        <TableRow>
-                            <TableCell colSpan={7} sx={{ textAlign: 'center', fontSize: '12px', py: 4, color: '#6b7280' }}>
-                                No zones configured yet. Create independent zones first, then group them into Zone Sets.
-                                <br />
-                                <Typography variant="caption" sx={{ fontSize: '11px', mt: 1, display: 'block' }}>
-                                    Examples: "GTA Zone" (Toronto, Mississauga), "Southern Ontario Zone" (London, Windsor), "Quebec Zone" (Montreal, Quebec City)
-                                </Typography>
-                            </TableCell>
-                        </TableRow>
+                        {loading ? (
+                            <TableRow>
+                                <TableCell colSpan={7} sx={{ textAlign: 'center', py: 4 }}>
+                                    <CircularProgress size={24} />
+                                    <Typography sx={{ mt: 1, fontSize: '12px', color: '#6b7280' }}>
+                                        Loading zones...
+                                    </Typography>
+                                </TableCell>
+                            </TableRow>
+                        ) : filteredZones.length === 0 ? (
+                            <TableRow>
+                                <TableCell colSpan={7} sx={{ textAlign: 'center', fontSize: '12px', py: 4, color: '#6b7280' }}>
+                                    No zones configured yet. Click "Import 600+ Zones" to load comprehensive North American zones.
+                                    <br />
+                                    <Typography variant="caption" sx={{ fontSize: '11px', mt: 1, display: 'block' }}>
+                                        Examples: "GTA Zone" (Toronto, Mississauga), "Southern Ontario Zone" (London, Windsor), "Quebec Zone" (Montreal, Quebec City)
+                                    </Typography>
+                                </TableCell>
+                            </TableRow>
+                        ) : (
+                            filteredZones.map((zone) => (
+                                <TableRow key={zone.id} hover>
+                                    <TableCell
+                                        sx={{
+                                            fontSize: '12px',
+                                            fontFamily: 'monospace',
+                                            cursor: 'pointer',
+                                            color: '#1976d2',
+                                            '&:hover': {
+                                                backgroundColor: '#f5f5f5',
+                                                textDecoration: 'underline'
+                                            }
+                                        }}
+                                        onClick={() => {
+                                            setEditingZone(zone);
+                                            loadZoneCities(zone.id);
+                                            setZoneForm({
+                                                zoneCode: zone.zoneCode || zone.zoneId || '',
+                                                zoneName: zone.zoneName || '',
+                                                description: zone.description || '',
+                                                cities: [],
+                                                postalCodes: [],
+                                                provinces: [],
+                                                enabled: zone.enabled !== false
+                                            });
+                                            setZoneDialogOpen(true);
+                                        }}
+                                    >
+                                        {zone.zoneId || zone.zoneCode || zone.id}
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        <Box>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                {zone.zoneName}
+                                            </Typography>
+                                            {zone.stateProvince && (
+                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                    {zone.stateProvince}, {zone.country}
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        {zone.metadata?.totalCities || zone.cityCount || zone.cities?.length || 0}
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        {zone.metadata?.totalPostalCodes || zone.postalCodeCount || zone.postalCodes?.length || 0}
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        {zone.stateProvince || 'N/A'}
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        {zone.country || 'N/A'}
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        <Chip
+                                            label={zone.enabled !== false ? 'Active' : 'Inactive'}
+                                            size="small"
+                                            color={zone.enabled !== false ? 'success' : 'default'}
+                                            sx={{ fontSize: '11px' }}
+                                        />
+                                    </TableCell>
+                                    <TableCell sx={{ textAlign: 'center' }}>
+                                        <IconButton
+                                            size="small"
+                                            onClick={(event) => {
+                                                setActionMenuAnchor(event.currentTarget);
+                                                setSelectedItem(zone);
+                                            }}
+                                        >
+                                            <MoreVertIcon fontSize="small" />
+                                        </IconButton>
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        )}
                     </TableBody>
                 </Table>
             </TableContainer>
+
+            {/* Zone Pagination */}
+            <TablePagination
+                component="div"
+                count={totalZones}
+                page={zonePage}
+                onPageChange={(event, newPage) => {
+                    setZonePage(newPage);
+                    loadZones(newPage, zoneRowsPerPage, zoneSearchTerm, zoneCountryFilter, zoneProvinceFilter);
+                }}
+                rowsPerPage={zoneRowsPerPage}
+                onRowsPerPageChange={(event) => {
+                    const newRowsPerPage = parseInt(event.target.value, 10);
+                    setZoneRowsPerPage(newRowsPerPage);
+                    setZonePage(0);
+                    loadZones(0, newRowsPerPage, zoneSearchTerm, zoneCountryFilter, zoneProvinceFilter);
+                }}
+                rowsPerPageOptions={[25, 50, 100, 250]}
+                sx={{
+                    '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
+                        fontSize: '12px'
+                    }
+                }}
+            />
         </Box>
     );
 
@@ -1799,11 +2644,6 @@ const EnterpriseZoneManagement = () => {
                         label="Zone Sets"
                         iconPosition="start"
                     />
-                    <Tab
-                        icon={<ZoneMapIcon sx={{ fontSize: '16px' }} />}
-                        label="Zone Maps"
-                        iconPosition="start"
-                    />
                 </Tabs>
             </Box>
 
@@ -1812,7 +2652,6 @@ const EnterpriseZoneManagement = () => {
             {activeTab === 1 && renderCitiesTab()}
             {activeTab === 2 && renderZonesTab()}
             {activeTab === 3 && renderZoneSetsTab()}
-            {activeTab === 4 && renderZoneMapsTab()}
 
             {/* Region Dialog */}
             <Dialog
@@ -1914,65 +2753,23 @@ const EnterpriseZoneManagement = () => {
                     {editingZoneSet ? 'Edit Zone Set' : 'Add Zone Set'}
                 </DialogTitle>
                 <DialogContent>
+                    <Alert severity="info" sx={{ fontSize: '12px', mb: 2 }}>
+                        Zone Sets are collections of existing zones. Select multiple zones from the database to group them together.
+                    </Alert>
+
                     <Grid container spacing={2} sx={{ mt: 1 }}>
-                        <Grid item xs={12} md={8}>
+                        <Grid item xs={12}>
                             <TextField
                                 fullWidth
-                                label="Name"
+                                label="Zone Set Name"
                                 value={zoneSetForm.name}
                                 onChange={(e) => setZoneSetForm(prev => ({ ...prev, name: e.target.value }))}
                                 size="small"
                                 required
                                 sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
                                 InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                placeholder="e.g., CA-Courier-FSA v1"
+                                placeholder="e.g., Canadian Standard Zones, US Express Zones"
                             />
-                        </Grid>
-
-                        <Grid item xs={12} md={4}>
-                            <TextField
-                                fullWidth
-                                label="Version"
-                                type="number"
-                                value={zoneSetForm.version}
-                                onChange={(e) => setZoneSetForm(prev => ({ ...prev, version: parseInt(e.target.value) || 1 }))}
-                                size="small"
-                                sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                                InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                inputProps={{ min: 1 }}
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Geography"
-                                value={zoneSetForm.geography}
-                                onChange={(e) => setZoneSetForm(prev => ({ ...prev, geography: e.target.value }))}
-                                size="small"
-                                required
-                                sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                                InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                placeholder="e.g., CA_FSA, US_ZIP3, CA_US_CROSS_BORDER"
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} md={6}>
-                            <FormControl fullWidth size="small">
-                                <InputLabel sx={{ fontSize: '12px' }}>Coverage</InputLabel>
-                                <Select
-                                    value={zoneSetForm.coverage}
-                                    onChange={(e) => setZoneSetForm(prev => ({ ...prev, coverage: e.target.value }))}
-                                    label="Coverage"
-                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                >
-                                    {coverageTypes.map((type) => (
-                                        <MenuItem key={type.value} value={type.value} sx={{ fontSize: '12px' }}>
-                                            {type.label}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
                         </Grid>
 
                         <Grid item xs={12}>
@@ -1988,6 +2785,133 @@ const EnterpriseZoneManagement = () => {
                                 InputLabelProps={{ sx: { fontSize: '12px' } }}
                                 placeholder="Optional description for this zone set"
                             />
+                        </Grid>
+
+                        <Grid item xs={12}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                Select Zones to Include
+                            </Typography>
+
+                            <Autocomplete
+                                multiple
+                                options={zones}
+                                getOptionLabel={(zone) => zone.zoneName || zone.zoneCode || zone.id}
+                                value={zones.filter(zone => zoneSetForm.selectedZones.includes(zone.id))}
+                                onChange={(event, newValue) => {
+                                    setZoneSetForm(prev => ({
+                                        ...prev,
+                                        selectedZones: newValue.map(zone => zone.id)
+                                    }));
+                                }}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label="Search and Select Zones"
+                                        placeholder="Type to search zones by name, code, location..."
+                                        size="small"
+                                        sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                        InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                    />
+                                )}
+                                renderTags={(value, getTagProps) => (
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                        {value.map((zone, index) => {
+                                            const tagProps = getTagProps({ index });
+                                            return (
+                                                <Chip
+                                                    {...tagProps}
+                                                    key={zone.id}
+                                                    label={zone.zoneName || zone.zoneCode}
+                                                    size="small"
+                                                    onDelete={() => {
+                                                        // Remove this zone from selection
+                                                        setZoneSetForm(prev => ({
+                                                            ...prev,
+                                                            selectedZones: prev.selectedZones.filter(id => id !== zone.id)
+                                                        }));
+                                                    }}
+                                                    color={zone.enabled !== false ? 'primary' : 'default'}
+                                                    sx={{
+                                                        fontSize: '10px',
+                                                        '& .MuiChip-deleteIcon': {
+                                                            fontSize: '14px',
+                                                            '&:hover': {
+                                                                color: '#d32f2f'
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                    </Box>
+                                )}
+                                renderOption={(props, zone, { selected }) => (
+                                    <li {...props} style={{ fontSize: '12px', padding: '8px 16px' }}>
+                                        <Checkbox
+                                            checked={selected}
+                                            size="small"
+                                            sx={{ mr: 1 }}
+                                        />
+                                        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                            <Box>
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 500, color: '#374151' }}>
+                                                    {zone.zoneName}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                    Code: {zone.zoneCode || zone.zoneId} • {zone.stateProvince}, {zone.country}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                    📍 {zone.metadata?.totalCities || 0} cities, 📮 {zone.metadata?.totalPostalCodes || 0} postal codes
+                                                </Typography>
+                                            </Box>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 1 }}>
+                                                <Chip
+                                                    label={zone.enabled !== false ? 'Active' : 'Inactive'}
+                                                    size="small"
+                                                    color={zone.enabled !== false ? 'success' : 'default'}
+                                                    sx={{ fontSize: '9px' }}
+                                                />
+                                                {zone.country === 'Canada' && (
+                                                    <Chip label="🇨🇦" size="small" sx={{ fontSize: '8px', minWidth: '24px' }} />
+                                                )}
+                                                {zone.country === 'United States' && (
+                                                    <Chip label="🇺🇸" size="small" sx={{ fontSize: '8px', minWidth: '24px' }} />
+                                                )}
+                                            </Box>
+                                        </Box>
+                                    </li>
+                                )}
+                                filterOptions={(options, { inputValue }) => {
+                                    if (!inputValue) return options;
+                                    const searchTerm = inputValue.toLowerCase();
+                                    return options.filter(zone => {
+                                        const searchableText = [
+                                            zone.zoneName,
+                                            zone.zoneCode,
+                                            zone.zoneId,
+                                            zone.stateProvince,
+                                            zone.country,
+                                            zone.description
+                                        ].filter(Boolean).join(' ').toLowerCase();
+                                        return searchableText.includes(searchTerm);
+                                    });
+                                }}
+                                size="small"
+                                sx={{
+                                    '& .MuiAutocomplete-inputRoot': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiAutocomplete-listbox': {
+                                        maxHeight: '300px'
+                                    }
+                                }}
+                            />
+
+                            {zoneSetForm.selectedZones.length > 0 && (
+                                <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 1 }}>
+                                    ✅ {zoneSetForm.selectedZones.length} zone(s) selected - Click ✕ on chips to remove individual zones
+                                </Typography>
+                            )}
                         </Grid>
 
                         <Grid item xs={12}>
@@ -2049,95 +2973,6 @@ const EnterpriseZoneManagement = () => {
                 </MenuList>
             </Menu>
 
-            {/* Zone Map Dialog */}
-            <Dialog
-                open={zoneMapDialogOpen}
-                onClose={() => setZoneMapDialogOpen(false)}
-                maxWidth="md"
-                fullWidth
-            >
-                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
-                    {editingZoneMap ? 'Edit Zone Map' : 'Add Zone Map'}
-                </DialogTitle>
-                <DialogContent>
-                    <Alert severity="info" sx={{ fontSize: '12px', mb: 2 }}>
-                        Zone Maps define how origin and destination regions map to specific zone codes for rate calculation.
-                    </Alert>
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6}>
-                            <FormControl fullWidth size="small" sx={{ mt: 1 }}>
-                                <InputLabel sx={{ fontSize: '12px' }}>Zone Set</InputLabel>
-                                <Select
-                                    value={zoneMapForm.zoneSetId}
-                                    label="Zone Set"
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    {zoneSets.map((zoneSet) => (
-                                        <MenuItem key={zoneSet.id} value={zoneSet.id} sx={{ fontSize: '12px' }}>
-                                            {zoneSet.name}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label="Zone Code"
-                                value={zoneMapForm.zoneCode}
-                                placeholder="e.g., Zone A, Zone 1"
-                                sx={{ mt: 1, '& .MuiInputLabel-root': { fontSize: '12px' }, '& .MuiInputBase-input': { fontSize: '12px' } }}
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                Geographic Mapping
-                            </Typography>
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <FormControl fullWidth size="small">
-                                <InputLabel sx={{ fontSize: '12px' }}>Origin Region</InputLabel>
-                                <Select
-                                    value={zoneMapForm.originRegionId}
-                                    label="Origin Region"
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    {regions.map((region) => (
-                                        <MenuItem key={region.id} value={region.id} sx={{ fontSize: '12px' }}>
-                                            {region.name} ({region.code})
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <FormControl fullWidth size="small">
-                                <InputLabel sx={{ fontSize: '12px' }}>Destination Region</InputLabel>
-                                <Select
-                                    value={zoneMapForm.destinationRegionId}
-                                    label="Destination Region"
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    {regions.map((region) => (
-                                        <MenuItem key={region.id} value={region.id} sx={{ fontSize: '12px' }}>
-                                            {region.name} ({region.code})
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                    </Grid>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setZoneMapDialogOpen(false)} size="small" sx={{ fontSize: '12px' }}>
-                        Cancel
-                    </Button>
-                    <Button variant="contained" size="small" sx={{ fontSize: '12px' }}>
-                        {editingZoneMap ? 'Update' : 'Create'} Zone Map
-                    </Button>
-                </DialogActions>
-            </Dialog>
 
             {/* Zone Dialog */}
             <Dialog
@@ -2201,9 +3036,6 @@ const EnterpriseZoneManagement = () => {
                             <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
                                 Zone Coverage (Select cities, postal codes, or provinces for this zone)
                             </Typography>
-                            <Alert severity="info" sx={{ fontSize: '11px', mb: 2 }}>
-                                Define what geographic areas belong to this zone. You can assign specific cities, postal code ranges, or entire provinces.
-                            </Alert>
 
                             {/* City/Postal Code Lookup */}
                             <Box sx={{ mb: 2, position: 'relative' }}>
@@ -2212,11 +3044,44 @@ const EnterpriseZoneManagement = () => {
                                     size="small"
                                     placeholder="Type city name, postal/zip code, or province/state..."
                                     value={zoneCoverageSearch}
-                                    onChange={(e) => setZoneCoverageSearch(e.target.value)}
-                                    onKeyPress={(e) => {
-                                        if (e.key === 'Enter') {
-                                            handleZoneCoverageSearch();
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setZoneCoverageSearch(value);
+
+                                        // Trigger autocomplete search on typing (debounced)
+                                        if (value.length >= 2) {
+                                            clearTimeout(zoneCoverageSearchTimeout.current);
+                                            zoneCoverageSearchTimeout.current = setTimeout(() => {
+                                                handleZoneCoverageSearch(value);
+                                            }, 300);
+                                        } else {
+                                            setZoneCoverageSuggestions([]);
                                         }
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            if (zoneCoverageSuggestions.length > 0) {
+                                                handleAddZoneCoverage(zoneCoverageSuggestions[0]);
+                                            }
+                                        } else if (e.key === 'Escape') {
+                                            e.preventDefault();
+                                            setZoneCoverageSuggestions([]);
+                                        }
+                                    }}
+                                    onFocus={() => {
+                                        if (zoneCoverageSearch.length >= 2 && zoneCoverageSuggestions.length === 0) {
+                                            handleZoneCoverageSearch(zoneCoverageSearch);
+                                        }
+                                    }}
+                                    onBlur={(e) => {
+                                        // Delay hiding suggestions to allow clicking on them
+                                        setTimeout(() => {
+                                            // Only hide if not clicking on a suggestion
+                                            if (!e.relatedTarget || !e.relatedTarget.closest('[data-suggestion-item]')) {
+                                                setZoneCoverageSuggestions([]);
+                                            }
+                                        }, 150);
                                     }}
                                     InputProps={{
                                         sx: { fontSize: '12px' },
@@ -2242,7 +3107,14 @@ const EnterpriseZoneManagement = () => {
                                                 <Button
                                                     size="small"
                                                     variant="contained"
-                                                    onClick={handleZoneCoverageSearch}
+                                                    onClick={() => {
+                                                        if (zoneCoverageSuggestions.length > 0) {
+                                                            handleAddZoneCoverage(zoneCoverageSuggestions[0]);
+                                                        } else if (zoneCoverageSearch.trim().length >= 2) {
+                                                            handleZoneCoverageSearch();
+                                                        }
+                                                    }}
+                                                    disabled={!zoneCoverageSearch.trim() || zoneCoverageSearch.trim().length < 2}
                                                     sx={{
                                                         ml: 1,
                                                         fontSize: '11px',
@@ -2250,7 +3122,7 @@ const EnterpriseZoneManagement = () => {
                                                         px: 2
                                                     }}
                                                 >
-                                                    Add
+                                                    {zoneCoverageSuggestions.length > 0 ? 'Add' : 'Search'}
                                                 </Button>
                                             </InputAdornment>
                                         )
@@ -2273,6 +3145,27 @@ const EnterpriseZoneManagement = () => {
                                             border: '1px solid #e0e0e0'
                                         }}
                                     >
+                                        {/* Close button for suggestions */}
+                                        <Box sx={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            px: 1,
+                                            py: 0.5,
+                                            borderBottom: '1px solid #e0e0e0',
+                                            bgcolor: '#f8fafc'
+                                        }}>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                {zoneCoverageSuggestions.length} suggestions
+                                            </Typography>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => setZoneCoverageSuggestions([])}
+                                                sx={{ p: 0.25 }}
+                                            >
+                                                <ClearIcon sx={{ fontSize: '14px' }} />
+                                            </IconButton>
+                                        </Box>
                                         <List dense>
                                             {zoneCoverageSuggestions.map((suggestion, index) => (
                                                 <ListItem
@@ -2280,17 +3173,31 @@ const EnterpriseZoneManagement = () => {
                                                     button
                                                     onClick={() => handleAddZoneCoverage(suggestion)}
                                                     sx={{ py: 0.5 }}
+                                                    data-suggestion-item="true"
                                                 >
                                                     <ListItemText
                                                         primary={
-                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                {suggestion.city}
-                                                                {suggestion.postalCode && (
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                    {suggestion.city}
+                                                                </Typography>
+                                                                {suggestion.type === 'city' && suggestion.postalCodeCount && (
                                                                     <Chip
-                                                                        label={suggestion.postalCode}
+                                                                        label={`${suggestion.postalCodeCount} postal codes`}
                                                                         size="small"
                                                                         sx={{
-                                                                            ml: 1,
+                                                                            height: '18px',
+                                                                            fontSize: '10px',
+                                                                            backgroundColor: '#e8f5e8',
+                                                                            color: '#2e7d32'
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                                {suggestion.type === 'postal' && (suggestion.postalCode || suggestion.postalZipCode) && (
+                                                                    <Chip
+                                                                        label={suggestion.postalCode || suggestion.postalZipCode}
+                                                                        size="small"
+                                                                        sx={{
                                                                             height: '18px',
                                                                             fontSize: '10px',
                                                                             backgroundColor: '#e3f2fd',
@@ -2298,11 +3205,28 @@ const EnterpriseZoneManagement = () => {
                                                                         }}
                                                                     />
                                                                 )}
-                                                            </Typography>
+                                                                {suggestion.coordinates && (
+                                                                    <Chip
+                                                                        label={suggestion.coordinates}
+                                                                        size="small"
+                                                                        sx={{
+                                                                            height: '18px',
+                                                                            fontSize: '10px',
+                                                                            backgroundColor: '#f3e5f5',
+                                                                            color: '#7b1fa2'
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                            </Box>
                                                         }
                                                         secondary={
                                                             <Typography variant="caption" sx={{ fontSize: '11px', color: '#666' }}>
                                                                 {suggestion.provinceStateName}, {suggestion.countryName}
+                                                                {suggestion.type === 'postal' && suggestion.postalZipType && (
+                                                                    <span style={{ marginLeft: 8, fontWeight: 500 }}>
+                                                                        ({suggestion.postalZipType.toUpperCase()})
+                                                                    </span>
+                                                                )}
                                                             </Typography>
                                                         }
                                                     />
@@ -2313,34 +3237,96 @@ const EnterpriseZoneManagement = () => {
                                 )}
                             </Box>
 
-                            {/* Selected Coverage Display */}
-                            {(zoneForm.cities.length > 0 || zoneForm.postalCodes.length > 0 || zoneForm.provinces.length > 0) && (
+                            {/* Zone Cities Management */}
+                            {zoneForm.cities.length > 0 && (
+                                <Box sx={{ mb: 2 }}>
+                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, mb: 2 }}>
+                                        Zone Cities ({zoneForm.cities.length} cities)
+                                    </Typography>
+
+                                    <TableContainer component={Paper} sx={{ maxHeight: 300, border: '1px solid #e5e7eb' }}>
+                                        <Table size="small" stickyHeader>
+                                            <TableHead>
+                                                <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                                                    <TableCell sx={{ fontWeight: 600, fontSize: '11px' }}>City</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, fontSize: '11px' }}>Province/State</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, fontSize: '11px' }}>Country</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, fontSize: '11px' }}>Postal/Zip</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, fontSize: '11px' }}>Match Type</TableCell>
+                                                    <TableCell sx={{ fontWeight: 600, fontSize: '11px', textAlign: 'center' }}>Actions</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {zoneForm.cities.map((city, index) => (
+                                                    <TableRow key={city.id || index} hover>
+                                                        <TableCell sx={{ fontSize: '11px', fontWeight: 500 }}>
+                                                            {city.name}
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontSize: '11px' }}>
+                                                            {city.province}
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontSize: '11px' }}>
+                                                            {city.country}
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontSize: '11px', fontFamily: 'monospace' }}>
+                                                            {city.postalCode || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontSize: '11px' }}>
+                                                            <Chip
+                                                                label={city.matchType || 'manual'}
+                                                                size="small"
+                                                                color={city.matchType === 'coordinate' ? 'success' :
+                                                                    city.matchType === 'postal' ? 'info' :
+                                                                        city.matchType === 'name' ? 'warning' : 'default'}
+                                                                sx={{ fontSize: '10px', height: '18px' }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell sx={{ textAlign: 'center' }}>
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => handleRemoveZoneCoverage('cities', index)}
+                                                                sx={{ color: '#ef4444' }}
+                                                            >
+                                                                <ClearIcon sx={{ fontSize: '14px' }} />
+                                                            </IconButton>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                </Box>
+                            )}
+
+                            {/* Postal Codes Summary (derived from cities) */}
+                            {zoneForm.postalCodes.length > 0 && (
                                 <Box sx={{ mb: 2 }}>
                                     <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
-                                        Selected Coverage ({zoneForm.cities.length + zoneForm.postalCodes.length + zoneForm.provinces.length} items)
+                                        Postal/Zip Codes Coverage ({zoneForm.postalCodes.length} unique codes)
                                     </Typography>
-                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                        {/* Cities */}
-                                        {zoneForm.cities.map((city, index) => (
-                                            <Chip
-                                                key={`city-${index}`}
-                                                label={`🏙️ ${city.name}, ${city.province}`}
-                                                size="small"
-                                                onDelete={() => handleRemoveZoneCoverage('cities', index)}
-                                                sx={{ fontSize: '11px' }}
-                                            />
-                                        ))}
-                                        {/* Postal Codes */}
+                                    <Alert severity="info" sx={{ fontSize: '11px', mb: 1 }}>
+                                        These postal codes are automatically derived from the cities above. Remove cities to update this list.
+                                    </Alert>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxHeight: '100px', overflow: 'auto' }}>
                                         {zoneForm.postalCodes.map((postal, index) => (
                                             <Chip
                                                 key={`postal-${index}`}
-                                                label={`📮 ${postal.code}`}
+                                                label={postal.code}
                                                 size="small"
-                                                onDelete={() => handleRemoveZoneCoverage('postalCodes', index)}
-                                                sx={{ fontSize: '11px', backgroundColor: '#e3f2fd' }}
+                                                sx={{ fontSize: '11px', backgroundColor: '#e3f2fd', cursor: 'default' }}
                                             />
                                         ))}
-                                        {/* Provinces */}
+                                    </Box>
+                                </Box>
+                            )}
+
+                            {/* Provinces Display */}
+                            {zoneForm.provinces.length > 0 && (
+                                <Box sx={{ mb: 2 }}>
+                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                        Provinces/States ({zoneForm.provinces.length})
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                                         {zoneForm.provinces.map((province, index) => (
                                             <Chip
                                                 key={`province-${index}`}
@@ -2372,7 +3358,12 @@ const EnterpriseZoneManagement = () => {
                     <Button onClick={() => setZoneDialogOpen(false)} size="small" sx={{ fontSize: '12px' }}>
                         Cancel
                     </Button>
-                    <Button variant="contained" size="small" sx={{ fontSize: '12px' }}>
+                    <Button
+                        onClick={handleSaveZone}
+                        variant="contained"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
                         {editingZone ? 'Update' : 'Create'} Zone
                     </Button>
                 </DialogActions>
@@ -2571,6 +3562,205 @@ const EnterpriseZoneManagement = () => {
                     </Button>
                     <Button variant="contained" size="small" sx={{ fontSize: '12px' }}>
                         {editingCity ? 'Update' : 'Create'} City
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Zone Deletion Confirmation Dialog */}
+            <Dialog
+                open={deleteZoneDialogOpen}
+                onClose={() => setDeleteZoneDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Confirm Zone Deletion
+                </DialogTitle>
+                <DialogContent>
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                            This action cannot be undone!
+                        </Typography>
+                    </Alert>
+                    <Typography sx={{ fontSize: '12px', mb: 2 }}>
+                        Are you sure you want to delete the following zone?
+                    </Typography>
+                    {deletingZone && (
+                        <Box sx={{
+                            p: 2,
+                            bgcolor: '#f8fafc',
+                            borderRadius: 1,
+                            border: '1px solid #e5e7eb'
+                        }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                {deletingZone.zoneName}
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
+                                Code: {deletingZone.zoneCode || deletingZone.zoneId}
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                Location: {deletingZone.stateProvince}, {deletingZone.country}
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                Cities: {deletingZone.metadata?.totalCities || 0} |
+                                Postal Codes: {deletingZone.metadata?.totalPostalCodes || 0}
+                            </Typography>
+                        </Box>
+                    )}
+                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 2 }}>
+                        This will remove the zone and all its associated city and postal code mappings.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setDeleteZoneDialogOpen(false)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteZone}
+                        variant="contained"
+                        color="error"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Delete Zone
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Zone Set Deletion Confirmation Dialog */}
+            <Dialog
+                open={deleteZoneSetDialogOpen}
+                onClose={() => setDeleteZoneSetDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Confirm Zone Set Deletion
+                </DialogTitle>
+                <DialogContent>
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                            This action cannot be undone!
+                        </Typography>
+                    </Alert>
+                    <Typography sx={{ fontSize: '12px', mb: 2 }}>
+                        Are you sure you want to delete the following zone set?
+                    </Typography>
+                    {deletingZoneSet && (
+                        <Box sx={{
+                            p: 2,
+                            bgcolor: '#f8fafc',
+                            borderRadius: 1,
+                            border: '1px solid #e5e7eb'
+                        }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                {deletingZoneSet.name}
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
+                                Description: {deletingZoneSet.description || 'No description'}
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                Selected Zones: {(deletingZoneSet.selectedZones || []).length} zones
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                Status: {deletingZoneSet.enabled ? 'Active' : 'Inactive'}
+                            </Typography>
+                        </Box>
+                    )}
+                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 2 }}>
+                        This will remove the zone set but will NOT delete the individual zones it contains.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => {
+                            setDeleteZoneSetDialogOpen(false);
+                            setDeletingZoneSet(null);
+                        }}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteZoneSet}
+                        variant="contained"
+                        color="error"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Delete Zone Set
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Region Deletion Confirmation Dialog */}
+            <Dialog
+                open={deleteRegionDialogOpen}
+                onClose={() => setDeleteRegionDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Confirm Region Deletion
+                </DialogTitle>
+                <DialogContent>
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                            This action cannot be undone!
+                        </Typography>
+                    </Alert>
+                    <Typography sx={{ fontSize: '12px', mb: 2 }}>
+                        Are you sure you want to delete the following region?
+                    </Typography>
+                    {deletingRegion && (
+                        <Box sx={{
+                            p: 2,
+                            bgcolor: '#f8fafc',
+                            borderRadius: 1,
+                            border: '1px solid #e5e7eb'
+                        }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                {deletingRegion.name}
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
+                                Type: {deletingRegion.type?.toUpperCase() || 'Unknown'}
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                Code: {deletingRegion.code}
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                Status: {deletingRegion.enabled ? 'Active' : 'Inactive'}
+                            </Typography>
+                        </Box>
+                    )}
+                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 2 }}>
+                        This will permanently remove this region from the system.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => {
+                            setDeleteRegionDialogOpen(false);
+                            setDeletingRegion(null);
+                        }}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteRegion}
+                        variant="contained"
+                        color="error"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Delete Region
                     </Button>
                 </DialogActions>
             </Dialog>

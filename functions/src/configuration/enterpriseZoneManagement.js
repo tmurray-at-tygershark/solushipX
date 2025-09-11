@@ -325,10 +325,17 @@ exports.createZoneSet = functions
             }
 
             // Validate required fields
-            if (!data.name || !data.geography) {
+            if (!data.name) {
                 throw new functions.https.HttpsError(
                     'invalid-argument',
-                    'Name and geography are required'
+                    'Name is required'
+                );
+            }
+
+            if (!data.selectedZones || !Array.isArray(data.selectedZones) || data.selectedZones.length === 0) {
+                throw new functions.https.HttpsError(
+                    'invalid-argument',
+                    'At least one zone must be selected'
                 );
             }
 
@@ -341,32 +348,25 @@ exports.createZoneSet = functions
 
             // Create zone set data
             const zoneSetData = {
-                name: data.name.trim(), // e.g., "CA-Courier-FSA v1"
-                geography: data.geography.trim(), // e.g., "CA_FSA", "US_ZIP3", "CA_US_CROSS_BORDER"
-                version: data.version || 1,
+                name: data.name.trim(),
                 description: data.description?.trim() || '',
-                zoneCount: data.zoneCount || 0, // number of unique zone codes
-                coverage: data.coverage || 'regional', // 'regional', 'national', 'cross_border'
-                serviceTypes: data.serviceTypes || [], // ['courier', 'ltl', 'ftl']
+                selectedZones: data.selectedZones || [], // Array of zone IDs
+                zoneCount: data.zoneCount || data.selectedZones?.length || 0,
                 enabled: data.enabled !== false,
-                effectiveFrom: data.effectiveFrom ? admin.firestore.Timestamp.fromDate(new Date(data.effectiveFrom)) : admin.firestore.FieldValue.serverTimestamp(),
-                effectiveTo: data.effectiveTo ? admin.firestore.Timestamp.fromDate(new Date(data.effectiveTo)) : null,
-                metadata: data.metadata || {},
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 createdBy: context.auth.uid
             };
 
-            // Check for duplicates (same name and version)
+            // Check for duplicates (same name)
             const duplicateQuery = await db.collection('zoneSets')
                 .where('name', '==', zoneSetData.name)
-                .where('version', '==', zoneSetData.version)
                 .get();
 
             if (!duplicateQuery.empty) {
                 throw new functions.https.HttpsError(
                     'already-exists',
-                    'A zone set with this name and version already exists'
+                    'A zone set with this name already exists'
                 );
             }
 
@@ -397,6 +397,96 @@ exports.createZoneSet = functions
             throw new functions.https.HttpsError(
                 'internal',
                 'Failed to create zone set',
+                error.message
+            );
+        }
+    });
+
+/**
+ * Delete a zone set
+ */
+exports.deleteZoneSet = functions
+    .region('us-central1')
+    .runWith({
+        timeoutSeconds: 60,
+        memory: '256MB',
+        cors: true
+    })
+    .https.onCall(async (data, context) => {
+        const logger = functions.logger;
+
+        try {
+            // Validate authentication
+            if (!context.auth) {
+                throw new functions.https.HttpsError(
+                    'unauthenticated',
+                    'Authentication required'
+                );
+            }
+
+            const userDoc = await admin.firestore()
+                .collection('users')
+                .doc(context.auth.uid)
+                .get();
+
+            const userData = userDoc.data();
+            if (!userData || !['admin', 'superadmin'].includes(userData.role)) {
+                throw new functions.https.HttpsError(
+                    'permission-denied',
+                    'Insufficient permissions'
+                );
+            }
+
+            // Validate required fields
+            if (!data.zoneSetId) {
+                throw new functions.https.HttpsError(
+                    'invalid-argument',
+                    'Zone set ID is required'
+                );
+            }
+
+            logger.info('🗑️ Deleting zone set', {
+                userId: context.auth.uid,
+                zoneSetId: data.zoneSetId
+            });
+
+            const db = admin.firestore();
+            const zoneSetRef = db.collection('zoneSets').doc(data.zoneSetId);
+            
+            // Check if zone set exists
+            const zoneSetDoc = await zoneSetRef.get();
+            if (!zoneSetDoc.exists) {
+                throw new functions.https.HttpsError(
+                    'not-found',
+                    'Zone set not found'
+                );
+            }
+
+            // Delete the zone set
+            await zoneSetRef.delete();
+
+            logger.info('✅ Zone set deleted successfully', {
+                zoneSetId: data.zoneSetId
+            });
+
+            return {
+                success: true,
+                message: 'Zone set deleted successfully'
+            };
+
+        } catch (error) {
+            logger.error('❌ Error deleting zone set', {
+                error: error.message,
+                stack: error.stack
+            });
+
+            if (error instanceof functions.https.HttpsError) {
+                throw error;
+            }
+
+            throw new functions.https.HttpsError(
+                'internal',
+                'Failed to delete zone set',
                 error.message
             );
         }

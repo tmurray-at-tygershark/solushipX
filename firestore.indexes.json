@@ -489,6 +489,24 @@
                     "order": "DESCENDING"
                 }
             ]
+        },
+        {
+            "collectionGroup": "geoLocations",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "country",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "provinceState",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "latitude",
+                    "order": "ASCENDING"
+                }
+            ]
         }
     ],
     "fieldOverrides": [
