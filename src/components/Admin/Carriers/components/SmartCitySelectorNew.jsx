@@ -149,17 +149,57 @@ const SmartCitySelector = ({
         applyFilters();
     }, [applyFilters]);
 
-    // Get unique countries and provinces for filters
+    // All possible countries and provinces (not just from activated cities)
     const availableCountries = useMemo(() => {
-        return [...new Set(activatedCities.map(city => city.country))].filter(Boolean).sort();
+        // Always include CA and US, plus any from activated cities
+        const citiesCountries = [...new Set(activatedCities.map(city => city.country))].filter(Boolean);
+        const allCountries = ['CA', 'US'];
+        return [...new Set([...citiesCountries, ...allCountries])].sort();
     }, [activatedCities]);
 
     const availableProvinces = useMemo(() => {
-        const filtered = countryFilter
-            ? activatedCities.filter(city => city.country === countryFilter)
-            : activatedCities;
-        return [...new Set(filtered.map(city => city.provinceState))].filter(Boolean).sort();
-    }, [activatedCities, countryFilter]);
+        // Always show all provinces for selected country with full names
+        const allProvincesByCountry = {
+            'CA': [
+                { code: 'AB', name: 'Alberta' }, { code: 'BC', name: 'British Columbia' },
+                { code: 'MB', name: 'Manitoba' }, { code: 'NB', name: 'New Brunswick' },
+                { code: 'NL', name: 'Newfoundland and Labrador' }, { code: 'NS', name: 'Nova Scotia' },
+                { code: 'NT', name: 'Northwest Territories' }, { code: 'NU', name: 'Nunavut' },
+                { code: 'ON', name: 'Ontario' }, { code: 'PE', name: 'Prince Edward Island' },
+                { code: 'QC', name: 'Quebec' }, { code: 'SK', name: 'Saskatchewan' },
+                { code: 'YT', name: 'Yukon' }
+            ],
+            'US': [
+                { code: 'AL', name: 'Alabama' }, { code: 'AK', name: 'Alaska' }, { code: 'AZ', name: 'Arizona' },
+                { code: 'AR', name: 'Arkansas' }, { code: 'CA', name: 'California' }, { code: 'CO', name: 'Colorado' },
+                { code: 'CT', name: 'Connecticut' }, { code: 'DE', name: 'Delaware' }, { code: 'FL', name: 'Florida' },
+                { code: 'GA', name: 'Georgia' }, { code: 'HI', name: 'Hawaii' }, { code: 'ID', name: 'Idaho' },
+                { code: 'IL', name: 'Illinois' }, { code: 'IN', name: 'Indiana' }, { code: 'IA', name: 'Iowa' },
+                { code: 'KS', name: 'Kansas' }, { code: 'KY', name: 'Kentucky' }, { code: 'LA', name: 'Louisiana' },
+                { code: 'ME', name: 'Maine' }, { code: 'MD', name: 'Maryland' }, { code: 'MA', name: 'Massachusetts' },
+                { code: 'MI', name: 'Michigan' }, { code: 'MN', name: 'Minnesota' }, { code: 'MS', name: 'Mississippi' },
+                { code: 'MO', name: 'Missouri' }, { code: 'MT', name: 'Montana' }, { code: 'NE', name: 'Nebraska' },
+                { code: 'NV', name: 'Nevada' }, { code: 'NH', name: 'New Hampshire' }, { code: 'NJ', name: 'New Jersey' },
+                { code: 'NM', name: 'New Mexico' }, { code: 'NY', name: 'New York' }, { code: 'NC', name: 'North Carolina' },
+                { code: 'ND', name: 'North Dakota' }, { code: 'OH', name: 'Ohio' }, { code: 'OK', name: 'Oklahoma' },
+                { code: 'OR', name: 'Oregon' }, { code: 'PA', name: 'Pennsylvania' }, { code: 'RI', name: 'Rhode Island' },
+                { code: 'SC', name: 'South Carolina' }, { code: 'SD', name: 'South Dakota' }, { code: 'TN', name: 'Tennessee' },
+                { code: 'TX', name: 'Texas' }, { code: 'UT', name: 'Utah' }, { code: 'VT', name: 'Vermont' },
+                { code: 'VA', name: 'Virginia' }, { code: 'WA', name: 'Washington' }, { code: 'WV', name: 'West Virginia' },
+                { code: 'WI', name: 'Wisconsin' }, { code: 'WY', name: 'Wyoming' }, { code: 'DC', name: 'District of Columbia' }
+            ]
+        };
+
+        if (countryFilter && allProvincesByCountry[countryFilter]) {
+            return allProvincesByCountry[countryFilter];
+        }
+
+        // Fallback to activated cities provinces if no country filter
+        return [...new Set(activatedCities.map(city => city.provinceState))].filter(Boolean).sort().map(code => ({
+            code,
+            name: code // Fallback to code if no name mapping available
+        }));
+    }, [countryFilter, activatedCities]);
 
     // Handle city status toggle
     const handleCityStatusToggle = useCallback((city) => {
@@ -322,14 +362,17 @@ const SmartCitySelector = ({
                     <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
                     <Select
                         value={countryFilter}
-                        onChange={(e) => setCountryFilter(e.target.value)}
+                        onChange={(e) => {
+                            setCountryFilter(e.target.value);
+                            setProvinceStateFilter(''); // Clear province when country changes
+                        }}
                         label="Country"
                         sx={{ fontSize: '12px' }}
                     >
                         <MenuItem value="" sx={{ fontSize: '12px' }}>All Countries</MenuItem>
-                        {availableCountries.map(country => (
-                            <MenuItem key={country} value={country} sx={{ fontSize: '12px' }}>
-                                {country === 'CA' ? '🇨🇦 Canada' : country === 'US' ? '🇺🇸 United States' : country}
+                        {['CA', 'US'].map(countryCode => (
+                            <MenuItem key={countryCode} value={countryCode} sx={{ fontSize: '12px' }}>
+                                {countryCode === 'CA' ? '🇨🇦 Canada' : '🇺🇸 United States'}
                             </MenuItem>
                         ))}
                     </Select>
@@ -339,16 +382,19 @@ const SmartCitySelector = ({
                 <FormControl fullWidth size="small">
                     <InputLabel sx={{ fontSize: '12px' }}>Province/State</InputLabel>
                     <Select
-                        value={provinceStateFilter}
+                        value={countryFilter ? provinceStateFilter : ''}
                         onChange={(e) => setProvinceStateFilter(e.target.value)}
                         label="Province/State"
                         disabled={!countryFilter}
-                        sx={{ fontSize: '12px' }}
+                        sx={{
+                            fontSize: '12px',
+                            opacity: !countryFilter ? 0.6 : 1
+                        }}
                     >
                         <MenuItem value="" sx={{ fontSize: '12px' }}>All Provinces/States</MenuItem>
                         {availableProvinces.map(province => (
-                            <MenuItem key={province} value={province} sx={{ fontSize: '12px' }}>
-                                {province}
+                            <MenuItem key={province.code} value={province.code} sx={{ fontSize: '12px' }}>
+                                {province.name} - {province.code}
                             </MenuItem>
                         ))}
                     </Select>
@@ -557,28 +603,28 @@ const SmartCitySelector = ({
         </Box>
     );
 
-    // Render map view tab
+    // Render map view tab - Always mounted for real-time marker updates
     const renderMapViewTab = () => {
-        if (activeTab !== 1) return null;
-
         return (
-            <Suspense fallback={
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
-                    <CircularProgress />
-                    <Typography sx={{ ml: 2, fontSize: '14px' }}>Loading Map Tools...</Typography>
-                </Box>
-            }>
-                <MapCitySelector
-                    selectedCities={selectedCities}
-                    onSelectionComplete={handleMapSelectionComplete}
-                    zoneCategory={zoneCategory}
-                    embedded={true}
-                    onMapAreaSave={onMapAreaSave}
-                    onDone={() => setActiveTab(0)}
-                    initialAreas={savedAreas.filter(a => a.zoneCategory === zoneCategory)}
-                    carrierId={carrierId}
-                />
-            </Suspense>
+            <Box sx={{ display: activeTab === 1 ? 'block' : 'none' }}>
+                <Suspense fallback={
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
+                        <CircularProgress />
+                        <Typography sx={{ ml: 2, fontSize: '14px' }}>Loading Map Tools...</Typography>
+                    </Box>
+                }>
+                    <MapCitySelector
+                        selectedCities={activatedCities}
+                        onSelectionComplete={handleMapSelectionComplete}
+                        zoneCategory={zoneCategory}
+                        embedded={true}
+                        onMapAreaSave={onMapAreaSave}
+                        onDone={() => setActiveTab(0)}
+                        initialAreas={savedAreas.filter(a => a.zoneCategory === zoneCategory)}
+                        carrierId={carrierId}
+                    />
+                </Suspense>
+            </Box>
         );
     };
 
@@ -686,7 +732,7 @@ const SmartCitySelector = ({
                     setCountryFilter('');
                     setProvinceStateFilter('');
 
-                    enqueueSnackbar(`✅ Added ${newCities.length} cities - ${newCities.map(c => c.city).join(', ')}`, { variant: 'success' });
+                    enqueueSnackbar(`✅ Added ${newCities.length} cities to ${zoneCategory === 'pickupZones' ? 'pickup' : 'delivery'} locations (map updated)`, { variant: 'success' });
                     setAddCityDialogOpen(false);
                 }}
                 zoneCategory={zoneCategory}

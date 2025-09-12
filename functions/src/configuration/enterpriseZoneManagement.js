@@ -697,6 +697,520 @@ exports.resolveZone = functions
         }
     });
 
+/**
+ * Get all zones (individual zone definitions)
+ */
+exports.getZones = functions
+    .region('us-central1')
+    .runWith({
+        timeoutSeconds: 60,
+        memory: '256MB'
+    })
+    .https.onCall(async (data, context) => {
+        const logger = functions.logger;
+
+        try {
+            // Validate authentication
+            if (!context.auth) {
+                throw new functions.https.HttpsError(
+                    'unauthenticated',
+                    'Authentication required'
+                );
+            }
+
+            const userDoc = await admin.firestore()
+                .collection('users')
+                .doc(context.auth.uid)
+                .get();
+
+            const userData = userDoc.data();
+            if (!userData || !['admin', 'superadmin'].includes(userData.role)) {
+                throw new functions.https.HttpsError(
+                    'permission-denied',
+                    'Insufficient permissions'
+                );
+            }
+
+            logger.info('🗺️ Loading zones', {
+                userId: context.auth.uid
+            });
+
+            const db = admin.firestore();
+            
+            // Build query with optional filters
+            let zonesQuery = db.collection('zones');
+            
+            // Apply filters if provided
+            if (data.enabled !== undefined) {
+                zonesQuery = zonesQuery.where('enabled', '==', data.enabled);
+            }
+            
+            if (data.country) {
+                zonesQuery = zonesQuery.where('country', '==', data.country);
+            }
+
+            // Apply pagination
+            const page = data.page || 0;
+            const limit = data.limit || 100;
+            const offset = page * limit;
+
+            if (offset > 0) {
+                // For pagination, we need to use startAfter with a document
+                const offsetSnapshot = await zonesQuery.limit(offset).get();
+                if (!offsetSnapshot.empty) {
+                    const lastDoc = offsetSnapshot.docs[offsetSnapshot.docs.length - 1];
+                    zonesQuery = zonesQuery.startAfter(lastDoc);
+                }
+            }
+
+            const zonesSnapshot = await zonesQuery.limit(limit).get();
+
+            const zones = [];
+            zonesSnapshot.forEach(doc => {
+                const zoneData = doc.data();
+                zones.push({
+                    id: doc.id,
+                    ...zoneData,
+                    createdAt: zoneData.createdAt?.toDate?.()?.toISOString() || null,
+                    updatedAt: zoneData.updatedAt?.toDate?.()?.toISOString() || null
+                });
+            });
+
+            // Get total count for pagination
+            let totalCount = 0;
+            try {
+                let countQuery = db.collection('zones');
+                if (data.enabled !== undefined) {
+                    countQuery = countQuery.where('enabled', '==', data.enabled);
+                }
+                if (data.country) {
+                    countQuery = countQuery.where('country', '==', data.country);
+                }
+                const countSnapshot = await countQuery.count().get();
+                totalCount = countSnapshot.data().count;
+            } catch (countError) {
+                logger.warn('Could not get exact count, estimating from results');
+                totalCount = zones.length + offset;
+            }
+
+            // Sort by zone code, then name
+            zones.sort((a, b) => {
+                if (a.zoneCode && b.zoneCode) {
+                    return a.zoneCode.localeCompare(b.zoneCode);
+                }
+                return (a.zoneName || '').localeCompare(b.zoneName || '');
+            });
+
+            logger.info('✅ Zones loaded successfully', {
+                zonesCount: zones.length,
+                totalCount,
+                page,
+                limit
+            });
+
+            return {
+                success: true,
+                zones,
+                totalCount,
+                page,
+                limit,
+                hasMore: (offset + zones.length) < totalCount
+            };
+
+        } catch (error) {
+            logger.error('❌ Error loading zones', {
+                error: error.message,
+                stack: error.stack
+            });
+
+            if (error instanceof functions.https.HttpsError) {
+                throw error;
+            }
+
+            throw new functions.https.HttpsError(
+                'internal',
+                'Failed to load zones',
+                error.message
+            );
+        }
+    });
+
+/**
+ * Create a new zone
+ */
+exports.createZone = functions
+    .region('us-central1')
+    .runWith({
+        timeoutSeconds: 60,
+        memory: '256MB'
+    })
+    .https.onCall(async (data, context) => {
+        const logger = functions.logger;
+
+        try {
+            // Validate authentication
+            if (!context.auth) {
+                throw new functions.https.HttpsError(
+                    'unauthenticated',
+                    'Authentication required'
+                );
+            }
+
+            const userDoc = await admin.firestore()
+                .collection('users')
+                .doc(context.auth.uid)
+                .get();
+
+            const userData = userDoc.data();
+            if (!userData || !['admin', 'superadmin'].includes(userData.role)) {
+                throw new functions.https.HttpsError(
+                    'permission-denied',
+                    'Insufficient permissions'
+                );
+            }
+
+            // Validate required fields
+            if (!data.zoneCode || !data.zoneName) {
+                throw new functions.https.HttpsError(
+                    'invalid-argument',
+                    'Zone code and zone name are required'
+                );
+            }
+
+            logger.info('🆕 Creating zone', {
+                userId: context.auth.uid,
+                zoneCode: data.zoneCode,
+                zoneName: data.zoneName
+            });
+
+            const db = admin.firestore();
+
+            // Check for duplicate zone code
+            const duplicateQuery = await db.collection('zones')
+                .where('zoneCode', '==', data.zoneCode)
+                .get();
+
+            if (!duplicateQuery.empty) {
+                throw new functions.https.HttpsError(
+                    'already-exists',
+                    'A zone with this code already exists'
+                );
+            }
+
+            // Prepare zone data
+            const zoneData = {
+                zoneCode: data.zoneCode.trim().toUpperCase(),
+                zoneName: data.zoneName.trim(),
+                description: data.description?.trim() || '',
+                enabled: data.enabled !== false,
+                
+                // Geographic data
+                cities: data.cities || [],
+                postalCodes: data.postalCodes || [],
+                provinces: data.provinces || [],
+                country: data.country || '',
+                
+                // Metadata
+                metadata: {
+                    totalCities: data.cities?.length || 0,
+                    totalPostalCodes: data.postalCodes?.length || 0,
+                    totalProvinces: data.provinces?.length || 0,
+                    importSource: 'manual_entry',
+                    ...data.metadata
+                },
+                
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                createdBy: context.auth.uid
+            };
+
+            // Create the zone
+            const zoneRef = await db.collection('zones').add(zoneData);
+
+            logger.info('✅ Zone created successfully', {
+                zoneId: zoneRef.id,
+                zoneCode: zoneData.zoneCode,
+                zoneName: zoneData.zoneName
+            });
+
+            return {
+                success: true,
+                zoneId: zoneRef.id,
+                message: 'Zone created successfully'
+            };
+
+        } catch (error) {
+            logger.error('❌ Error creating zone', {
+                error: error.message,
+                stack: error.stack
+            });
+
+            if (error instanceof functions.https.HttpsError) {
+                throw error;
+            }
+
+            throw new functions.https.HttpsError(
+                'internal',
+                'Failed to create zone',
+                error.message
+            );
+        }
+    });
+
+/**
+ * Update an existing zone
+ */
+exports.updateZone = functions
+    .region('us-central1')
+    .runWith({
+        timeoutSeconds: 60,
+        memory: '256MB'
+    })
+    .https.onCall(async (data, context) => {
+        const logger = functions.logger;
+
+        try {
+            // Validate authentication
+            if (!context.auth) {
+                throw new functions.https.HttpsError(
+                    'unauthenticated',
+                    'Authentication required'
+                );
+            }
+
+            const userDoc = await admin.firestore()
+                .collection('users')
+                .doc(context.auth.uid)
+                .get();
+
+            const userData = userDoc.data();
+            if (!userData || !['admin', 'superadmin'].includes(userData.role)) {
+                throw new functions.https.HttpsError(
+                    'permission-denied',
+                    'Insufficient permissions'
+                );
+            }
+
+            // Validate required fields
+            if (!data.zoneId) {
+                throw new functions.https.HttpsError(
+                    'invalid-argument',
+                    'Zone ID is required'
+                );
+            }
+
+            logger.info('📝 Updating zone', {
+                userId: context.auth.uid,
+                zoneId: data.zoneId
+            });
+
+            const db = admin.firestore();
+            const zoneRef = db.collection('zones').doc(data.zoneId);
+
+            // Check if zone exists
+            const zoneDoc = await zoneRef.get();
+            if (!zoneDoc.exists) {
+                throw new functions.https.HttpsError(
+                    'not-found',
+                    'Zone not found'
+                );
+            }
+
+            const existingData = zoneDoc.data();
+
+            // Prepare update data (only include provided fields)
+            const updateData = {
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedBy: context.auth.uid
+            };
+
+            if (data.zoneCode !== undefined) {
+                // Check for duplicate zone code (excluding current zone)
+                const duplicateQuery = await db.collection('zones')
+                    .where('zoneCode', '==', data.zoneCode)
+                    .get();
+
+                const hasDuplicate = duplicateQuery.docs.some(doc => doc.id !== data.zoneId);
+                if (hasDuplicate) {
+                    throw new functions.https.HttpsError(
+                        'already-exists',
+                        'A zone with this code already exists'
+                    );
+                }
+                updateData.zoneCode = data.zoneCode.trim().toUpperCase();
+            }
+
+            if (data.zoneName !== undefined) {
+                updateData.zoneName = data.zoneName.trim();
+            }
+
+            if (data.description !== undefined) {
+                updateData.description = data.description.trim();
+            }
+
+            if (data.enabled !== undefined) {
+                updateData.enabled = data.enabled;
+            }
+
+            if (data.cities !== undefined) {
+                updateData.cities = data.cities;
+            }
+
+            if (data.postalCodes !== undefined) {
+                updateData.postalCodes = data.postalCodes;
+            }
+
+            if (data.provinces !== undefined) {
+                updateData.provinces = data.provinces;
+            }
+
+            if (data.country !== undefined) {
+                updateData.country = data.country;
+            }
+
+            // Update metadata
+            if (data.cities || data.postalCodes || data.provinces) {
+                updateData.metadata = {
+                    ...existingData.metadata,
+                    totalCities: data.cities?.length || existingData.cities?.length || 0,
+                    totalPostalCodes: data.postalCodes?.length || existingData.postalCodes?.length || 0,
+                    totalProvinces: data.provinces?.length || existingData.provinces?.length || 0,
+                    lastModified: new Date().toISOString()
+                };
+            }
+
+            // Update the zone
+            await zoneRef.update(updateData);
+
+            logger.info('✅ Zone updated successfully', {
+                zoneId: data.zoneId
+            });
+
+            return {
+                success: true,
+                message: 'Zone updated successfully'
+            };
+
+        } catch (error) {
+            logger.error('❌ Error updating zone', {
+                error: error.message,
+                stack: error.stack
+            });
+
+            if (error instanceof functions.https.HttpsError) {
+                throw error;
+            }
+
+            throw new functions.https.HttpsError(
+                'internal',
+                'Failed to update zone',
+                error.message
+            );
+        }
+    });
+
+/**
+ * Delete a zone
+ */
+exports.deleteZone = functions
+    .region('us-central1')
+    .runWith({
+        timeoutSeconds: 60,
+        memory: '256MB'
+    })
+    .https.onCall(async (data, context) => {
+        const logger = functions.logger;
+
+        try {
+            // Validate authentication
+            if (!context.auth) {
+                throw new functions.https.HttpsError(
+                    'unauthenticated',
+                    'Authentication required'
+                );
+            }
+
+            const userDoc = await admin.firestore()
+                .collection('users')
+                .doc(context.auth.uid)
+                .get();
+
+            const userData = userDoc.data();
+            if (!userData || !['admin', 'superadmin'].includes(userData.role)) {
+                throw new functions.https.HttpsError(
+                    'permission-denied',
+                    'Insufficient permissions'
+                );
+            }
+
+            // Validate required fields
+            if (!data.zoneId) {
+                throw new functions.https.HttpsError(
+                    'invalid-argument',
+                    'Zone ID is required'
+                );
+            }
+
+            logger.info('🗑️ Deleting zone', {
+                userId: context.auth.uid,
+                zoneId: data.zoneId
+            });
+
+            const db = admin.firestore();
+
+            // Check if zone exists
+            const zoneRef = db.collection('zones').doc(data.zoneId);
+            const zoneDoc = await zoneRef.get();
+            if (!zoneDoc.exists) {
+                throw new functions.https.HttpsError(
+                    'not-found',
+                    'Zone not found'
+                );
+            }
+
+            // Check if zone is used in any zone sets
+            const zoneSetsQuery = await db.collection('zoneSets')
+                .where('selectedZones', 'array-contains', data.zoneId)
+                .get();
+
+            if (!zoneSetsQuery.empty) {
+                const zoneSetNames = zoneSetsQuery.docs.map(doc => doc.data().name);
+                throw new functions.https.HttpsError(
+                    'failed-precondition',
+                    `Cannot delete zone. It is used in the following zone sets: ${zoneSetNames.join(', ')}`
+                );
+            }
+
+            // Delete the zone
+            await zoneRef.delete();
+
+            logger.info('✅ Zone deleted successfully', {
+                zoneId: data.zoneId
+            });
+
+            return {
+                success: true,
+                message: 'Zone deleted successfully'
+            };
+
+        } catch (error) {
+            logger.error('❌ Error deleting zone', {
+                error: error.message,
+                stack: error.stack
+            });
+
+            if (error instanceof functions.https.HttpsError) {
+                throw error;
+            }
+
+            throw new functions.https.HttpsError(
+                'internal',
+                'Failed to delete zone',
+                error.message
+            );
+        }
+    });
+
 // Helper functions
 
 async function canonicalizePostalToRegion(db, postalCode) {

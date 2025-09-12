@@ -917,6 +917,10 @@ const {
     getZoneSets,
     createZoneSet,
     deleteZoneSet,
+    getZones,
+    createZone,
+    updateZone,
+    deleteZone,
     getZoneMaps,
     resolveZone
 } = require('./src/configuration/enterpriseZoneManagement');
@@ -926,6 +930,10 @@ exports.createRegion = createRegion;
 exports.getZoneSets = getZoneSets;
 exports.createZoneSet = createZoneSet;
 exports.deleteZoneSet = deleteZoneSet;
+exports.getZones = getZones;
+exports.createZone = createZone;
+exports.updateZone = updateZone;
+exports.deleteZone = deleteZone;
 exports.getZoneMaps = getZoneMaps;
 exports.resolveZone = resolveZone;
 
@@ -1116,3 +1124,26 @@ exports.testMapCitySelector = testMapCitySelector;
 // Comprehensive Zone Import System
 const { importAllComprehensiveZones } = require('./src/configuration/masterZoneImportComplete');
 exports.importAllComprehensiveZones = importAllComprehensiveZones;
+
+// Custom Carrier Zone Management Functions
+const {
+    expandSystemZoneToCities,
+    expandZoneSetToCities,
+    expandCarrierCustomZonesToCities,
+    expandCarrierCustomZoneSetsToCS,
+    getCarrierCustomZoneSets,
+    createCarrierCustomZone,
+    createCarrierCustomZoneSet,
+    updateCarrierCustomZoneSet,
+    deleteCarrierCustomZoneSet
+} = require('./src/carriers/customZoneManagement');
+
+exports.expandSystemZoneToCities = expandSystemZoneToCities;
+exports.expandZoneSetToCities = expandZoneSetToCities;
+exports.expandCarrierCustomZonesToCities = expandCarrierCustomZonesToCities;
+exports.expandCarrierCustomZoneSetsToCS = expandCarrierCustomZoneSetsToCS;
+exports.getCarrierCustomZoneSets = getCarrierCustomZoneSets;
+exports.createCarrierCustomZone = createCarrierCustomZone;
+exports.createCarrierCustomZoneSet = createCarrierCustomZoneSet;
+exports.updateCarrierCustomZoneSet = updateCarrierCustomZoneSet;
+exports.deleteCarrierCustomZoneSet = deleteCarrierCustomZoneSet;

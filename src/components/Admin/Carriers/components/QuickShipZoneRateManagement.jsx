@@ -16,8 +16,10 @@ import {
     FormControlLabel, Checkbox, Chip, Dialog, DialogTitle,
     DialogContent, DialogActions, Alert, CircularProgress,
     Card, CardContent, CardHeader, Divider, IconButton,
+    Menu, MenuItem,
     Autocomplete, TextField, List, ListItem, ListItemText,
-    ListItemSecondaryAction
+    ListItemSecondaryAction, Table, TableBody, TableCell,
+    TableContainer, TableHead, TableRow
 } from '@mui/material';
 import {
     Map as MapIcon,
@@ -27,13 +29,23 @@ import {
     Add as AddIcon,
     Delete as DeleteIcon,
     CheckCircle as CheckCircleIcon,
-    RadioButtonUnchecked as RadioButtonUncheckedIcon
+    RadioButtonUnchecked as RadioButtonUncheckedIcon,
+    Layers as ZonesIcon,
+    Edit as EditIcon,
+    Visibility as ViewIcon,
+    MoreVert as MoreVertIcon,
+    Remove as RemoveIcon
 } from '@mui/icons-material';
 import { collection, doc, setDoc, getDoc, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../../../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../../../firebase';
 import { useSnackbar } from 'notistack';
 import useGeographicData from '../../../../hooks/useGeographicData';
 import SmartCitySelector from './SmartCitySelector';
+import SystemZoneSelector from './SystemZoneSelector';
+import SystemZoneSetSelector from './SystemZoneSetSelector';
+import CarrierZoneDialog from './CarrierZoneDialog';
+import CarrierZoneSetDialog from './CarrierZoneSetDialog';
 
 // Geographic data from our imported database
 const canadianProvinces = [
@@ -80,6 +92,36 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
     const [smartSelectorOpen, setSmartSelectorOpen] = useState(false);
     const [savedAreas, setSavedAreas] = useState([]);
     const [smartSelectorZoneForDialog, setSmartSelectorZoneForDialog] = useState('pickupZones');
+
+    // Zone management tab states
+    const [zoneManagementTab, setZoneManagementTab] = useState(0); // 0 = System Zones, 1 = Custom Zones
+    const [systemZoneSubTab, setSystemZoneSubTab] = useState(0); // 0 = Individual, 1 = Zone Sets
+    const [customZoneSubTab, setCustomZoneSubTab] = useState(0); // 0 = Individual, 1 = Zone Sets
+
+    // Zone management dialog states
+    const [systemZoneSelectorOpen, setSystemZoneSelectorOpen] = useState(false);
+    const [systemZoneSetSelectorOpen, setSystemZoneSetSelectorOpen] = useState(false);
+    const [customZoneDialogOpen, setCustomZoneDialogOpen] = useState(false);
+    const [customZoneSetDialogOpen, setCustomZoneSetDialogOpen] = useState(false);
+    const [zoneViewDialogOpen, setZoneViewDialogOpen] = useState(false);
+    const [selectedZoneForView, setSelectedZoneForView] = useState(null);
+    const [editingZone, setEditingZone] = useState(null);
+
+    // Context menu and confirmation states
+    const [contextMenuAnchor, setContextMenuAnchor] = useState(null);
+    const [selectedZoneForAction, setSelectedZoneForAction] = useState(null);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [zoneToDelete, setZoneToDelete] = useState(null);
+
+    // Zone codes state
+    const [zoneCodesLoaded, setZoneCodesLoaded] = useState(false);
+    const [zoneCodesMap, setZoneCodesMap] = useState(new Map());
+
+    // Selected zone sets for confirmation
+    const [selectedZoneSetsForConfirmation, setSelectedZoneSetsForConfirmation] = useState([]);
+
+    // Loading state for context menu actions
+    const [contextMenuLoading, setContextMenuLoading] = useState(false);
 
     // Geographic data hook
     const {
@@ -138,15 +180,55 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
         setSmartCitySelectorZone(zoneCategory);
     }, []);
 
+    // Helper function to get total zones count for the zones tab
+    const getTotalZonesCount = useCallback(() => {
+        // Count enabled zones from zoneReferences (not from cities)
+        const systemZones = zoneConfig.zoneReferences?.system_zones || [];
+        const systemZoneSets = zoneConfig.zoneReferences?.system_zone_sets || [];
+        const customZones = zoneConfig.zoneReferences?.custom_zones || [];
+        const customZoneSets = zoneConfig.zoneReferences?.custom_zone_sets || [];
+
+        return systemZones.length + systemZoneSets.length + customZones.length + customZoneSets.length;
+    }, [zoneConfig.zoneReferences]);
+
+    // Helper function to get city count for a specific zone
+    const getCityCountForZone = useCallback((zone) => {
+        // Count cities in pickup and delivery zones that belong to this zone
+        const pickupCities = zoneConfig.pickupZones?.selectedCities || [];
+        const deliveryCities = zoneConfig.deliveryZones?.selectedCities || [];
+
+        const zoneCities = [...pickupCities, ...deliveryCities].filter(city =>
+            city.zoneId === zone.id || city.zoneName === zone.zoneName
+        );
+
+        // Remove duplicates by city ID
+        const uniqueCities = new Set(zoneCities.map(city => city.searchKey || city.id));
+
+        return uniqueCities.size || zone.cityCount || zone.totalPostalCodes || 'N/A';
+    }, [zoneConfig.pickupZones, zoneConfig.deliveryZones]);
+
     // Handle embedded city selection (update state and auto-save)
     const handleEmbeddedCitySelection = useCallback(async (selectedCities, zoneCategory) => {
         console.log(`🏙️ CITY SELECTION - ${zoneCategory} received ${selectedCities.length} cities from map`);
+        console.log(`🔍 CITY SELECTION - Sample city data:`, selectedCities[0]);
+
+        // Ensure all zone metadata is preserved in cities
+        const citiesWithZoneData = selectedCities.map(city => ({
+            ...city,
+            // Preserve zone metadata if it exists
+            zoneId: city.zoneId || null,
+            zoneName: city.zoneName || null,
+            zoneCode: city.zoneCode || null,
+            zoneSetId: city.zoneSetId || null,
+            zoneSetName: city.zoneSetName || null,
+            matchType: city.matchType || 'manual'
+        }));
 
         const updatedConfig = {
             ...zoneConfig,
             [zoneCategory]: {
                 ...zoneConfig[zoneCategory],
-                selectedCities: selectedCities
+                selectedCities: citiesWithZoneData
             }
         };
 
@@ -166,6 +248,9 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             }, { merge: true });
 
             console.log(`✅ CITY SELECTION - Auto-saved ${selectedCities.length} cities for ${zoneCategory}`);
+
+            // Force re-render of zones tab by updating state
+            setZoneConfig(prev => ({ ...prev }));
 
             // Enhanced success message with count
             enqueueSnackbar(`💾 Saved ${selectedCities.length} ${zoneCategory === 'pickupZones' ? 'pickup' : 'delivery'} cities`, {
@@ -293,11 +378,57 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
         }
     }, [isOpen]);
 
+    // Load zone codes from database when cities change
+    useEffect(() => {
+        const loadZoneCodes = async () => {
+            const pickupCities = zoneConfig.pickupZones?.selectedCities || [];
+            const deliveryCities = zoneConfig.deliveryZones?.selectedCities || [];
+            const allCities = [...pickupCities, ...deliveryCities];
+
+            const uniqueZoneIds = new Set();
+            allCities.forEach(city => {
+                if (city.zoneId) {
+                    uniqueZoneIds.add(city.zoneId);
+                }
+            });
+
+            if (uniqueZoneIds.size > 0) {
+                const newZoneCodesMap = new Map();
+                try {
+                    // Fetch zone codes from zones collection
+                    for (const zoneId of uniqueZoneIds) {
+                        const zoneDoc = await getDoc(doc(db, 'zones', zoneId));
+                        if (zoneDoc.exists()) {
+                            const zoneData = zoneDoc.data();
+                            newZoneCodesMap.set(zoneId, zoneData.zoneCode || 'N/A');
+                            console.log(`✅ Zone code loaded: ${zoneId} = ${zoneData.zoneCode}`);
+                        }
+                    }
+                    setZoneCodesMap(newZoneCodesMap);
+                    setZoneCodesLoaded(true);
+                } catch (error) {
+                    console.error('Error loading zone codes:', error);
+                    setZoneCodesLoaded(true);
+                }
+            } else {
+                setZoneCodesMap(new Map());
+                setZoneCodesLoaded(true);
+            }
+        };
+
+        const allCitiesLength = (zoneConfig.pickupZones?.selectedCities || []).length +
+            (zoneConfig.deliveryZones?.selectedCities || []).length;
+
+        if (allCitiesLength > 0) {
+            loadZoneCodes();
+        }
+    }, [zoneConfig.pickupZones?.selectedCities, zoneConfig.deliveryZones?.selectedCities]);
+
     // Note: Removed auto-opening behavior to allow users to see the tab structure first
     // Users can manually navigate to configure pickup/delivery locations when needed
 
     const loadZoneConfiguration = async () => {
-        // console.log('📥 LOADING - Starting load for carrier:', carrierId);
+        console.log('📥 LOADING - Starting load for carrier:', carrierId);
         setLoading(true);
         try {
             const docRef = doc(db, 'carrierZoneConfigs', carrierId);
@@ -305,16 +436,21 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
 
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                // console.log('📥 LOADING - Data from database:', data);
-                // console.log('📥 LOADING - Pickup cities found:', data.zoneConfig?.pickupZones?.selectedCities?.length || 0);
-                // console.log('📥 LOADING - Delivery cities found:', data.zoneConfig?.deliveryZones?.selectedCities?.length || 0);
-                setZoneConfig(data.zoneConfig || zoneConfig);
-                // console.log('📥 LOADING - State updated with loaded data');
+                console.log('📥 LOADING - Raw data from database:', data);
+                console.log('📥 LOADING - Zone config structure:', data.zoneConfig);
+                console.log('📥 LOADING - Zone references:', data.zoneConfig?.zoneReferences);
+                console.log('📥 LOADING - Pickup cities found:', data.zoneConfig?.pickupZones?.selectedCities?.length || 0);
+                console.log('📥 LOADING - Delivery cities found:', data.zoneConfig?.deliveryZones?.selectedCities?.length || 0);
+
+                const loadedConfig = data.zoneConfig || zoneConfig;
+                console.log('📥 LOADING - Final loaded config:', loadedConfig);
+                setZoneConfig(loadedConfig);
+                console.log('📥 LOADING - State updated with loaded data');
             } else {
-                // console.log('📥 LOADING - No existing configuration found');
+                console.log('📥 LOADING - No existing configuration found');
             }
         } catch (error) {
-            // console.error('❌ Error loading zone configuration:', error);
+            console.error('❌ Error loading zone configuration:', error);
             enqueueSnackbar('Failed to load zone configuration', { variant: 'error' });
         } finally {
             setLoading(false);
@@ -365,6 +501,347 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             setLoading(false);
         }
     };
+
+    // Handle zone removal
+    const handleRemoveZone = useCallback(async (zoneType, zoneId) => {
+        try {
+            console.log(`🗑️ Removing ${zoneType} zone:`, zoneId);
+
+            // Remove cities that belong to this zone from both pickup and delivery
+            const pickupCities = zoneConfig.pickupZones?.selectedCities || [];
+            const deliveryCities = zoneConfig.deliveryZones?.selectedCities || [];
+
+            const updatedPickupCities = pickupCities.filter(city =>
+                city.zoneId !== zoneId && city.zoneSetId !== zoneId
+            );
+            const updatedDeliveryCities = deliveryCities.filter(city =>
+                city.zoneId !== zoneId && city.zoneSetId !== zoneId
+            );
+
+            const removedPickupCount = pickupCities.length - updatedPickupCities.length;
+            const removedDeliveryCount = deliveryCities.length - updatedDeliveryCities.length;
+            const totalRemovedCities = removedPickupCount + removedDeliveryCount;
+
+            // Update zone config
+            const updatedConfig = {
+                ...zoneConfig,
+                pickupZones: {
+                    ...zoneConfig.pickupZones,
+                    selectedCities: updatedPickupCities
+                },
+                deliveryZones: {
+                    ...zoneConfig.deliveryZones,
+                    selectedCities: updatedDeliveryCities
+                }
+            };
+
+            // Save to database
+            const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
+            await setDoc(carrierConfigRef, {
+                carrierId,
+                carrierName,
+                zoneConfig: updatedConfig,
+                lastUpdated: new Date(),
+                version: '2.0'
+            }, { merge: true });
+
+            setZoneConfig(updatedConfig);
+
+            enqueueSnackbar(`Zone removed successfully (${totalRemovedCities} cities removed)`, { variant: 'success' });
+        } catch (error) {
+            console.error('Error removing zone:', error);
+            enqueueSnackbar('Failed to remove zone', { variant: 'error' });
+        }
+    }, [zoneConfig, carrierId, carrierName, enqueueSnackbar]);
+
+    // Handle zone editing
+    const handleEditZone = useCallback((zoneType, zone) => {
+        console.log(`✏️ Editing ${zoneType} zone:`, zone);
+        enqueueSnackbar('Zone editing feature coming soon', { variant: 'info' });
+    }, [enqueueSnackbar]);
+
+    // Handle zone viewing
+    const handleViewZone = useCallback((zoneType, zone) => {
+        console.log(`👁️ Viewing ${zoneType} zone:`, zone);
+        setSelectedZoneForView({ type: zoneType, data: zone });
+        setZoneViewDialogOpen(true);
+    }, []);
+
+    // Handle adding system zone
+    const handleAddSystemZone = useCallback(() => {
+        console.log('➕ Opening system zone selector');
+        setSystemZoneSelectorOpen(true);
+    }, []);
+
+    // Handle adding system zone set
+    const handleAddSystemZoneSet = useCallback(() => {
+        console.log('➕ Opening system zone set selector');
+        setSystemZoneSetSelectorOpen(true);
+    }, []);
+
+    // Handle adding custom zone
+    const handleAddCustomZone = useCallback(() => {
+        console.log('➕ Opening custom zone creator');
+        setEditingZone(null); // Clear editing state for new zone
+        setCustomZoneDialogOpen(true);
+    }, []);
+
+    // Handle adding custom zone set
+    const handleAddCustomZoneSet = useCallback(() => {
+        console.log('➕ Opening custom zone set creator');
+        setEditingZone(null); // Clear editing state for new zone set
+        setCustomZoneSetDialogOpen(true);
+    }, []);
+
+    // Handle editing zones
+    const handleEditZoneAction = useCallback((zoneType, zone) => {
+        console.log(`✏️ Editing ${zoneType} zone:`, zone);
+        setEditingZone({ type: zoneType, data: zone });
+
+        if (zoneType === 'custom_zones') {
+            setCustomZoneDialogOpen(true);
+        } else if (zoneType === 'custom_zone_sets') {
+            setCustomZoneSetDialogOpen(true);
+        }
+
+        // Close context menu
+        setContextMenuAnchor(null);
+        setSelectedZoneForAction(null);
+    }, []);
+
+    // Handle context menu open
+    const handleContextMenuOpen = useCallback((event, zoneType, zone) => {
+        event.stopPropagation();
+        setContextMenuAnchor(event.currentTarget);
+        setSelectedZoneForAction({ type: zoneType, data: zone });
+    }, []);
+
+    // Handle context menu close
+    const handleContextMenuClose = useCallback(() => {
+        setContextMenuAnchor(null);
+        setSelectedZoneForAction(null);
+        setContextMenuLoading(false);
+    }, []);
+
+    // Handle view zone from context menu
+    const handleViewZoneFromMenu = useCallback(() => {
+        if (selectedZoneForAction) {
+            handleViewZone(selectedZoneForAction.type, selectedZoneForAction.data);
+        }
+        handleContextMenuClose();
+    }, [selectedZoneForAction, handleViewZone, handleContextMenuClose]);
+
+    // Handle delete zone from context menu
+    const handleDeleteZoneFromMenu = useCallback(() => {
+        if (selectedZoneForAction) {
+            setZoneToDelete(selectedZoneForAction);
+            setDeleteConfirmOpen(true);
+        }
+        handleContextMenuClose();
+    }, [selectedZoneForAction, handleContextMenuClose]);
+
+    // Handle confirmed zone deletion
+    const handleConfirmedZoneDeletion = useCallback(async () => {
+        if (zoneToDelete) {
+            await handleRemoveZone(zoneToDelete.type, zoneToDelete.data.id);
+            setDeleteConfirmOpen(false);
+            setZoneToDelete(null);
+        }
+    }, [zoneToDelete, handleRemoveZone]);
+
+    // Handle adding zone to pickup or delivery locations
+    const handleAddZoneToLocation = useCallback(async (locationType) => {
+        if (!selectedZoneForAction) return;
+
+        setContextMenuLoading(true);
+        try {
+            const zone = selectedZoneForAction.data;
+            const zoneType = selectedZoneForAction.type;
+
+            console.log(`🚀 Adding ${zoneType} to ${locationType} locations:`, zone);
+
+            let citiesToAdd = [];
+
+            // Expand zone to cities using the same logic as the zone selection
+            if (zoneType === 'system_zones') {
+                // Individual system zone
+                const expandZone = httpsCallable(functions, 'expandSystemZoneToCities');
+                const result = await expandZone({ zoneId: zone.id });
+
+                if (result.data.success && result.data.cities) {
+                    citiesToAdd = result.data.cities.map(city => ({
+                        ...city,
+                        zoneId: zone.id,
+                        zoneName: zone.zoneName || zone.name,
+                        zoneCode: zone.zoneCode || 'N/A'
+                    }));
+                }
+            } else if (zoneType === 'system_zone_sets') {
+                // System zone set
+                const expandZoneSet = httpsCallable(functions, 'expandZoneSetToCities');
+                const result = await expandZoneSet({ zoneSetId: zone.id });
+
+                if (result.data.success && result.data.cities) {
+                    citiesToAdd = result.data.cities.map(city => ({
+                        ...city,
+                        zoneSetId: zone.id,
+                        zoneSetName: zone.name,
+                        zoneCode: city.zoneCode || 'N/A'
+                    }));
+                }
+            }
+
+            if (citiesToAdd.length === 0) {
+                enqueueSnackbar('No cities found in this zone', { variant: 'warning' });
+                setContextMenuAnchor(null);
+                return;
+            }
+
+            // Filter out cities that already exist
+            const existingCities = locationType === 'pickup'
+                ? zoneConfig.pickupZones?.selectedCities || []
+                : zoneConfig.deliveryZones?.selectedCities || [];
+
+            const existingCityIds = new Set(existingCities.map(city => city.searchKey || city.id));
+            const newCities = citiesToAdd.filter(city => !existingCityIds.has(city.searchKey || city.id));
+
+            if (newCities.length === 0) {
+                enqueueSnackbar(`All cities from this zone are already in ${locationType} locations`, { variant: 'info' });
+                setContextMenuAnchor(null);
+                return;
+            }
+
+            // Add cities to the specified location
+            const updatedConfig = {
+                ...zoneConfig,
+                [`${locationType}Zones`]: {
+                    ...zoneConfig[`${locationType}Zones`],
+                    selectedCities: [...existingCities, ...newCities]
+                }
+            };
+
+            // Save to database
+            const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
+            await setDoc(carrierConfigRef, {
+                carrierId,
+                carrierName,
+                zoneConfig: updatedConfig,
+                lastUpdated: new Date(),
+                version: '2.0'
+            }, { merge: true });
+
+            setZoneConfig(updatedConfig);
+            setContextMenuAnchor(null);
+
+            enqueueSnackbar(`Added ${newCities.length} cities to ${locationType} locations`, { variant: 'success' });
+
+        } catch (error) {
+            console.error(`Error adding zone to ${locationType}:`, error);
+            enqueueSnackbar(`Failed to add zone to ${locationType} locations`, { variant: 'error' });
+        } finally {
+            setContextMenuLoading(false);
+        }
+    }, [selectedZoneForAction, zoneConfig, carrierId, carrierName, enqueueSnackbar]);
+
+    // Handle removing zone from pickup or delivery locations
+    const handleRemoveZoneFromLocation = useCallback(async (locationType) => {
+        if (!selectedZoneForAction) return;
+
+        setContextMenuLoading(true);
+        try {
+            const zone = selectedZoneForAction.data;
+            const zoneType = selectedZoneForAction.type;
+
+            console.log(`🗑️ Removing ${zoneType} from ${locationType} locations:`, zone);
+
+            const existingCities = locationType === 'pickup'
+                ? zoneConfig.pickupZones?.selectedCities || []
+                : zoneConfig.deliveryZones?.selectedCities || [];
+
+            console.log('🔍 DELETION DEBUG:', {
+                locationType,
+                zoneType,
+                zoneId: zone.id,
+                existingCitiesCount: existingCities.length,
+                pickupCitiesCount: zoneConfig.pickupZones?.selectedCities?.length || 0,
+                deliveryCitiesCount: zoneConfig.deliveryZones?.selectedCities?.length || 0
+            });
+
+            // Filter out cities that belong to this zone/zone set
+            let filteredCities;
+            if (zoneType === 'system_zones') {
+                filteredCities = existingCities.filter(city => city.zoneId !== zone.id);
+            } else if (zoneType === 'system_zone_sets') {
+                filteredCities = existingCities.filter(city => city.zoneSetId !== zone.id);
+            } else {
+                filteredCities = existingCities;
+            }
+
+            const removedCount = existingCities.length - filteredCities.length;
+
+            if (removedCount === 0) {
+                enqueueSnackbar(`No cities from this zone found in ${locationType} locations`, { variant: 'info' });
+                setContextMenuAnchor(null);
+                return;
+            }
+
+            // Update configuration
+            const updatedConfig = {
+                ...zoneConfig,
+                [`${locationType}Zones`]: {
+                    ...zoneConfig[`${locationType}Zones`],
+                    selectedCities: filteredCities
+                }
+            };
+
+            console.log('🔍 UPDATE DEBUG:', {
+                locationType,
+                updateKey: `${locationType}Zones`,
+                originalCitiesCount: existingCities.length,
+                filteredCitiesCount: filteredCities.length,
+                removedCount: existingCities.length - filteredCities.length,
+                updatedConfigStructure: {
+                    pickupCitiesAfter: updatedConfig.pickupZones?.selectedCities?.length || 0,
+                    deliveryCitiesAfter: updatedConfig.deliveryZones?.selectedCities?.length || 0
+                }
+            });
+
+            // Save to database
+            const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
+            await setDoc(carrierConfigRef, {
+                carrierId,
+                carrierName,
+                zoneConfig: updatedConfig,
+                lastUpdated: new Date(),
+                version: '2.0'
+            }, { merge: true });
+
+            setZoneConfig(updatedConfig);
+            setContextMenuAnchor(null);
+
+            enqueueSnackbar(`Removed ${removedCount} cities from ${locationType} locations`, { variant: 'success' });
+
+        } catch (error) {
+            console.error(`Error removing zone from ${locationType}:`, error);
+            enqueueSnackbar(`Failed to remove zone from ${locationType} locations`, { variant: 'error' });
+        } finally {
+            setContextMenuLoading(false);
+        }
+    }, [selectedZoneForAction, zoneConfig, carrierId, carrierName, enqueueSnackbar]);
+
+    // Helper function to check if zone cities are assigned to a location
+    const isZoneAssignedToLocation = useCallback((zone, zoneType, locationType) => {
+        const cities = locationType === 'pickup'
+            ? zoneConfig.pickupZones?.selectedCities || []
+            : zoneConfig.deliveryZones?.selectedCities || [];
+
+        if (zoneType === 'system_zones') {
+            return cities.some(city => city.zoneId === zone.id);
+        } else if (zoneType === 'system_zone_sets') {
+            return cities.some(city => city.zoneSetId === zone.id);
+        }
+        return false;
+    }, [zoneConfig]);
 
     // Handle zone type selection
     const handleZoneTypeChange = (zoneCategory, zoneType, checked) => {
@@ -712,6 +1189,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         onMapAreaSave={handleMapAreaSave}
                         savedAreas={savedAreas}
                         carrierId={carrierId}
+                        carrierName={carrierName}
                     />
                 )}
 
@@ -725,6 +1203,8 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         zoneCategory={smartSelectorZoneForDialog}
                         embedded={false}
                         onMapAreaSave={handleMapAreaSave}
+                        carrierId={carrierId}
+                        carrierName={carrierName}
                     />
                 )}
             </Box>
@@ -756,6 +1236,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         onMapAreaSave={handleMapAreaSave}
                         savedAreas={savedAreas}
                         carrierId={carrierId}
+                        carrierName={carrierName}
                     />
                 )}
             </Box>
@@ -1114,6 +1595,517 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
         );
     };
 
+    // Render zones management tab
+    const renderZonesManagement = () => {
+        return (
+            <Box sx={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
+                {/* Header Section */}
+                <Box sx={{ mb: 3, p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 0.5 }}>
+                        Configure Zone Management
+                    </Typography>
+                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                        Manage system zones, zone sets, and custom zones for this carrier
+                    </Typography>
+                </Box>
+
+                {/* Main Zone Type Tabs */}
+                <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, px: 3 }}>
+                    <Tabs
+                        value={zoneManagementTab}
+                        onChange={(e, newValue) => setZoneManagementTab(newValue)}
+                        sx={{
+                            '& .MuiTab-root': {
+                                fontSize: '12px',
+                                textTransform: 'none',
+                                minHeight: 40
+                            }
+                        }}
+                    >
+                        <Tab
+                            icon={<RegionIcon />}
+                            label="System Zones"
+                            iconPosition="start"
+                        />
+                        <Tab
+                            icon={<MapIcon />}
+                            label="Custom Zones"
+                            iconPosition="start"
+                        />
+                    </Tabs>
+                </Box>
+
+                {/* System Zones Tab */}
+                {zoneManagementTab === 0 && (
+                    <Box sx={{ flex: 1, overflow: 'auto', px: 3 }}>
+                        {/* Sub-tabs for Individual Zones vs Zone Sets */}
+                        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+                            <Tabs
+                                value={systemZoneSubTab}
+                                onChange={(e, newValue) => setSystemZoneSubTab(newValue)}
+                                sx={{
+                                    '& .MuiTab-root': {
+                                        fontSize: '11px',
+                                        textTransform: 'none',
+                                        minHeight: 36
+                                    }
+                                }}
+                            >
+                                <Tab label="Individual Zones" />
+                                <Tab label="Zone Sets" />
+                            </Tabs>
+                        </Box>
+
+                        {/* Individual System Zones */}
+                        {systemZoneSubTab === 0 && renderSystemZonesList()}
+
+                        {/* System Zone Sets */}
+                        {systemZoneSubTab === 1 && renderSystemZoneSetsList()}
+                    </Box>
+                )}
+
+                {/* Custom Zones Tab */}
+                {zoneManagementTab === 1 && (
+                    <Box sx={{ flex: 1, overflow: 'auto', px: 3 }}>
+                        {/* Sub-tabs for Individual Zones vs Zone Sets */}
+                        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+                            <Tabs
+                                value={customZoneSubTab}
+                                onChange={(e, newValue) => setCustomZoneSubTab(newValue)}
+                                sx={{
+                                    '& .MuiTab-root': {
+                                        fontSize: '11px',
+                                        textTransform: 'none',
+                                        minHeight: 36
+                                    }
+                                }}
+                            >
+                                <Tab label="Individual Zones" />
+                                <Tab label="Zone Sets" />
+                            </Tabs>
+                        </Box>
+
+                        {/* Individual Custom Zones */}
+                        {customZoneSubTab === 0 && renderCustomZonesList()}
+
+                        {/* Custom Zone Sets */}
+                        {customZoneSubTab === 1 && renderCustomZoneSetsList()}
+                    </Box>
+                )}
+            </Box>
+        );
+    };
+
+    // Render individual system zones list
+    const renderSystemZonesList = () => {
+        // Get enabled zones from zoneReferences (not from cities)
+        const enabledZones = zoneConfig.zoneReferences?.system_zones || [];
+
+        // Count cities for each zone from pickup and delivery locations
+        const pickupCities = zoneConfig.pickupZones?.selectedCities || [];
+        const deliveryCities = zoneConfig.deliveryZones?.selectedCities || [];
+        const allCities = [...pickupCities, ...deliveryCities];
+
+        // Build zone display data from enabled zones, not from cities
+        const systemZones = enabledZones.map(zoneRef => {
+            // Count cities that belong to this zone
+            const cityCount = allCities.filter(city => city.zoneId === zoneRef.id).length;
+
+            return {
+                id: zoneRef.id,
+                zoneName: zoneRef.zoneName || zoneRef.name,
+                zoneCode: zoneCodesMap.get(zoneRef.id) || zoneRef.zoneCode || 'N/A',
+                country: zoneRef.country || 'N/A',
+                cityCount: cityCount
+            };
+        });
+
+        return (
+            <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '14px', color: '#374151' }}>
+                        System Zones ({systemZones.length})
+                    </Typography>
+                    <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddSystemZone}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Add System Zone
+                    </Button>
+                </Box>
+
+                {systemZones.length > 0 ? (
+                    <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zone Name</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zone Code</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Country</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Cities</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {systemZones.map((zone, index) => (
+                                    <TableRow key={zone.id || index}>
+                                        <TableCell sx={{ fontSize: '12px' }}>{zone.zoneName || zone.name}</TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>{zone.zoneCode || zone.code}</TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>{zone.country || 'N/A'}</TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Chip
+                                                label={zone.cityCount || 'N/A'}
+                                                size="small"
+                                                variant="outlined"
+                                                color="primary"
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton
+                                                size="small"
+                                                onClick={(event) => handleContextMenuOpen(event, 'system_zones', zone)}
+                                                sx={{ color: '#6b7280' }}
+                                            >
+                                                <MoreVertIcon fontSize="small" />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                ) : (
+                    <Paper sx={{ p: 4, textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                            No system zones added to this carrier
+                        </Typography>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<AddIcon />}
+                            onClick={handleAddSystemZone}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Add Your First System Zone
+                        </Button>
+                    </Paper>
+                )}
+            </Box>
+        );
+    };
+
+    // Render system zone sets list
+    const renderSystemZoneSetsList = () => {
+        // Get enabled zone sets from zoneReferences (not from cities)
+        const enabledZoneSets = zoneConfig.zoneReferences?.system_zone_sets || [];
+
+        // Count cities for each zone set from pickup and delivery locations
+        const pickupCities = zoneConfig.pickupZones?.selectedCities || [];
+        const deliveryCities = zoneConfig.deliveryZones?.selectedCities || [];
+        const allCities = [...pickupCities, ...deliveryCities];
+
+        console.log('🔍 ZONE SET DEBUGGING:', {
+            enabledZoneSetsCount: enabledZoneSets.length,
+            totalCities: allCities.length,
+            pickupCitiesCount: pickupCities.length,
+            deliveryCitiesCount: deliveryCities.length,
+            citiesWithZoneSetId: allCities.filter(c => c.zoneSetId).length
+        });
+
+        // Build zone set display data from enabled zone sets, not from cities
+        const systemZoneSets = enabledZoneSets.map(zoneSetRef => {
+            // Count cities that belong to this zone set
+            const cityCount = allCities.filter(city => city.zoneSetId === zoneSetRef.id).length;
+
+            return {
+                id: zoneSetRef.id,
+                name: zoneSetRef.name,
+                zones: { length: zoneSetRef.zoneCount || zoneSetRef.selectedZones?.length || 0 },
+                cityCount: cityCount,
+                coverage: 'Regional'
+            };
+        });
+
+        console.log('🔍 ZONE SET RESULTS:', {
+            enabledZoneSetsCount: enabledZoneSets.length,
+            systemZoneSetsLength: systemZoneSets.length,
+            systemZoneSets: systemZoneSets
+        });
+
+        return (
+            <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '14px', color: '#374151' }}>
+                        System Zone Sets ({systemZoneSets.length})
+                    </Typography>
+                    <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddSystemZoneSet}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Add Zone Set
+                    </Button>
+                </Box>
+
+                {systemZoneSets.length > 0 ? (
+                    <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zone Set Name</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zones Count</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Coverage</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {systemZoneSets.map((zoneSet, index) => (
+                                    <TableRow key={zoneSet.id || index}>
+                                        <TableCell sx={{ fontSize: '12px' }}>{zoneSet.name}</TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Chip
+                                                label={zoneSet.zones?.length || zoneSet.zones?.size || zoneSet.cityCount || 0}
+                                                size="small"
+                                                variant="outlined"
+                                                color="secondary"
+                                            />
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>{zoneSet.coverage || 'Regional'}</TableCell>
+                                        <TableCell>
+                                            <IconButton
+                                                size="small"
+                                                onClick={(event) => handleContextMenuOpen(event, 'system_zone_sets', zoneSet)}
+                                                sx={{ color: '#6b7280' }}
+                                            >
+                                                <MoreVertIcon fontSize="small" />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                ) : (
+                    <Paper sx={{ p: 4, textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                            No system zone sets added to this carrier
+                        </Typography>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<AddIcon />}
+                            onClick={handleAddSystemZoneSet}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Add Your First Zone Set
+                        </Button>
+                    </Paper>
+                )}
+            </Box>
+        );
+    };
+
+    // Render custom zones list  
+    const renderCustomZonesList = () => {
+        // For now, show empty since custom zones aren't implemented yet
+        const customZones = [];
+
+        return (
+            <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '14px', color: '#374151' }}>
+                        Custom Zones ({customZones.length})
+                    </Typography>
+                    <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={() => handleAddCustomZone()}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Create Custom Zone
+                    </Button>
+                </Box>
+
+                {customZones.length > 0 ? (
+                    <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zone Name</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Cities</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Created</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {customZones.map((zone, index) => (
+                                    <TableRow key={zone.id || index}>
+                                        <TableCell sx={{ fontSize: '12px' }}>{zone.name}</TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Chip
+                                                label={zone.cities?.length || 0}
+                                                size="small"
+                                                variant="outlined"
+                                                color="success"
+                                            />
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            {zone.createdAt ? new Date(zone.createdAt).toLocaleDateString() : 'N/A'}
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => handleViewZone('custom_zones', zone)}
+                                                sx={{ color: '#6b7280', mr: 1 }}
+                                            >
+                                                <ViewIcon fontSize="small" />
+                                            </IconButton>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => handleEditZoneAction('custom_zones', zone)}
+                                                sx={{ color: '#3b82f6', mr: 1 }}
+                                            >
+                                                <EditIcon fontSize="small" />
+                                            </IconButton>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => handleRemoveZone('custom_zones', zone.id)}
+                                                sx={{ color: '#ef4444' }}
+                                            >
+                                                <DeleteIcon fontSize="small" />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                ) : (
+                    <Paper sx={{ p: 4, textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                            No custom zones created for this carrier
+                        </Typography>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<AddIcon />}
+                            onClick={() => handleAddCustomZone()}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Create Your First Custom Zone
+                        </Button>
+                    </Paper>
+                )}
+            </Box>
+        );
+    };
+
+    // Render custom zone sets list
+    const renderCustomZoneSetsList = () => {
+        // For now, show empty since custom zone sets aren't implemented yet
+        const customZoneSets = [];
+
+        return (
+            <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '14px', color: '#374151' }}>
+                        Custom Zone Sets ({customZoneSets.length})
+                    </Typography>
+                    <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={() => handleAddCustomZoneSet()}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Create Zone Set
+                    </Button>
+                </Box>
+
+                {customZoneSets.length > 0 ? (
+                    <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zone Set Name</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zones</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Total Cities</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Created</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {customZoneSets.map((zoneSet, index) => (
+                                    <TableRow key={zoneSet.id || index}>
+                                        <TableCell sx={{ fontSize: '12px' }}>{zoneSet.name}</TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Chip
+                                                label={zoneSet.zones?.length || 0}
+                                                size="small"
+                                                variant="outlined"
+                                                color="warning"
+                                            />
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            {zoneSet.totalCities || 'N/A'}
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            {zoneSet.createdAt ? new Date(zoneSet.createdAt).toLocaleDateString() : 'N/A'}
+                                        </TableCell>
+                                        <TableCell>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => handleViewZone('custom_zone_sets', zoneSet)}
+                                                sx={{ color: '#6b7280', mr: 1 }}
+                                            >
+                                                <ViewIcon fontSize="small" />
+                                            </IconButton>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => handleEditZoneAction('custom_zone_sets', zoneSet)}
+                                                sx={{ color: '#3b82f6', mr: 1 }}
+                                            >
+                                                <EditIcon fontSize="small" />
+                                            </IconButton>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => handleRemoveZone('custom_zone_sets', zoneSet.id)}
+                                                sx={{ color: '#ef4444' }}
+                                            >
+                                                <DeleteIcon fontSize="small" />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                ) : (
+                    <Paper sx={{ p: 4, textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                            No custom zone sets created for this carrier
+                        </Typography>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<AddIcon />}
+                            onClick={() => handleAddCustomZoneSet()}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Create Your First Zone Set
+                        </Button>
+                    </Paper>
+                )}
+            </Box>
+        );
+    };
+
     // Render route mappings tab
     const renderRouteMappings = () => {
         return (
@@ -1467,6 +2459,11 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
 
     const tabs = [
         {
+            label: 'Zones',
+            icon: <ZonesIcon />,
+            count: getTotalZonesCount()
+        },
+        {
             label: 'Pickup Locations',
             icon: <MapIcon />,
             count: zoneConfig.pickupZones?.selectedCities?.length || 0
@@ -1578,14 +2575,555 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         </Box>
                     ) : (
                         <>
-                            {activeTab === 0 && renderPickupLocations()}
-                            {activeTab === 1 && renderDeliveryLocations()}
-                            {activeTab === 2 && renderRouteMappings()}
-                            {activeTab === 3 && renderChargeMapping()}
+                            {activeTab === 0 && renderZonesManagement()}
+                            {activeTab === 1 && renderPickupLocations()}
+                            {activeTab === 2 && renderDeliveryLocations()}
+                            {activeTab === 3 && renderRouteMappings()}
+                            {activeTab === 4 && renderChargeMapping()}
                         </>
                     )}
                 </Box>
             </DialogContent>
+
+            {/* Zone Management Dialogs */}
+
+            {/* System Zone Selector Dialog */}
+            <Dialog
+                open={systemZoneSelectorOpen}
+                onClose={() => setSystemZoneSelectorOpen(false)}
+                maxWidth="lg"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Add System Zones to {carrierName}
+                </DialogTitle>
+                <DialogContent>
+                    <SystemZoneSelector
+                        embedded={true}
+                        onZoneSelection={async (zones) => {
+                            try {
+                                console.log('🔄 System zones selected:', zones);
+
+                                if (zones.length === 0) {
+                                    setSystemZoneSelectorOpen(false);
+                                    return;
+                                }
+
+                                // COPY EXACT LOGIC from EnhancedAddCityDialog - Expand zones to cities first
+                                const allCities = [];
+
+                                for (const zone of zones) {
+                                    console.log('🔍 Processing zone:', zone);
+                                    console.log('🏙️ Zone cities:', zone.cities);
+
+                                    if (zone.cities && Array.isArray(zone.cities) && zone.cities.length > 0) {
+                                        // Zone has cities directly
+                                        zone.cities.forEach(city => {
+                                            allCities.push({
+                                                ...city,
+                                                zoneId: zone.id,
+                                                zoneName: zone.zoneName || zone.name,
+                                                zoneCode: zone.zoneCode || zone.code
+                                            });
+                                        });
+                                    } else {
+                                        // Need to expand zone via cloud function
+                                        console.log('🚀 Calling cloud function for zone:', zone.id, zone.zoneName);
+                                        try {
+                                            const expandZone = httpsCallable(functions, 'expandSystemZoneToCities');
+                                            const result = await expandZone({ zoneId: zone.id });
+                                            console.log('🔥 Cloud function response:', result.data);
+
+                                            if (result.data.success && result.data.cities) {
+                                                console.log('🌍 Cloud function returned cities:', result.data.cities.map(c => ({
+                                                    city: c.city,
+                                                    latitude: c.latitude,
+                                                    longitude: c.longitude,
+                                                    hasCoords: !!(c.latitude && c.longitude)
+                                                })));
+
+                                                result.data.cities.forEach(city => {
+                                                    allCities.push({
+                                                        ...city,
+                                                        zoneId: zone.id,
+                                                        zoneName: zone.zoneName || zone.name,
+                                                        zoneCode: zone.zoneCode || zone.code
+                                                    });
+                                                });
+                                            } else {
+                                                console.warn('🚨 Cloud function failed or returned no cities:', result.data);
+                                            }
+                                        } catch (error) {
+                                            console.error('Error expanding zone:', error);
+                                            enqueueSnackbar(`Error expanding zone ${zone.zoneName || zone.name}`, { variant: 'error' });
+                                        }
+                                    }
+                                }
+
+                                // Filter out existing cities (prevent duplicates)
+                                const existingCities = zoneConfig.pickupZones?.selectedCities || [];
+                                const existingCityIds = new Set(existingCities.map(city => city.searchKey || city.id));
+
+                                const newCities = allCities.filter(city => {
+                                    const cityId = city.searchKey || city.id;
+                                    return !existingCityIds.has(cityId);
+                                });
+
+                                console.log(`🏷️ Enabling ${zones.length} zones for carrier (metadata only, no cities added)`);
+
+                                // Only add zones to zoneReferences (enable them for carrier), don't add cities automatically
+                                const updatedConfig = {
+                                    ...zoneConfig,
+                                    zoneReferences: {
+                                        ...zoneConfig.zoneReferences,
+                                        system_zones: [
+                                            ...(zoneConfig.zoneReferences?.system_zones || []),
+                                            ...zones.filter(z => !(zoneConfig.zoneReferences?.system_zones || []).some(existing => existing.id === z.id))
+                                        ]
+                                    }
+                                };
+
+                                console.log('💾 Saving zone configuration:', updatedConfig);
+                                console.log('💾 Zone references to save:', updatedConfig.zoneReferences);
+
+                                // Save to database with complete structure
+                                const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
+                                const dataToSave = {
+                                    carrierId,
+                                    carrierName,
+                                    zoneConfig: updatedConfig,
+                                    lastUpdated: new Date(),
+                                    version: '2.0'
+                                };
+
+                                console.log('💾 Complete data structure being saved:', dataToSave);
+                                await setDoc(carrierConfigRef, dataToSave, { merge: true });
+
+                                setZoneConfig(updatedConfig);
+                                setSystemZoneSelectorOpen(false);
+
+                                enqueueSnackbar(`Enabled ${zones.length} system zones for carrier (use context menu to assign cities)`, { variant: 'success' });
+                            } catch (error) {
+                                console.error('Error adding system zones:', error);
+                                enqueueSnackbar('Failed to add system zones', { variant: 'error' });
+                            }
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setSystemZoneSelectorOpen(false)} size="small">
+                        Cancel
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* System Zone Set Selector Dialog */}
+            <Dialog
+                open={systemZoneSetSelectorOpen}
+                onClose={() => setSystemZoneSetSelectorOpen(false)}
+                maxWidth="lg"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Add System Zone Sets to {carrierName}
+                </DialogTitle>
+                <DialogContent>
+                    <SystemZoneSetSelector
+                        embedded={true}
+                        multiSelect={true}
+                        confirmButton={true}
+                        onZoneSetSelection={(zoneSets) => {
+                            // Just update the selection state, don't process yet
+                            setSelectedZoneSetsForConfirmation(zoneSets);
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => {
+                        setSystemZoneSetSelectorOpen(false);
+                        setSelectedZoneSetsForConfirmation([]);
+                    }} size="small">
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={async () => {
+                            const zoneSets = selectedZoneSetsForConfirmation;
+                            try {
+                                console.log('🔄 System zone sets selected:', zoneSets);
+
+                                if (zoneSets.length === 0) {
+                                    setSystemZoneSetSelectorOpen(false);
+                                    return;
+                                }
+
+                                // COPY EXACT LOGIC from EnhancedAddCityDialog - Expand zone sets to cities
+                                const allCities = [];
+
+                                for (const zoneSet of zoneSets) {
+                                    try {
+                                        console.log('🚀 Calling cloud function for zone set:', zoneSet.id, zoneSet.name);
+                                        const expandZoneSet = httpsCallable(functions, 'expandZoneSetToCities');
+                                        const result = await expandZoneSet({ zoneSetId: zoneSet.id });
+                                        console.log('🔥 Zone set expansion response:', result.data);
+
+                                        if (result.data.success && result.data.cities) {
+                                            result.data.cities.forEach(city => {
+                                                allCities.push({
+                                                    ...city,
+                                                    zoneSetId: zoneSet.id,
+                                                    zoneSetName: zoneSet.name,
+                                                    zoneCode: city.zoneCode || 'N/A' // Preserve zone code from expanded cities
+                                                });
+                                            });
+                                        }
+                                    } catch (error) {
+                                        console.error(`Error expanding zone set ${zoneSet.name}:`, error);
+                                        enqueueSnackbar(`Error expanding zone set ${zoneSet.name}`, { variant: 'error' });
+                                    }
+                                }
+
+                                // Filter out existing cities (prevent duplicates)
+                                const existingCities = zoneConfig.pickupZones?.selectedCities || [];
+                                const existingCityIds = new Set(existingCities.map(city => city.searchKey || city.id));
+
+                                const newCities = allCities.filter(city => {
+                                    const cityId = city.searchKey || city.id;
+                                    return !existingCityIds.has(cityId);
+                                });
+
+                                console.log(`🏷️ Enabling ${zoneSets.length} zone sets for carrier (metadata only, no cities added)`);
+
+                                // Only add zone sets to zoneReferences (enable them for carrier), don't add cities automatically
+                                const updatedConfig = {
+                                    ...zoneConfig,
+                                    zoneReferences: {
+                                        ...zoneConfig.zoneReferences,
+                                        system_zone_sets: [
+                                            ...(zoneConfig.zoneReferences?.system_zone_sets || []),
+                                            ...zoneSets.filter(zs => !(zoneConfig.zoneReferences?.system_zone_sets || []).some(existing => existing.id === zs.id))
+                                        ]
+                                    }
+                                };
+
+                                console.log('💾 Saving zone set configuration:', updatedConfig);
+                                console.log('💾 Zone set references to save:', updatedConfig.zoneReferences);
+
+                                // Save to database with complete structure
+                                const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
+                                const dataToSave = {
+                                    carrierId,
+                                    carrierName,
+                                    zoneConfig: updatedConfig,
+                                    lastUpdated: new Date(),
+                                    version: '2.0'
+                                };
+
+                                console.log('💾 Complete zone set data structure being saved:', dataToSave);
+                                await setDoc(carrierConfigRef, dataToSave, { merge: true });
+
+                                setZoneConfig(updatedConfig);
+                                setSystemZoneSetSelectorOpen(false);
+                                setSelectedZoneSetsForConfirmation([]);
+
+                                enqueueSnackbar(`Enabled ${zoneSets.length} system zone sets for carrier (use context menu to assign cities)`, { variant: 'success' });
+                            } catch (error) {
+                                console.error('Error adding system zone sets:', error);
+                                enqueueSnackbar('Failed to add system zone sets', { variant: 'error' });
+                            }
+                        }}
+                        variant="contained"
+                        size="small"
+                        disabled={selectedZoneSetsForConfirmation.length === 0}
+                    >
+                        Add Selected Zone Sets ({selectedZoneSetsForConfirmation.length})
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Custom Zone Dialog */}
+            <CarrierZoneDialog
+                open={customZoneDialogOpen}
+                onClose={() => {
+                    setCustomZoneDialogOpen(false);
+                    setEditingZone(null);
+                }}
+                carrierId={carrierId}
+                carrierName={carrierName}
+                editingZone={editingZone?.type === 'custom_zones' ? editingZone.data : null}
+                onZoneCreated={async (newZone) => {
+                    try {
+                        // Add new custom zone to references
+                        const updatedReferences = { ...zoneConfig.zoneReferences };
+                        if (!updatedReferences.custom_zones) {
+                            updatedReferences.custom_zones = [];
+                        }
+                        updatedReferences.custom_zones.push(newZone);
+
+                        const updatedConfig = {
+                            ...zoneConfig,
+                            zoneReferences: updatedReferences
+                        };
+
+                        // Save to database
+                        const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
+                        await setDoc(carrierConfigRef, updatedConfig, { merge: true });
+
+                        setZoneConfig(updatedConfig);
+                        setCustomZoneDialogOpen(false);
+                        setEditingZone(null);
+
+                        enqueueSnackbar('Custom zone created successfully', { variant: 'success' });
+                    } catch (error) {
+                        console.error('Error saving custom zone:', error);
+                        enqueueSnackbar('Failed to save custom zone', { variant: 'error' });
+                    }
+                }}
+            />
+
+            {/* Custom Zone Set Dialog */}
+            <CarrierZoneSetDialog
+                open={customZoneSetDialogOpen}
+                onClose={() => {
+                    setCustomZoneSetDialogOpen(false);
+                    setEditingZone(null);
+                }}
+                carrierId={carrierId}
+                carrierName={carrierName}
+                editingZoneSet={editingZone?.type === 'custom_zone_sets' ? editingZone.data : null}
+                onZoneSetCreated={async (newZoneSet) => {
+                    try {
+                        // Add new custom zone set to references
+                        const updatedReferences = { ...zoneConfig.zoneReferences };
+                        if (!updatedReferences.custom_zone_sets) {
+                            updatedReferences.custom_zone_sets = [];
+                        }
+                        updatedReferences.custom_zone_sets.push(newZoneSet);
+
+                        const updatedConfig = {
+                            ...zoneConfig,
+                            zoneReferences: updatedReferences
+                        };
+
+                        // Save to database
+                        const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
+                        await setDoc(carrierConfigRef, updatedConfig, { merge: true });
+
+                        setZoneConfig(updatedConfig);
+                        setCustomZoneSetDialogOpen(false);
+                        setEditingZone(null);
+
+                        enqueueSnackbar('Custom zone set created successfully', { variant: 'success' });
+                    } catch (error) {
+                        console.error('Error saving custom zone set:', error);
+                        enqueueSnackbar('Failed to save custom zone set', { variant: 'error' });
+                    }
+                }}
+            />
+
+            {/* Zone View Dialog */}
+            <Dialog
+                open={zoneViewDialogOpen}
+                onClose={() => {
+                    setZoneViewDialogOpen(false);
+                    setSelectedZoneForView(null);
+                }}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Zone Details - {selectedZoneForView?.data?.name || selectedZoneForView?.data?.zoneName}
+                </DialogTitle>
+                <DialogContent>
+                    {selectedZoneForView && (
+                        <Box>
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                                Zone Type: {selectedZoneForView.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            </Typography>
+
+                            <Paper sx={{ p: 2, border: '1px solid #e5e7eb' }}>
+                                <pre style={{ fontSize: '11px', margin: 0, whiteSpace: 'pre-wrap' }}>
+                                    {JSON.stringify(selectedZoneForView.data, null, 2)}
+                                </pre>
+                            </Paper>
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => {
+                            setZoneViewDialogOpen(false);
+                            setSelectedZoneForView(null);
+                        }}
+                        size="small"
+                    >
+                        Close
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Zone Context Menu */}
+            <Menu
+                anchorEl={contextMenuAnchor}
+                open={Boolean(contextMenuAnchor)}
+                onClose={contextMenuLoading ? undefined : handleContextMenuClose} // Prevent closing during loading
+                PaperProps={{
+                    sx: {
+                        border: '1px solid #e5e7eb',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        '& .MuiMenuItem-root': {
+                            fontSize: '12px',
+                            py: 1,
+                            px: 2,
+                            minHeight: 'auto'
+                        },
+                        opacity: contextMenuLoading ? 0.8 : 1
+                    }
+                }}
+            >
+                {contextMenuLoading && (
+                    <Box sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        p: 2,
+                        borderBottom: '1px solid #e5e7eb',
+                        backgroundColor: '#f8fafc'
+                    }}>
+                        <CircularProgress size={16} sx={{ mr: 1 }} />
+                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                            Processing zone cities...
+                        </Typography>
+                    </Box>
+                )}
+                <MenuItem onClick={handleViewZoneFromMenu}>
+                    <ViewIcon sx={{ fontSize: '16px', mr: 1, color: '#6b7280' }} />
+                    View Details
+                </MenuItem>
+                {selectedZoneForAction?.type?.includes('custom') && (
+                    <MenuItem onClick={() => handleEditZoneAction(selectedZoneForAction.type, selectedZoneForAction.data)}>
+                        <EditIcon sx={{ fontSize: '16px', mr: 1, color: '#3b82f6' }} />
+                        Edit Zone
+                    </MenuItem>
+                )}
+                <Divider />
+                {/* Pickup Actions - Smart Conditional Display */}
+                {!isZoneAssignedToLocation(selectedZoneForAction?.data, selectedZoneForAction?.type, 'pickup') && (
+                    <MenuItem
+                        onClick={() => handleAddZoneToLocation('pickup')}
+                        disabled={contextMenuLoading}
+                    >
+                        {contextMenuLoading ? (
+                            <CircularProgress size={16} sx={{ mr: 1 }} />
+                        ) : (
+                            <AddIcon sx={{ fontSize: '16px', mr: 1, color: '#059669' }} />
+                        )}
+                        Add to Pickup Cities
+                    </MenuItem>
+                )}
+                {isZoneAssignedToLocation(selectedZoneForAction?.data, selectedZoneForAction?.type, 'pickup') && (
+                    <MenuItem
+                        onClick={() => handleRemoveZoneFromLocation('pickup')}
+                        disabled={contextMenuLoading}
+                    >
+                        {contextMenuLoading ? (
+                            <CircularProgress size={16} sx={{ mr: 1 }} />
+                        ) : (
+                            <RemoveIcon sx={{ fontSize: '16px', mr: 1, color: '#dc2626' }} />
+                        )}
+                        Delete from Pickup Cities
+                    </MenuItem>
+                )}
+
+                {/* Delivery Actions - Smart Conditional Display */}
+                {!isZoneAssignedToLocation(selectedZoneForAction?.data, selectedZoneForAction?.type, 'delivery') && (
+                    <MenuItem
+                        onClick={() => handleAddZoneToLocation('delivery')}
+                        disabled={contextMenuLoading}
+                    >
+                        {contextMenuLoading ? (
+                            <CircularProgress size={16} sx={{ mr: 1 }} />
+                        ) : (
+                            <AddIcon sx={{ fontSize: '16px', mr: 1, color: '#059669' }} />
+                        )}
+                        Add to Delivery Cities
+                    </MenuItem>
+                )}
+                {isZoneAssignedToLocation(selectedZoneForAction?.data, selectedZoneForAction?.type, 'delivery') && (
+                    <MenuItem
+                        onClick={() => handleRemoveZoneFromLocation('delivery')}
+                        disabled={contextMenuLoading}
+                    >
+                        {contextMenuLoading ? (
+                            <CircularProgress size={16} sx={{ mr: 1 }} />
+                        ) : (
+                            <RemoveIcon sx={{ fontSize: '16px', mr: 1, color: '#dc2626' }} />
+                        )}
+                        Delete from Delivery Cities
+                    </MenuItem>
+                )}
+                <Divider />
+                <MenuItem onClick={handleDeleteZoneFromMenu}>
+                    <DeleteIcon sx={{ fontSize: '16px', mr: 1, color: '#ef4444' }} />
+                    Remove Zone
+                </MenuItem>
+            </Menu>
+
+            {/* Zone Deletion Confirmation Dialog */}
+            <Dialog
+                open={deleteConfirmOpen}
+                onClose={() => {
+                    setDeleteConfirmOpen(false);
+                    setZoneToDelete(null);
+                }}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Confirm Zone Removal
+                </DialogTitle>
+                <DialogContent>
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                            This action will remove the zone and all its associated cities from both pickup and delivery locations.
+                        </Typography>
+                    </Alert>
+
+                    {zoneToDelete && (
+                        <Box>
+                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 1 }}>
+                                <strong>Zone:</strong> {zoneToDelete.data.zoneName || zoneToDelete.data.name}
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 1 }}>
+                                <strong>Type:</strong> {zoneToDelete.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#ef4444' }}>
+                                <strong>Cities to be removed:</strong> {zoneToDelete.data.cityCount || 'Unknown count'}
+                            </Typography>
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => {
+                            setDeleteConfirmOpen(false);
+                            setZoneToDelete(null);
+                        }}
+                        size="small"
+                        variant="outlined"
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleConfirmedZoneDeletion}
+                        size="small"
+                        variant="contained"
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                    >
+                        Remove Zone
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
         </Dialog>
     );
