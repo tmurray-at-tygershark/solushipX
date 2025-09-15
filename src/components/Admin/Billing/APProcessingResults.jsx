@@ -39,7 +39,8 @@ import {
     ListItem,
     ListItemText,
     ListItemIcon,
-    Skeleton
+    Skeleton,
+    Checkbox
 } from '@mui/material';
 import {
     Receipt as InvoiceIcon,
@@ -66,6 +67,7 @@ import {
 } from '@mui/icons-material';
 import { formatCurrency } from '../../../utils/currencyUtils';
 import { db } from '../../../firebase';
+import { httpsCallable, getFunctions } from 'firebase/functions';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 import currencyConversionService from '../../../services/currencyConversionService';
@@ -176,7 +178,13 @@ const TotalCalculations = ({ selectedShipmentDetail, buildComparisonRows }) => {
 };
 
 // Component for rendering comparison table rows with real currency conversion
-const ComparisonTableRows = ({ selectedShipmentDetail, buildComparisonRows }) => {
+const ComparisonTableRows = ({
+    selectedShipmentDetail,
+    buildComparisonRows,
+    selectedCharges,
+    onSelectCharge,
+    appliedCharges
+}) => {
     const [comparisonRows, setComparisonRows] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
 
@@ -202,7 +210,7 @@ const ComparisonTableRows = ({ selectedShipmentDetail, buildComparisonRows }) =>
     if (loading) {
         return (
             <TableRow>
-                <TableCell colSpan={9} sx={{ textAlign: 'center', fontSize: '11px' }}>
+                <TableCell colSpan={10} sx={{ textAlign: 'center', fontSize: '11px' }}>
                     Loading comparison data...
                 </TableCell>
             </TableRow>
@@ -212,7 +220,7 @@ const ComparisonTableRows = ({ selectedShipmentDetail, buildComparisonRows }) =>
     if (comparisonRows.length === 0) {
         return (
             <TableRow>
-                <TableCell colSpan={9} sx={{ textAlign: 'center', fontSize: '11px' }}>
+                <TableCell colSpan={10} sx={{ textAlign: 'center', fontSize: '11px' }}>
                     No comparison data available
                 </TableCell>
             </TableRow>
@@ -221,41 +229,65 @@ const ComparisonTableRows = ({ selectedShipmentDetail, buildComparisonRows }) =>
 
     return (
         <>
-            {comparisonRows.map((r, idx) => (
-                <TableRow key={idx}>
-                    <TableCell sx={{ fontSize: '11px' }}>{r.code}</TableCell>
-                    <TableCell sx={{ fontSize: '11px' }}>{r.name}</TableCell>
-                    <TableCell sx={{ fontSize: '11px' }}>
-                        {formatCurrency(r.invoiceAmount, r.currency)}
-                    </TableCell>
-                    <TableCell sx={{ fontSize: '11px' }}>
-                        {formatCurrency(r.systemQuotedCost, r.currency)}
-                    </TableCell>
-                    <TableCell sx={{ fontSize: '11px' }}>
-                        {formatCurrency(r.systemQuotedCharge, r.currency)}
-                    </TableCell>
-                    <TableCell sx={{ fontSize: '11px' }}>
-                        {formatCurrency(r.systemActualCost, r.currency)}
-                    </TableCell>
-                    <TableCell sx={{ fontSize: '11px' }}>
-                        {formatCurrency(r.systemActualCharge, r.currency)}
-                    </TableCell>
-                    <TableCell sx={{
-                        fontSize: '11px',
-                        color: Math.abs(r.varianceCost) > 0.009 ? '#b45309' : '#065f46',
-                        fontWeight: 600
+            {comparisonRows.map((r, idx) => {
+                const isApplied = appliedCharges.has(idx);
+                return (
+                    <TableRow key={idx} sx={{
+                        backgroundColor: isApplied ? '#f0f9ff' : (idx % 2 === 1 ? '#f9fafb' : 'white'),
+                        opacity: isApplied ? 0.7 : 1
                     }}>
-                        {formatCurrency(r.varianceCost, r.currency)}
-                    </TableCell>
-                    <TableCell sx={{
-                        fontSize: '11px',
-                        color: r.profit && r.profit > 0 ? '#059669' : '#dc2626',
-                        fontWeight: 600
-                    }}>
-                        {r.profit ? formatCurrency(r.profit, 'CAD') : 'N/A'}
-                    </TableCell>
-                </TableRow>
-            ))}
+                        <TableCell sx={{ fontSize: '11px', padding: '8px' }}>
+                            <Checkbox
+                                size="small"
+                                checked={selectedCharges.has(idx) || isApplied}
+                                disabled={isApplied}
+                                onChange={(e) => onSelectCharge(idx, e.target.checked)}
+                                sx={{
+                                    padding: 0,
+                                    '& .MuiSvgIcon-root': { fontSize: 16 },
+                                    ...(isApplied && {
+                                        color: '#10b981',
+                                        '&.Mui-checked': {
+                                            color: '#10b981'
+                                        }
+                                    })
+                                }}
+                            />
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '11px' }}>{r.code}</TableCell>
+                        <TableCell sx={{ fontSize: '11px' }}>{r.name}</TableCell>
+                        <TableCell sx={{ fontSize: '11px' }}>
+                            {formatCurrency(r.invoiceAmount, r.currency)}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '11px' }}>
+                            {formatCurrency(r.systemQuotedCost, r.currency)}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '11px' }}>
+                            {formatCurrency(r.systemQuotedCharge, r.currency)}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '11px' }}>
+                            {formatCurrency(r.systemActualCost, r.currency)}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '11px' }}>
+                            {formatCurrency(r.systemActualCharge, r.currency)}
+                        </TableCell>
+                        <TableCell sx={{
+                            fontSize: '11px',
+                            color: Math.abs(r.varianceCost) > 0.009 ? '#b45309' : '#065f46',
+                            fontWeight: 600
+                        }}>
+                            {formatCurrency(r.varianceCost, r.currency)}
+                        </TableCell>
+                        <TableCell sx={{
+                            fontSize: '11px',
+                            color: r.profit && r.profit > 0 ? '#059669' : '#dc2626',
+                            fontWeight: 600
+                        }}>
+                            {r.profit ? formatCurrency(r.profit, 'CAD') : 'N/A'}
+                        </TableCell>
+                    </TableRow>
+                );
+            })}
         </>
     );
 };
@@ -288,6 +320,168 @@ export default function APProcessingResults({
 
     // Table Data State (for managing matches)
     const [tableData, setTableData] = useState([]);
+
+    // Checkbox Selection State for Compare & Apply
+    const [selectedCharges, setSelectedCharges] = useState(new Set());
+    const [selectAllCharges, setSelectAllCharges] = useState(false);
+    const [appliedCharges, setAppliedCharges] = useState(new Set());
+
+    // Checkbox handling functions
+    const handleSelectCharge = (chargeIndex, checked) => {
+        const newSelected = new Set(selectedCharges);
+        if (checked) {
+            newSelected.add(chargeIndex);
+        } else {
+            newSelected.delete(chargeIndex);
+        }
+        setSelectedCharges(newSelected);
+
+        // Update select all state based on current selection
+        const totalCharges = selectedShipmentDetail?.charges?.length || 0;
+        setSelectAllCharges(newSelected.size === totalCharges && totalCharges > 0);
+    };
+
+    const handleSelectAllCharges = (checked) => {
+        if (checked && selectedShipmentDetail?.charges) {
+            // Select all charges
+            const allIndices = selectedShipmentDetail.charges.map((_, index) => index);
+            setSelectedCharges(new Set(allIndices));
+        } else {
+            // Deselect all charges
+            setSelectedCharges(new Set());
+        }
+        setSelectAllCharges(checked);
+    };
+
+    const handleApplySelectedCharges = async () => {
+        if (selectedCharges.size === 0) {
+            enqueueSnackbar('Please select at least one charge to apply', { variant: 'warning' });
+            return;
+        }
+
+        if (!selectedShipmentDetail?.matchedShipmentId) {
+            enqueueSnackbar('No matched shipment found. Please match a shipment first.', { variant: 'error' });
+            return;
+        }
+
+        try {
+            // Get comparison rows to extract the actual charge data
+            const comparisonRows = await buildComparisonRows(selectedShipmentDetail);
+            const selectedChargeData = Array.from(selectedCharges).map(index => comparisonRows[index]);
+
+            console.log('🔄 Applying selected charges to shipment:', {
+                shipmentId: selectedShipmentDetail.matchedShipmentId,
+                selectedCharges: selectedChargeData,
+                chargeCount: selectedCharges.size
+            });
+
+            // Call cloud function to update shipment with actual charges
+            const functions = getFunctions();
+            const applyInvoiceCharges = httpsCallable(functions, 'applyInvoiceCharges');
+
+            const result = await applyInvoiceCharges({
+                shipmentId: selectedShipmentDetail.matchedShipmentId,
+                invoiceData: {
+                    invoiceNumber: uploadData.invoiceNumber,
+                    invoiceRef: uploadData.metadata?.invoiceRef || uploadData.invoiceNumber,
+                    fileName: fileName
+                },
+                charges: selectedChargeData.map(charge => ({
+                    code: charge.code,
+                    name: charge.name,
+                    actualCost: charge.systemActualCost,
+                    actualCharge: charge.systemActualCharge,
+                    currency: charge.currency,
+                    ediNumber: uploadData.invoiceNumber || uploadData.metadata?.invoiceRef
+                }))
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(`Successfully applied ${selectedCharges.size} charge(s) to shipment ${selectedShipmentDetail.matchedShipmentId}`, { variant: 'success' });
+
+                // Mark charges as applied
+                const newAppliedCharges = new Set([...appliedCharges, ...selectedCharges]);
+                setAppliedCharges(newAppliedCharges);
+
+                // Clear selections after successful apply
+                setSelectedCharges(new Set());
+                setSelectAllCharges(false);
+            } else {
+                throw new Error(result.data.error || 'Failed to apply charges');
+            }
+
+        } catch (error) {
+            console.error('❌ Error applying charges to shipment:', error);
+            enqueueSnackbar(error.message || 'Error applying charges to shipment', { variant: 'error' });
+        }
+    };
+
+    const handleUnapplySelectedCharges = async () => {
+        if (selectedCharges.size === 0) {
+            enqueueSnackbar('Please select at least one applied charge to unapply', { variant: 'warning' });
+            return;
+        }
+
+        if (!selectedShipmentDetail?.matchedShipmentId) {
+            enqueueSnackbar('No matched shipment found. Please match a shipment first.', { variant: 'error' });
+            return;
+        }
+
+        // Check if all selected charges are actually applied
+        const appliedSelectedCharges = Array.from(selectedCharges).filter(index => appliedCharges.has(index));
+        if (appliedSelectedCharges.length === 0) {
+            enqueueSnackbar('Please select applied charges to unapply', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            // Get comparison rows to extract the charge data
+            const comparisonRows = await buildComparisonRows(selectedShipmentDetail);
+            const selectedChargeData = appliedSelectedCharges.map(index => comparisonRows[index]);
+
+            console.log('🔄 Unapplying selected charges from shipment:', {
+                shipmentId: selectedShipmentDetail.matchedShipmentId,
+                selectedCharges: selectedChargeData,
+                chargeCount: appliedSelectedCharges.length
+            });
+
+            // Call cloud function to remove actual charges from shipment
+            const functions = getFunctions();
+            const unapplyInvoiceCharges = httpsCallable(functions, 'unapplyInvoiceCharges');
+
+            const result = await unapplyInvoiceCharges({
+                shipmentId: selectedShipmentDetail.matchedShipmentId,
+                invoiceData: {
+                    invoiceNumber: uploadData.invoiceNumber,
+                    invoiceRef: uploadData.metadata?.invoiceRef || uploadData.invoiceNumber,
+                    fileName: fileName
+                },
+                charges: selectedChargeData.map(charge => ({
+                    code: charge.code,
+                    name: charge.name
+                }))
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(`Successfully unapplied ${appliedSelectedCharges.length} charge(s) from shipment ${selectedShipmentDetail.matchedShipmentId}`, { variant: 'success' });
+
+                // Remove charges from applied set
+                const newAppliedCharges = new Set(appliedCharges);
+                appliedSelectedCharges.forEach(index => newAppliedCharges.delete(index));
+                setAppliedCharges(newAppliedCharges);
+
+                // Clear selections after successful unapply
+                setSelectedCharges(new Set());
+                setSelectAllCharges(false);
+            } else {
+                throw new Error(result.data.error || 'Failed to unapply charges');
+            }
+
+        } catch (error) {
+            console.error('❌ Error unapplying charges from shipment:', error);
+            enqueueSnackbar(error.message || 'Error unapplying charges from shipment', { variant: 'error' });
+        }
+    };
 
     // Debug logging to understand data structure
     console.log('🔍 APProcessingResults received:', {
@@ -2574,6 +2768,17 @@ export default function APProcessingResults({
                             <Table size="small">
                                 <TableHead>
                                     <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, padding: '8px' }}>
+                                            <Checkbox
+                                                size="small"
+                                                checked={selectAllCharges}
+                                                onChange={(e) => handleSelectAllCharges(e.target.checked)}
+                                                sx={{
+                                                    padding: 0,
+                                                    '& .MuiSvgIcon-root': { fontSize: 16 }
+                                                }}
+                                            />
+                                        </TableCell>
                                         <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Code</TableCell>
                                         <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Charge Name</TableCell>
                                         <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Invoice Amount</TableCell>
@@ -2589,6 +2794,9 @@ export default function APProcessingResults({
                                     <ComparisonTableRows
                                         selectedShipmentDetail={selectedShipmentDetail}
                                         buildComparisonRows={buildComparisonRows}
+                                        selectedCharges={selectedCharges}
+                                        onSelectCharge={handleSelectCharge}
+                                        appliedCharges={appliedCharges}
                                     />
                                 </TableBody>
                             </Table>
@@ -2597,14 +2805,44 @@ export default function APProcessingResults({
                                     selectedShipmentDetail={selectedShipmentDetail}
                                     buildComparisonRows={buildComparisonRows}
                                 />
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={() => handleApplyCharges(selectedShipmentDetail)}
-                                    sx={{ fontSize: '11px', textTransform: 'none' }}
-                                >
-                                    APPLY INVOICE CHARGES TO SHIPMENT
-                                </Button>
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    {/* Show unapply button only when applied charges are selected */}
+                                    {Array.from(selectedCharges).some(index => appliedCharges.has(index)) && (
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            onClick={handleUnapplySelectedCharges}
+                                            sx={{
+                                                fontSize: '11px',
+                                                textTransform: 'none',
+                                                borderColor: '#dc2626',
+                                                color: '#dc2626',
+                                                '&:hover': {
+                                                    borderColor: '#b91c1c',
+                                                    backgroundColor: '#fee2e2'
+                                                }
+                                            }}
+                                        >
+                                            UNAPPLY CHARGES
+                                        </Button>
+                                    )}
+
+                                    {/* Show apply button only when non-applied charges are selected */}
+                                    {(selectedCharges.size === 0 || Array.from(selectedCharges).some(index => !appliedCharges.has(index))) && (
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            onClick={handleApplySelectedCharges}
+                                            disabled={selectedCharges.size === 0 || Array.from(selectedCharges).every(index => appliedCharges.has(index))}
+                                            sx={{ fontSize: '11px', textTransform: 'none' }}
+                                        >
+                                            {selectedCharges.size === 0 ?
+                                                'SELECT CHARGES TO APPLY' :
+                                                'APPLY ACTUAL CHARGES'
+                                            }
+                                        </Button>
+                                    )}
+                                </Box>
                             </Box>
                         </Paper>
                     </Box>
@@ -2612,7 +2850,7 @@ export default function APProcessingResults({
                 <DialogActions sx={{
                     borderTop: '1px solid #e5e7eb',
                     p: 2,
-                    justifyContent: 'space-between'
+                    justifyContent: 'flex-end'
                 }}>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button
@@ -2635,31 +2873,14 @@ export default function APProcessingResults({
                             Mark as Exception
                         </Button>
                         <Button
-                            variant="contained"
+                            variant="outlined"
                             size="small"
-                            onClick={() => {
-                                onApprove(false);
-                                handleCloseShipmentDetail();
-                            }}
-                            sx={{
-                                fontSize: '12px',
-                                backgroundColor: '#3b82f6',
-                                '&:hover': {
-                                    backgroundColor: '#2563eb'
-                                }
-                            }}
+                            onClick={handleCloseShipmentDetail}
+                            sx={{ fontSize: '12px' }}
                         >
-                            Approve
+                            Done
                         </Button>
                     </Box>
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={handleCloseShipmentDetail}
-                        sx={{ fontSize: '12px' }}
-                    >
-                        Close
-                    </Button>
                 </DialogActions>
             </Dialog>
         );

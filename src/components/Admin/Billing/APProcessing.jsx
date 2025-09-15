@@ -985,14 +985,24 @@ const APProcessing = () => {
                         options={trainedCarriers}
                         getOptionLabel={(option) => option.name || ''}
                         loading={loadingCarriers}
+                        size="small"
+                        renderOption={(props, option) => (
+                            <li {...props} style={{ fontSize: '12px' }}>
+                                {option.name}
+                            </li>
+                        )}
                         renderInput={(params) => (
                             <TextField
                                 {...params}
                                 label="Select Trained Carrier"
                                 placeholder="Choose a carrier that has been trained for invoice processing"
                                 size="small"
+                                InputLabelProps={{
+                                    style: { fontSize: '12px' }
+                                }}
                                 InputProps={{
                                     ...params.InputProps,
+                                    style: { fontSize: '12px' },
                                     endAdornment: (
                                         <>
                                             {loadingCarriers && <CircularProgress size={20} />}
@@ -1002,7 +1012,15 @@ const APProcessing = () => {
                                 }}
                             />
                         )}
-                        sx={{ maxWidth: 400 }}
+                        sx={{
+                            maxWidth: 400,
+                            '& .MuiAutocomplete-inputRoot': {
+                                fontSize: '12px'
+                            },
+                            '& .MuiFormLabel-root': {
+                                fontSize: '12px'
+                            }
+                        }}
                     />
                 </Paper>
 

@@ -1193,3 +1193,9 @@ exports.generateCarrierRouteMatrix = generateCarrierRouteMatrix;
 exports.loadCarrierRouteMatrix = loadCarrierRouteMatrix;
 exports.updateCarrierRoute = updateCarrierRoute;
 exports.deleteCarrierRoutes = deleteCarrierRoutes;
+
+// AP Processing exports
+const { applyInvoiceCharges } = require('./src/applyInvoiceCharges');
+const { unapplyInvoiceCharges } = require('./src/unapplyInvoiceCharges');
+exports.applyInvoiceCharges = applyInvoiceCharges;
+exports.unapplyInvoiceCharges = unapplyInvoiceCharges;
