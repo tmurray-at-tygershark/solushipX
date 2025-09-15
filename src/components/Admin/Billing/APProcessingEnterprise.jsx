@@ -39,6 +39,11 @@ import {
     Select,
     Skeleton
 } from '@mui/material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs from 'dayjs';
+import APProcessingResults from './APProcessingResults';
 import {
     CloudUpload as CloudUploadIcon,
     Description as DocumentIcon,
@@ -63,7 +68,11 @@ import {
     Upload as UploadIcon,
     CheckCircle as CheckIcon,
     Add as AddIcon,
-    ExpandMore as ExpandMoreIcon
+    ExpandMore as ExpandMoreIcon,
+    Search as SearchIcon,
+    FilterList as FilterIcon,
+    Clear as ClearIcon,
+    Receipt as ReceiptIcon
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useSnackbar } from 'notistack';
@@ -86,8 +95,7 @@ import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCompany } from '../../../contexts/CompanyContext';
 import { httpsCallable, getFunctions } from 'firebase/functions';
-import { getStorage, ref, uploadBytesResumable, uploadBytes, getDownloadURL } from 'firebase/storage';
-import TestResultsComparison from './TestResultsComparison';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const APProcessingEnterprise = () => {
     const { currentUser } = useAuth();
@@ -100,7 +108,7 @@ const APProcessingEnterprise = () => {
     const [carriers, setCarriers] = useState([]);
     const [loadingCarriers, setLoadingCarriers] = useState(false);
     const [uploads, setUploads] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [currentTab, setCurrentTab] = useState(0);
 
     // Enterprise table state
@@ -116,9 +124,16 @@ const APProcessingEnterprise = () => {
     const [showPdfResults, setShowPdfResults] = useState(false);
     const [selectedUpload, setSelectedUpload] = useState(null);
     const [approving, setApproving] = useState(false);
-    
+
     // Upload modal state
     const [uploadModalOpen, setUploadModalOpen] = useState(false);
+
+    // Search and filter state
+    const [searchTerm, setSearchTerm] = useState('');
+    const [invoiceDate, setInvoiceDate] = useState(null);
+    const [uploadDate, setUploadDate] = useState(null);
+    const [filteredTableData, setFilteredTableData] = useState([]);
+    const [showDeleteActions, setShowDeleteActions] = useState(false);
 
     // Load carriers for dropdown
     const loadCarriers = useCallback(async () => {
@@ -126,12 +141,12 @@ const APProcessingEnterprise = () => {
             setLoadingCarriers(true);
             const getCarriersFunc = httpsCallable(functions, 'getTrainingCarriers');
             const result = await getCarriersFunc({ status: 'active' });
-            
+
             if (result.data?.success) {
                 const carriers = result.data.data?.carriers || [];
                 setCarriers(carriers);
                 console.log(`Loaded ${carriers.length} trained carriers for AP Processing`);
-                
+
                 if (carriers.length === 0) {
                     enqueueSnackbar('No training carriers available. Use Invoice Training to add carriers first.', {
                         variant: 'info',
@@ -154,34 +169,34 @@ const APProcessingEnterprise = () => {
         try {
             setLoading(true);
             console.log('🔍 Loading global AP uploads (all companies)');
-            
+
             const uploadsQuery = query(
                 collection(db, 'apUploads'),
                 orderBy('uploadDate', 'desc'),
                 limit(100)
             );
-            
+
             const snapshot = await getDocs(uploadsQuery);
             const uploadsData = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
-            
+
             // Sort in memory by upload date
             uploadsData.sort((a, b) => {
                 const aDate = a.uploadDate?.toDate ? a.uploadDate.toDate() : new Date(a.uploadDate || 0);
                 const bDate = b.uploadDate?.toDate ? b.uploadDate.toDate() : new Date(b.uploadDate || 0);
                 return bDate - aDate;
             });
-            
+
             console.log('✅ Loaded uploads from Firestore:', uploadsData.length, 'documents');
             setUploads(uploadsData);
-            
+
             // Transform uploads to table data for enterprise view
             const transformedTableData = uploadsData.map(upload => transformUploadToTableRow(upload));
             setTableData(transformedTableData);
-            
-            
+
+
         } catch (error) {
             console.error('❌ Error loading uploads:', error);
             enqueueSnackbar(`Failed to load uploads: ${error.message}`, { variant: 'error' });
@@ -193,77 +208,99 @@ const APProcessingEnterprise = () => {
     // Transform upload to enterprise table row format
     const transformUploadToTableRow = useCallback((upload) => {
         console.log('🔍 Transforming upload to table row:', upload);
-        
+
         // Try multiple paths for extracted data
-        const extractedData = upload.extractedData || 
-                             upload.aiResults?.enhancedResults?.extractedData || 
-                             upload.aiResults?.extractedData ||
-                             {};
-        
+        const extractedData = upload.extractedData ||
+            upload.aiResults?.enhancedResults?.extractedData ||
+            upload.aiResults?.extractedData ||
+            {};
+
         console.log('📋 Found extracted data:', extractedData);
-        
-                    // Use the selected carrier name (since it's required for upload)
-            console.log('🔍 Looking up carrier for upload:', {
-                uploadCarrier: upload.carrier,
-                uploadCarrierId: upload.carrierId,
-                carriersLoaded: carriers.length,
-                availableCarrierIds: carriers.map(c => c.id)
-            });
-            
-            // Ensure carrier name is always a string
-            const carrierName = upload.carrier ||
-                               (upload.carrierId && carriers.find(c => c.id === upload.carrierId)?.name) ||
-                               (typeof extractedData.carrier === 'string' ? extractedData.carrier : extractedData.carrier?.name) ||
-                               extractedData.carrierInformation?.company ||
-                               'Unknown';
-                               
-            console.log('✅ Resolved carrier name:', carrierName);
-        
+
+        // Use the selected carrier name (since it's required for upload)
+        console.log('🔍 Looking up carrier for upload:', {
+            uploadCarrier: upload.carrier,
+            uploadCarrierId: upload.carrierId,
+            carriersLoaded: carriers.length,
+            availableCarrierIds: carriers.map(c => c.id)
+        });
+
+        // Ensure carrier name is always a string
+        const carrierName = upload.carrier ||
+            (upload.carrierId && carriers.find(c => c.id === upload.carrierId)?.name) ||
+            (typeof extractedData.carrier === 'string' ? extractedData.carrier : extractedData.carrier?.name) ||
+            extractedData.carrierInformation?.company ||
+            'Unknown';
+
+        console.log('✅ Resolved carrier name:', carrierName);
+
         // Get invoice number from multiple sources  
         const invoiceNumber = extractedData.invoice_number ||
-                             extractedData.invoiceNumber ||
-                             extractedData.invoiceDetails?.invoiceNumber ||
-                             'N/A';
-        
-        // Get shipment ID from multiple sources
-        const shipmentId = extractedData.shipment_ids?.[0] ||
-                          extractedData.shipmentId ||
-                          extractedData.invoiceDetails?.billOfLading ||
-                          'N/A';
-        
-        // Get shipper/consignee (ensure string values only)
-        const shipper = typeof extractedData.shipper === 'object' 
-                       ? (extractedData.shipper?.company || 'N/A')
-                       : (extractedData.shipper || 'N/A');
-        const consignee = typeof extractedData.consignee === 'object'
-                         ? (extractedData.consignee?.company || 'N/A')
-                         : (extractedData.consignee || 'N/A');
-        
+            extractedData.invoiceNumber ||
+            extractedData.invoiceDetails?.invoiceNumber ||
+            'N/A';
+
+        // Count shipments from extracted data
+        const shipmentCount = extractedData.shipments?.length ||
+            (extractedData.shipment_ids?.length > 0 ? extractedData.shipment_ids.length : 1) ||
+            1;
+
+        // Get invoice date from extracted data with extensive fallback paths
+        const invoiceDate = extractedData.invoice_date ||
+            extractedData.invoiceDate ||
+            extractedData.invoiceDetails?.invoiceDate ||
+            extractedData.metadata?.documentDate ||
+            extractedData.metadata?.issueDate ||
+            extractedData.invoiceHeader?.invoiceDate?.value ||
+            extractedData.issueDate ||
+            extractedData.date ||
+            extractedData.documentDate ||
+            null;
+
+        // Debug logging to see what fields are available
+        console.log('🔍 Invoice date extraction debug:', {
+            upload_id: upload.id,
+            fileName: upload.fileName,
+            available_fields: extractedData ? Object.keys(extractedData) : 'no extracted data',
+            invoice_date_value: invoiceDate,
+            checked_paths: {
+                'invoice_date': extractedData.invoice_date,
+                'invoiceDate': extractedData.invoiceDate,
+                'invoiceDetails.invoiceDate': extractedData.invoiceDetails?.invoiceDate,
+                'metadata.documentDate': extractedData.metadata?.documentDate,
+                'metadata.issueDate': extractedData.metadata?.issueDate,
+                'invoiceHeader.invoiceDate.value': extractedData.invoiceHeader?.invoiceDate?.value,
+                'issueDate': extractedData.issueDate,
+                'date': extractedData.date,
+                'documentDate': extractedData.documentDate
+            }
+        });
+
         // Get total amount
-        const totalAmount = extractedData.total || 
-                           extractedData.totalAmount?.amount || 
-                           extractedData.totalAmount || 
-                           0;
-        
+        const totalAmount = extractedData.total ||
+            extractedData.totalAmount?.amount ||
+            extractedData.totalAmount ||
+            0;
+
         const result = {
             id: upload.id,
             fileName: upload.fileName,
             carrier: carrierName,
             uploadDate: upload.uploadDate,
             processingStatus: upload.processingStatus || 'pending',
-            shipmentId: shipmentId,
+            shipmentCount: shipmentCount,
+            invoiceDate: invoiceDate,
             invoiceNumber: invoiceNumber,
             totalAmount: totalAmount,
             currency: extractedData.totalAmount?.currency || 'CAD',
             charges: extractedData.charges || [],
-            shipper: shipper,
-            consignee: consignee,
             extractedData,
             rawUpload: upload,
             matchStatus: upload.matchStatus || 'pending',
-            approvalStatus: upload.approvalStatus || 'pending'
+            approvalStatus: upload.approvalStatus || 'pending',
+            aiResults: upload.aiResults
         };
-        
+
         console.log('✅ Transformed table row:', result);
         return result;
     }, [carriers]);
@@ -281,20 +318,20 @@ const APProcessingEnterprise = () => {
 
         acceptedFiles.forEach(async (file) => {
             console.log('Processing file:', file.name);
-            
+
             // Create temporary upload record
             // Get carrier name from ID - ensure it's always a string
             const carrierObj = carriers.find(c => c.id === selectedCarrier);
             const carrierName = carrierObj?.name || 'Unknown Carrier';
-            
+
             // Debug log to ensure we're not passing objects
-            console.log('🏷️ Carrier resolution:', { 
-                selectedCarrier, 
+            console.log('🏷️ Carrier resolution:', {
+                selectedCarrier,
                 carrierObj: carrierObj ? `{id: ${carrierObj.id}, name: ${carrierObj.name}}` : 'null',
                 finalCarrierName: carrierName,
                 carrierNameType: typeof carrierName
             });
-            
+
             const tempUpload = {
                 id: `temp-${Date.now()}-${Math.random()}`,
                 fileName: file.name,
@@ -307,16 +344,39 @@ const APProcessingEnterprise = () => {
             };
 
             setUploads(prev => [tempUpload, ...prev]);
-            
+
             // Update table data immediately to show the upload
             setTableData(prev => [transformUploadToTableRow(tempUpload), ...prev]);
-            
+
+
+            // Upload file to Firebase Storage first
+            let downloadURL = null;
+            try {
+                console.log('⬆️ Uploading file to Firebase Storage...');
+
+                // Use the same storage configuration as other components
+                const { getApp } = await import('firebase/app');
+                const { getStorage } = await import('firebase/storage');
+                const firebaseApp = getApp();
+                const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
+
+                const fileId = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+                const storageRef = ref(customStorage, `ap-uploads/${fileId}`);
+
+                // Upload the file
+                const uploadResult = await uploadBytes(storageRef, file);
+                downloadURL = await getDownloadURL(uploadResult.ref);
+                console.log('✅ File uploaded to Storage with URL:', downloadURL);
+            } catch (storageError) {
+                console.error('❌ Error uploading to Storage:', storageError);
+                enqueueSnackbar('Warning: File upload to storage failed', { variant: 'warning' });
+            }
 
             // Save to Firestore immediately so it persists even if processing fails
             try {
                 // Use the same carrier name we resolved above
                 // (don't look it up again to avoid inconsistency)
-                
+
                 const uploadDoc = {
                     fileName: file.name,
                     uploadedByCompany: companyIdForAddress,
@@ -325,6 +385,8 @@ const APProcessingEnterprise = () => {
                     uploadDate: serverTimestamp(),
                     processingStatus: 'uploading',
                     type: 'pdf',
+                    downloadURL: downloadURL, // Store the Firebase Storage URL
+                    fileUrl: downloadURL, // Also store as fileUrl for compatibility
                     metadata: {
                         uploadMethod: 'direct_base64',
                         uploadedBy: currentUser.email,
@@ -342,23 +404,23 @@ const APProcessingEnterprise = () => {
                 const docRef = await addDoc(collection(db, 'apUploads'), uploadDoc);
                 console.log('✅ Upload saved to Firestore immediately with ID:', docRef.id);
 
-                // Update temp record with real Firestore ID
-                setUploads(prev => prev.map(upload => 
-                    upload.id === tempUpload.id 
-                        ? { ...upload, id: docRef.id, _isTemporary: false }
+                // Update temp record with real Firestore ID and download URL
+                setUploads(prev => prev.map(upload =>
+                    upload.id === tempUpload.id
+                        ? { ...upload, id: docRef.id, _isTemporary: false, downloadURL, fileUrl: downloadURL }
                         : upload
                 ));
-                
-                // Update table data with real ID
-                setTableData(prev => prev.map(row => 
-                    row.id === tempUpload.id 
-                        ? { ...row, id: docRef.id, _isTemporary: false }
+
+                // Update table data with real ID and download URL
+                setTableData(prev => prev.map(row =>
+                    row.id === tempUpload.id
+                        ? { ...row, id: docRef.id, _isTemporary: false, downloadURL, fileUrl: downloadURL }
                         : row
                 ));
 
                 // Start upload process with real ID
                 uploadAndProcessFile(file, docRef.id);
-                
+
             } catch (error) {
                 console.error('❌ Failed to save upload to Firestore:', error);
                 enqueueSnackbar('Warning: Upload may not persist if processing fails', { variant: 'warning' });
@@ -372,98 +434,98 @@ const APProcessingEnterprise = () => {
         try {
             console.log('🚀 Processing file directly (bypass storage):', file.name);
             console.log('🎯 Selected carrier:', selectedCarrier);
-            
+
             if (!selectedCarrier) {
                 throw new Error('No carrier selected. Please select a carrier before uploading.');
             }
-            
+
             // Immediately update status to processing
             console.log('📊 Updating status to processing for:', tempId);
             setUploads(prev => prev.map(upload =>
-                upload.id === tempId 
+                upload.id === tempId
                     ? { ...upload, processingStatus: 'processing' }
                     : upload
             ));
-            
+
             setTableData(prev => prev.map(row =>
-                row.id === tempId 
+                row.id === tempId
                     ? { ...row, processingStatus: 'processing' }
                     : row
             ));
-            
+
             const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
                     const base64Data = e.target.result.split(',')[1];
                     console.log('📄 File converted to base64, starting AI extraction...');
 
-                    const fileObj = { 
-                        name: file.name, 
+                    const fileObj = {
+                        name: file.name,
                         uploadId: tempId,
                         base64Data: base64Data,
                         processingMethod: 'direct_base64'
                     };
-                    
+
                     console.log('🤖 Starting AI extraction for:', fileObj.name, 'with ID:', tempId);
                     await runAIExtraction(fileObj);
                     console.log('✅ AI extraction completed for:', fileObj.name);
-                    
+
                 } catch (processingError) {
                     console.error('📄 Processing failed:', processingError);
                     setUploads(prev => prev.map(upload =>
-                        upload.id === tempId 
+                        upload.id === tempId
                             ? { ...upload, processingStatus: 'error', error: processingError.message }
                             : upload
                     ));
-                    
+
                     // Update table data to show error status
                     setTableData(prev => prev.map(row =>
-                        row.id === tempId 
+                        row.id === tempId
                             ? { ...row, processingStatus: 'error' }
                             : row
                     ));
-                    
+
                     enqueueSnackbar(`Processing failed: ${processingError.message}`, { variant: 'error' });
                 }
             };
-            
+
             reader.onerror = () => {
                 console.error('📄 File reading failed');
                 setUploads(prev => prev.map(upload =>
-                    upload.id === tempId 
+                    upload.id === tempId
                         ? { ...upload, processingStatus: 'error', error: 'Failed to read file' }
                         : upload
                 ));
-                
+
                 // Update table data to show error status
                 setTableData(prev => prev.map(row =>
-                    row.id === tempId 
+                    row.id === tempId
                         ? { ...row, processingStatus: 'error' }
                         : row
                 ));
-                
-                
+
+
                 enqueueSnackbar('Failed to read file', { variant: 'error' });
             };
-            
+
             console.log('📖 Starting file read for:', file.name);
             reader.readAsDataURL(file);
 
         } catch (error) {
             console.error('💥 File processing error:', error);
             setUploads(prev => prev.map(upload =>
-                upload.id === tempId 
+                upload.id === tempId
                     ? { ...upload, processingStatus: 'error', error: error.message }
                     : upload
             ));
-            
+
             // Update table data to show error status
             setTableData(prev => prev.map(row =>
-                row.id === tempId 
+                row.id === tempId
                     ? { ...row, processingStatus: 'error' }
                     : row
             ));
-            
+
             enqueueSnackbar(`Failed to process ${file.name}: ${error.message}`, { variant: 'error' });
         }
     };
@@ -472,10 +534,10 @@ const APProcessingEnterprise = () => {
     const runAIExtraction = useCallback(async (file) => {
         try {
             const testCarrierModel = httpsCallable(functions, 'testCarrierModel');
-            
+
             let base64Data;
             let fileName;
-            
+
             if (file.base64Data) {
                 base64Data = file.base64Data;
                 fileName = file.name;
@@ -486,7 +548,7 @@ const APProcessingEnterprise = () => {
                 base64Data = btoa(String.fromCharCode.apply(null, uint8Array));
                 fileName = file.name;
             }
-            
+
             if (!selectedCarrier || !fileName || !base64Data) {
                 throw new Error(`Missing required parameters: carrierId=${!!selectedCarrier}, fileName=${!!fileName}, base64Data=${!!base64Data}`);
             }
@@ -505,8 +567,8 @@ const APProcessingEnterprise = () => {
                 fileUrl: file.url || file.downloadURL || null,
                 testType: 'ap_processing',
                 expectedResults: null,
-                metadata: { 
-                    source: 'ap-processing', 
+                metadata: {
+                    source: 'ap-processing',
                     ui: 'v2',
                     enhancedExtraction: true,
                     includeAllFields: true,
@@ -516,7 +578,7 @@ const APProcessingEnterprise = () => {
 
             if (result.data?.success) {
                 console.log('✅ AI extraction completed:', result.data.testResults);
-                
+
                 const usedCarrierPrompt = result.data.testResults?.metadata?.usedCarrierSpecificPrompt;
                 if (usedCarrierPrompt) {
                     console.log('🎯 AP Processing used carrier-specific AI prompt for enhanced extraction');
@@ -525,11 +587,11 @@ const APProcessingEnterprise = () => {
                     console.log('📋 AP Processing used generic AI prompt (no carrier-specific prompt available)');
                     enqueueSnackbar('AI extraction completed', { variant: 'success' });
                 }
-                
+
                 const extractedData = result.data.testResults?.aiResults?.enhancedResults?.extractedData;
                 if (extractedData) {
                     const normalizedData = normalizeAIDataForTable(extractedData, file, result.data.testResults);
-                    
+
                     // Update existing Firestore record
                     const uploadId = file.uploadId || file.id;
                     console.log('🆔 Upload ID for Firestore save:', uploadId, 'Length:', uploadId?.length);
@@ -547,7 +609,7 @@ const APProcessingEnterprise = () => {
                             console.log('🔍 Raw extracted data:', extractedData);
                             await updateDoc(doc(db, 'apUploads', uploadId), updateData);
                             console.log('✅ Updated existing Firestore record successfully:', uploadId);
-                            
+
                             // Verify the data was saved by reading it back
                             const verifyDoc = await getDoc(doc(db, 'apUploads', uploadId));
                             if (verifyDoc.exists()) {
@@ -565,32 +627,32 @@ const APProcessingEnterprise = () => {
                     } else {
                         console.warn('⚠️ Skipping Firestore save - invalid uploadId:', uploadId);
                     }
-                    
+
                     // Update uploads state
                     setUploads(prev => {
                         const updated = prev.map(upload =>
                             upload.id === file.uploadId || upload.fileName === file.name
-                                ? { 
-                                    ...upload, 
+                                ? {
+                                    ...upload,
                                     processingStatus: 'completed',
                                     extractedData: normalizedData,
                                     aiResults: result.data.testResults
                                 }
                                 : upload
                         );
-                        
+
                         // Update table data immediately with the new uploads
                         const newTableData = updated.map(upload => transformUploadToTableRow(upload));
                         setTableData(newTableData);
-                        
-                        
+
+
                         return updated;
                     });
 
                     // Don't automatically refresh from database to avoid losing data
                     // setTimeout(() => loadUploads(), 1000);
                 }
-                
+
                 return result.data.testResults;
             } else {
                 throw new Error(result.data?.error || 'AI extraction failed');
@@ -598,72 +660,83 @@ const APProcessingEnterprise = () => {
         } catch (error) {
             console.error('❌ AI extraction error:', error);
             enqueueSnackbar(`AI extraction failed: ${error.message}`, { variant: 'error' });
-            
-            setUploads(prev => prev.map(upload => 
+
+            setUploads(prev => prev.map(upload =>
                 upload.id === file.uploadId || upload.fileName === file.name
                     ? { ...upload, processingStatus: 'error', error: error.message }
                     : upload
             ));
-            
+
             // Update table data to show error status
             setTableData(prev => prev.map(row =>
                 row.id === file.uploadId || row.fileName === file.name
                     ? { ...row, processingStatus: 'error' }
                     : row
             ));
-            
+
         }
     }, [functions, selectedCarrier, enqueueSnackbar, loadUploads]);
 
     // Normalize AI data for table display
     const normalizeAIDataForTable = useCallback((extractedData, uploadFile, fullAiResults) => {
         console.log('🔄 Normalizing AI data for table:', { extractedData, uploadFile, fullAiResults });
-        
-                    // Use the selected carrier name (since it's required for upload) - ensure string
-            const carrierName = uploadFile.carrier ||
-                               (selectedCarrier && carriers.find(c => c.id === selectedCarrier)?.name) ||
-                               (typeof extractedData.carrier === 'string' ? extractedData.carrier : extractedData.carrier?.name) ||
-                               extractedData.carrierInformation?.company ||
-                               'Unknown';
-        
+
+        // Use the selected carrier name (since it's required for upload) - ensure string
+        const carrierName = uploadFile.carrier ||
+            (selectedCarrier && carriers.find(c => c.id === selectedCarrier)?.name) ||
+            (typeof extractedData.carrier === 'string' ? extractedData.carrier : extractedData.carrier?.name) ||
+            extractedData.carrierInformation?.company ||
+            'Unknown';
+
         const invoiceNumber = extractedData.invoice_number ||
-                             extractedData.invoiceNumber ||
-                             extractedData.invoiceDetails?.invoiceNumber ||
-                             'N/A';
-        
-        const shipmentId = extractedData.shipment_ids?.[0] ||
-                          extractedData.shipmentId ||
-                          extractedData.invoiceDetails?.billOfLading ||
-                          'N/A';
-        
-                    // Get shipper/consignee (ensure string values only)
-            const shipper = typeof extractedData.shipper === 'object' 
-                           ? (extractedData.shipper?.company || 'N/A')
-                           : (extractedData.shipper || 'N/A');
-            const consignee = typeof extractedData.consignee === 'object'
-                             ? (extractedData.consignee?.company || 'N/A')
-                             : (extractedData.consignee || 'N/A');
-        
-        const totalAmount = extractedData.total || 
-                           extractedData.totalAmount?.amount || 
-                           extractedData.totalAmount || 
-                           0;
-        
+            extractedData.invoiceNumber ||
+            extractedData.invoiceDetails?.invoiceNumber ||
+            'N/A';
+
+        // Count shipments from extracted data
+        const shipmentCount = extractedData.shipments?.length ||
+            (extractedData.shipment_ids?.length > 0 ? extractedData.shipment_ids.length : 1) ||
+            1;
+
+        // Get invoice date from extracted data with extensive fallback paths
+        const invoiceDate = extractedData.invoice_date ||
+            extractedData.invoiceDate ||
+            extractedData.invoiceDetails?.invoiceDate ||
+            extractedData.metadata?.documentDate ||
+            extractedData.metadata?.issueDate ||
+            extractedData.invoiceHeader?.invoiceDate?.value ||
+            extractedData.issueDate ||
+            extractedData.date ||
+            extractedData.documentDate ||
+            null;
+
+        // Debug logging for normalizeAIDataForTable
+        console.log('📄 normalizeAIDataForTable invoice date debug:', {
+            fileName: uploadFile.name,
+            available_fields: extractedData ? Object.keys(extractedData) : 'no extracted data',
+            invoice_date_value: invoiceDate,
+            shipmentCount: shipmentCount
+        });
+
+        const totalAmount = extractedData.total ||
+            extractedData.totalAmount?.amount ||
+            extractedData.totalAmount ||
+            0;
+
         const normalized = {
             fileName: uploadFile.name,
             uploadDate: new Date(),
             carrier: carrierName,
             invoiceNumber: invoiceNumber,
-            shipmentId: shipmentId,
+            shipmentCount: shipmentCount,
+            invoiceDate: invoiceDate,
             totalAmount: totalAmount,
             currency: extractedData.totalAmount?.currency || 'CAD',
             charges: extractedData.charges || [],
-            shipper: shipper,
-            consignee: consignee,
             extractedData,
             aiResults: fullAiResults
         };
-        
+
         console.log('✅ Normalized AI data:', normalized);
         return normalized;
     }, [carriers, selectedCarrier]);
@@ -671,7 +744,7 @@ const APProcessingEnterprise = () => {
     // Table row selection
     const handleSelectAll = (event) => {
         if (event.target.checked) {
-            setSelectedRows(tableData.map(row => row.id));
+            setSelectedRows(filteredTableData.map(row => row.id));
         } else {
             setSelectedRows([]);
         }
@@ -679,11 +752,12 @@ const APProcessingEnterprise = () => {
 
     const handleSelectRow = (id) => {
         setSelectedRows(prev => {
-            if (prev.includes(id)) {
-                return prev.filter(rowId => rowId !== id);
-            } else {
-                return [...prev, id];
-            }
+            const newSelection = prev.includes(id)
+                ? prev.filter(rowId => rowId !== id)
+                : [...prev, id];
+
+            setShowDeleteActions(newSelection.length > 0);
+            return newSelection;
         });
     };
 
@@ -698,10 +772,9 @@ const APProcessingEnterprise = () => {
         setSelectedUploadForAction(null);
     };
 
-    const handleMenuViewResults = () => {
+    const handleMenuViewResults = async () => {
         if (selectedUploadForAction) {
-            setSelectedUpload(selectedUploadForAction);
-            setShowPdfResults(true);
+            await handleFileNameClick(selectedUploadForAction);
         }
         handleActionMenuClose();
     };
@@ -710,14 +783,186 @@ const APProcessingEnterprise = () => {
         if (selectedUploadForAction) {
             try {
                 await deleteDoc(doc(db, 'apUploads', selectedUploadForAction.id));
+
+                // Update local state immediately
+                setUploads(prev => prev.filter(upload => upload.id !== selectedUploadForAction.id));
+                setTableData(prev => prev.filter(row => row.id !== selectedUploadForAction.id));
+
                 enqueueSnackbar('Upload deleted successfully', { variant: 'success' });
-                loadUploads();
             } catch (error) {
                 console.error('Error deleting upload:', error);
                 enqueueSnackbar('Failed to delete upload', { variant: 'error' });
             }
         }
         handleActionMenuClose();
+    };
+
+    // Handle file name click to view results
+    // Handle file name click to view results with enhanced data fetching
+    const handleFileNameClick = async (upload) => {
+        if (upload.processingStatus === 'completed') {
+            try {
+                console.log('🔍 Loading detailed results for upload:', upload.id);
+
+                // Try to fetch detailed results from pdfResults collection
+                let enhancedUpload = { ...upload };
+
+                try {
+                    const pdfResultDoc = await getDoc(doc(db, 'pdfResults', upload.id));
+                    if (pdfResultDoc.exists()) {
+                        const pdfResultData = pdfResultDoc.data();
+                        console.log('📋 Found detailed PDF results:', pdfResultData);
+
+                        // Enhance upload with detailed results
+                        enhancedUpload = {
+                            ...upload,
+                            extractedData: pdfResultData.extractedData || pdfResultData.structuredData || pdfResultData,
+                            matchingResults: pdfResultData.matchingResults,
+                            shipments: pdfResultData.shipments || pdfResultData.extractedData?.shipments || [],
+                            aiResults: {
+                                ...upload.aiResults,
+                                enhancedResults: pdfResultData
+                            }
+                        };
+                    }
+                } catch (pdfError) {
+                    console.log('ℹ️ No detailed PDF results found, using upload data:', pdfError.message);
+                }
+
+                // Also try to get any AP processing results
+                try {
+                    const apResultQuery = query(
+                        collection(db, 'apProcessingResults'),
+                        where('uploadId', '==', upload.id),
+                        limit(1)
+                    );
+                    const apResultSnapshot = await getDocs(apResultQuery);
+
+                    if (!apResultSnapshot.empty) {
+                        const apResultData = apResultSnapshot.docs[0].data();
+                        console.log('📋 Found AP processing results:', apResultData);
+
+                        enhancedUpload = {
+                            ...enhancedUpload,
+                            apResults: apResultData,
+                            matchingResults: apResultData.matchingResults || enhancedUpload.matchingResults
+                        };
+                    }
+                } catch (apError) {
+                    console.log('ℹ️ No AP processing results found:', apError.message);
+                }
+
+                console.log('✅ Final enhanced upload data:', enhancedUpload);
+                setSelectedUpload(enhancedUpload);
+                setShowPdfResults(true);
+
+            } catch (error) {
+                console.error('❌ Error loading detailed results:', error);
+                enqueueSnackbar('Error loading detailed results', { variant: 'error' });
+            }
+        } else {
+            enqueueSnackbar('No results available for this upload', { variant: 'info' });
+        }
+    };
+
+    // Search and filter functionality
+    const handleSearchChange = (event) => {
+        setSearchTerm(event.target.value);
+    };
+
+
+    const clearSearch = () => {
+        setSearchTerm('');
+    };
+
+    const clearDateFilters = () => {
+        setInvoiceDate(null);
+        setUploadDate(null);
+    };
+
+    const clearAllFilters = () => {
+        setSearchTerm('');
+        clearDateFilters();
+    };
+
+    // Filter table data based on search term and date filters
+    const filterTableData = useCallback(() => {
+        let filtered = tableData;
+
+        // Apply keyword search (searches across all relevant fields)
+        if (searchTerm.trim()) {
+            const searchLower = searchTerm.toLowerCase();
+            filtered = filtered.filter(row => {
+                return (
+                    row.fileName?.toLowerCase().includes(searchLower) ||
+                    row.invoiceNumber?.toLowerCase().includes(searchLower) ||
+                    row.carrier?.toLowerCase().includes(searchLower) ||
+                    formatDate(row.uploadDate)?.toLowerCase().includes(searchLower) ||
+                    formatDate(row.invoiceDate)?.toLowerCase().includes(searchLower)
+                );
+            });
+        }
+
+        // Apply invoice date filter (exact date match)
+        if (invoiceDate) {
+            filtered = filtered.filter(row => {
+                if (!row.invoiceDate) return false;
+
+                const rowInvoiceDate = dayjs(row.invoiceDate);
+                if (!rowInvoiceDate.isValid()) return false;
+
+                return rowInvoiceDate.isSame(dayjs(invoiceDate), 'day');
+            });
+        }
+
+        // Apply upload date filter (exact date match)
+        if (uploadDate) {
+            filtered = filtered.filter(row => {
+                if (!row.uploadDate) return false;
+
+                const rowUploadDate = dayjs(row.uploadDate);
+                if (!rowUploadDate.isValid()) return false;
+
+                return rowUploadDate.isSame(dayjs(uploadDate), 'day');
+            });
+        }
+
+        setFilteredTableData(filtered);
+    }, [tableData, searchTerm, invoiceDate, uploadDate]);
+
+    // Bulk delete functionality
+    const handleBulkDelete = async () => {
+        if (selectedRows.length === 0) return;
+
+        try {
+            setIsExporting(true);
+
+            // Delete from Firestore
+            const deletePromises = selectedRows.map(async (id) => {
+                try {
+                    await deleteDoc(doc(db, 'apUploads', id));
+                    console.log(`Deleted upload: ${id}`);
+                } catch (error) {
+                    console.error(`Failed to delete upload ${id}:`, error);
+                    throw error;
+                }
+            });
+
+            await Promise.all(deletePromises);
+
+            // Update local state
+            setUploads(prev => prev.filter(upload => !selectedRows.includes(upload.id)));
+            setTableData(prev => prev.filter(row => !selectedRows.includes(row.id)));
+            setSelectedRows([]);
+            setShowDeleteActions(false);
+
+            enqueueSnackbar(`Successfully deleted ${selectedRows.length} upload(s)`, { variant: 'success' });
+        } catch (error) {
+            console.error('Bulk delete error:', error);
+            enqueueSnackbar(`Failed to delete uploads: ${error.message}`, { variant: 'error' });
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     // Status chip renderer
@@ -731,7 +976,7 @@ const APProcessingEnterprise = () => {
         };
 
         const config = statusConfig[status] || statusConfig.pending;
-        
+
         return (
             <Chip
                 size="small"
@@ -772,14 +1017,17 @@ const APProcessingEnterprise = () => {
     useEffect(() => {
         loadCarriers();
     }, [loadCarriers]);
-    
+
     // Load uploads after carriers are loaded (only once)
     useEffect(() => {
         if (carriers.length > 0 && uploads.length === 0) {
             loadUploads();
+        } else if (carriers.length > 0) {
+            // If carriers are loaded but we're not loading uploads (they're already loaded), stop loading
+            setLoading(false);
         }
-    }, [carriers.length]); // Only depend on carriers.length, not the full carriers array
-    
+    }, [carriers.length, uploads.length, loadUploads]); // Added uploads.length dependency
+
     // Re-transform table data when carriers are loaded (to fix carrier names)
     useEffect(() => {
         if (carriers.length > 0 && uploads.length > 0) {
@@ -788,6 +1036,16 @@ const APProcessingEnterprise = () => {
             setTableData(transformedTableData);
         }
     }, [carriers, uploads, transformUploadToTableRow]);
+
+    // Filter table data when search term or filters change
+    useEffect(() => {
+        filterTableData();
+    }, [filterTableData]);
+
+    // Initialize filtered data when tableData changes
+    useEffect(() => {
+        filterTableData();
+    }, [tableData, searchTerm, invoiceDate, uploadDate, filterTableData]);
 
     // Tab panels
     const TabPanel = ({ children, value, index, ...other }) => (
@@ -835,15 +1093,132 @@ const APProcessingEnterprise = () => {
                     </Box>
 
 
+                    {/* Search and Filters */}
+                    {loading || loadingCarriers ? (
+                        <Box sx={{ mb: 3 }}>
+                            <Grid container spacing={2} alignItems="center">
+                                <Grid item xs={12} md={4}>
+                                    <Skeleton width="100%" height={40} sx={{ borderRadius: 1 }} />
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Skeleton width="100%" height={40} sx={{ borderRadius: 1 }} />
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Skeleton width="100%" height={40} sx={{ borderRadius: 1 }} />
+                                </Grid>
+                                <Grid item xs={12} md={2}>
+                                    <Skeleton width="100%" height={40} sx={{ borderRadius: 1 }} />
+                                </Grid>
+                            </Grid>
+                        </Box>
+                    ) : (
+                        <LocalizationProvider dateAdapter={AdapterDayjs}>
+                            <Box sx={{ mb: 3 }}>
+                                {/* First row - Search and dates */}
+                                <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
+                                    <Grid item xs={12} md={6}>
+                                        <TextField
+                                            size="small"
+                                            label="Search"
+                                            placeholder="Search by file name, invoice #, carrier..."
+                                            value={searchTerm}
+                                            onChange={handleSearchChange}
+                                            InputProps={{
+                                                startAdornment: <SearchIcon sx={{ mr: 1, color: '#9ca3af' }} />,
+                                                endAdornment: searchTerm && (
+                                                    <IconButton size="small" onClick={clearSearch}>
+                                                        <ClearIcon fontSize="small" />
+                                                    </IconButton>
+                                                ),
+                                                sx: { fontSize: '12px' }
+                                            }}
+                                            sx={{ width: '100%' }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <DatePicker
+                                            label="Invoice Date"
+                                            value={invoiceDate}
+                                            onChange={setInvoiceDate}
+                                            slotProps={{
+                                                textField: {
+                                                    size: 'small',
+                                                    sx: { fontSize: '12px' }
+                                                }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} md={3}>
+                                        <DatePicker
+                                            label="Upload Date"
+                                            value={uploadDate}
+                                            onChange={setUploadDate}
+                                            slotProps={{
+                                                textField: {
+                                                    size: 'small',
+                                                    sx: { fontSize: '12px' }
+                                                }
+                                            }}
+                                        />
+                                    </Grid>
+                                </Grid>
+
+                                {/* Second row - Action buttons */}
+                                <Grid container spacing={2} alignItems="center">
+                                    <Grid item xs={12} md={6}>
+                                        <Stack direction="row" spacing={1}>
+                                            {(searchTerm || invoiceDate || uploadDate) && (
+                                                <Button
+                                                    variant="outlined"
+                                                    size="small"
+                                                    onClick={clearAllFilters}
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        textTransform: 'none',
+                                                        color: '#6b7280',
+                                                        borderColor: '#d1d5db'
+                                                    }}
+                                                >
+                                                    Clear All Filters
+                                                </Button>
+                                            )}
+                                        </Stack>
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                                            {showDeleteActions && (
+                                                <Button
+                                                    variant="outlined"
+                                                    color="error"
+                                                    size="small"
+                                                    startIcon={<DeleteIcon />}
+                                                    onClick={handleBulkDelete}
+                                                    disabled={isExporting}
+                                                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                                                >
+                                                    {isExporting ? 'Deleting...' : `Delete (${selectedRows.length})`}
+                                                </Button>
+                                            )}
+                                        </Stack>
+                                    </Grid>
+                                </Grid>
+                            </Box>
+                        </LocalizationProvider>
+                    )}
+
                     {/* Results Table */}
                     <Paper sx={{ border: '1px solid #e5e7eb' }}>
                         <Box sx={{ borderBottom: '1px solid #e5e7eb', p: 2 }}>
-                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
-                                Recent Uploads ({tableData.length})
-                            </Typography>
+                            {loading || loadingCarriers ? (
+                                <Skeleton width={200} height={24} />
+                            ) : (
+                                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                    Recent Uploads ({filteredTableData.length}{searchTerm ? ` of ${tableData.length}` : ''})
+                                </Typography>
+                            )}
                         </Box>
 
-                        {loading ? (
+                        {loading || loadingCarriers ? (
                             <TableContainer>
                                 <Table size="small">
                                     <TableHead>
@@ -854,11 +1229,10 @@ const APProcessingEnterprise = () => {
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>File Name</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Carrier</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Invoice #</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipper</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Consignee</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipments</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Upload Date</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Invoice Date</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Status</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
                                         </TableRow>
@@ -872,11 +1246,10 @@ const APProcessingEnterprise = () => {
                                                 <TableCell><Skeleton width={120} height={20} /></TableCell>
                                                 <TableCell><Skeleton width={100} height={20} /></TableCell>
                                                 <TableCell><Skeleton width={80} height={20} /></TableCell>
-                                                <TableCell><Skeleton width={90} height={20} /></TableCell>
-                                                <TableCell><Skeleton width={110} height={20} /></TableCell>
-                                                <TableCell><Skeleton width={110} height={20} /></TableCell>
+                                                <TableCell><Skeleton width={60} height={20} /></TableCell>
                                                 <TableCell><Skeleton width={60} height={20} /></TableCell>
                                                 <TableCell><Skeleton width={80} height={20} /></TableCell>
+                                                <TableCell><Skeleton width={90} height={20} /></TableCell>
                                                 <TableCell><Skeleton variant="rectangular" width={60} height={24} sx={{ borderRadius: 1 }} /></TableCell>
                                                 <TableCell><Skeleton variant="circular" width={24} height={24} /></TableCell>
                                             </TableRow>
@@ -910,17 +1283,16 @@ const APProcessingEnterprise = () => {
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>File Name</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Carrier</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Invoice #</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipper</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Consignee</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipments</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Upload Date</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Invoice Date</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Status</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {tableData.map((row) => (
+                                        {filteredTableData.map((row) => (
                                             <TableRow key={row.id} hover sx={{ '&:hover': { backgroundColor: '#f9fafb' } }}>
                                                 <TableCell padding="checkbox">
                                                     <Checkbox
@@ -929,14 +1301,48 @@ const APProcessingEnterprise = () => {
                                                         size="small"
                                                     />
                                                 </TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>{row.fileName}</TableCell>
+                                                <TableCell sx={{ fontSize: '11px' }}>
+                                                    <Button
+                                                        variant="text"
+                                                        size="small"
+                                                        onClick={() => handleFileNameClick(row)}
+                                                        sx={{
+                                                            fontSize: '11px',
+                                                            textTransform: 'none',
+                                                            color: row.processingStatus === 'completed' ? '#3b82f6' : '#374151',
+                                                            fontWeight: row.processingStatus === 'completed' ? 500 : 400,
+                                                            cursor: row.processingStatus === 'completed' ? 'pointer' : 'default',
+                                                            textDecoration: row.processingStatus === 'completed' ? 'underline' : 'none',
+                                                            padding: 0,
+                                                            minWidth: 'auto',
+                                                            justifyContent: 'flex-start',
+                                                            '&:hover': {
+                                                                backgroundColor: 'transparent',
+                                                                textDecoration: row.processingStatus === 'completed' ? 'underline' : 'none'
+                                                            }
+                                                        }}
+                                                        disabled={row.processingStatus !== 'completed'}
+                                                    >
+                                                        {row.fileName}
+                                                    </Button>
+                                                </TableCell>
                                                 <TableCell sx={{ fontSize: '11px' }}>{typeof row.carrier === 'string' ? row.carrier : row.carrier?.name || 'Unknown'}</TableCell>
                                                 <TableCell sx={{ fontSize: '11px' }}>{row.invoiceNumber}</TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>{row.shipmentId}</TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>{typeof row.shipper === 'string' ? row.shipper : row.shipper?.company || row.shipper?.name || 'Unknown'}</TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>{typeof row.consignee === 'string' ? row.consignee : row.consignee?.company || row.consignee?.name || 'Unknown'}</TableCell>
+                                                <TableCell sx={{ fontSize: '11px' }}>
+                                                    <Chip
+                                                        label={row.shipmentCount}
+                                                        size="small"
+                                                        sx={{
+                                                            fontSize: '10px',
+                                                            height: '20px',
+                                                            backgroundColor: '#f3f4f6',
+                                                            color: '#374151'
+                                                        }}
+                                                    />
+                                                </TableCell>
                                                 <TableCell sx={{ fontSize: '11px' }}>{formatCurrency(row.totalAmount, row.currency)}</TableCell>
                                                 <TableCell sx={{ fontSize: '11px' }}>{formatDate(row.uploadDate)}</TableCell>
+                                                <TableCell sx={{ fontSize: '11px' }}>{formatDate(row.invoiceDate)}</TableCell>
                                                 <TableCell>{getStatusChip(row.processingStatus)}</TableCell>
                                                 <TableCell>
                                                     <IconButton
@@ -982,32 +1388,36 @@ const APProcessingEnterprise = () => {
             <Dialog
                 open={showPdfResults}
                 onClose={() => setShowPdfResults(false)}
-                maxWidth="lg"
+                maxWidth="xl"
                 fullWidth
                 PaperProps={{ sx: { height: '90vh' } }}
             >
-                <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6">Extraction Results</Typography>
-                    <IconButton onClick={() => setShowPdfResults(false)}>
-                        <CloseIcon />
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent>
+                <DialogContent sx={{ p: 0 }}>
                     {selectedUpload && (
-                        <TestResultsComparison
-                            testResults={selectedUpload.aiResults || selectedUpload.rawUpload?.aiResults}
-                            expectedResults={null}
+                        <APProcessingResults
+                            extractedData={selectedUpload.extractedData || selectedUpload.aiResults?.extractedData}
+                            matchingResults={selectedUpload.matchingResults}
+                            fileName={selectedUpload.fileName}
+                            uploadData={selectedUpload}
+                            onApprove={() => {
+                                console.log('Approve AP Results for:', selectedUpload.fileName);
+                                enqueueSnackbar('Invoice approved for processing', { variant: 'success' });
+                                setShowPdfResults(false);
+                            }}
+                            onReject={() => {
+                                console.log('Reject AP Results for:', selectedUpload.fileName);
+                                enqueueSnackbar('Invoice rejected', { variant: 'warning' });
+                                setShowPdfResults(false);
+                            }}
+                            onClose={() => setShowPdfResults(false)}
                         />
                     )}
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setShowPdfResults(false)}>Close</Button>
-                </DialogActions>
             </Dialog>
 
             {/* Upload Modal */}
-            <Dialog 
-                open={uploadModalOpen} 
+            <Dialog
+                open={uploadModalOpen}
                 onClose={() => setUploadModalOpen(false)}
                 maxWidth="md"
                 fullWidth
@@ -1015,9 +1425,9 @@ const APProcessingEnterprise = () => {
                     sx: { borderRadius: '12px' }
                 }}
             >
-                <DialogTitle sx={{ 
-                    borderBottom: '1px solid #e5e7eb', 
-                    fontSize: '18px', 
+                <DialogTitle sx={{
+                    borderBottom: '1px solid #e5e7eb',
+                    fontSize: '18px',
                     fontWeight: 600,
                     display: 'flex',
                     justifyContent: 'space-between',

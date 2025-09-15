@@ -54,8 +54,9 @@ import { useSnackbar } from 'notistack';
 import RateCardImportDialog from './RateCardImportDialog';
 import EnhancedGeographicRateCardImport from './EnhancedGeographicRateCardImport';
 import QuickShipZoneRateManagement from './QuickShipZoneRateManagement';
+import EnhancedChargeMapping from './EnhancedChargeMapping';
 
-const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose }) => {
+const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose, zoneConfig }) => {
     const { enqueueSnackbar } = useSnackbar();
     const [rateCards, setRateCards] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -68,6 +69,7 @@ const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose }) => {
     const [deleteRateCardName, setDeleteRateCardName] = useState('');
     const [showEnhancedImport, setShowEnhancedImport] = useState(false);
     const [showZoneRateManagement, setShowZoneRateManagement] = useState(false);
+    const [showEnhancedChargeMapping, setShowEnhancedChargeMapping] = useState(false);
 
     // Form state for rate card dialog
     const [formData, setFormData] = useState({
@@ -373,6 +375,21 @@ const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose }) => {
                                     }}
                                 >
                                     Zone Rate Mapping
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    size="small"
+                                    startIcon={<MoneyIcon />}
+                                    onClick={() => setShowEnhancedChargeMapping(true)}
+                                    sx={{
+                                        fontSize: '12px',
+                                        backgroundColor: '#7c3aed',
+                                        '&:hover': {
+                                            backgroundColor: '#6d28d9'
+                                        }
+                                    }}
+                                >
+                                    Enhanced Charge Mapping
                                 </Button>
                                 <Button
                                     variant="contained"
@@ -911,6 +928,17 @@ const RateCardManagement = ({ carrierId, carrierName, isOpen, onClose }) => {
                 onClose={() => setShowZoneRateManagement(false)}
                 carrierId={carrierId}
                 carrierName={carrierName}
+                zoneConfig={zoneConfig}
+                onOpenEnhancedChargeMapping={() => setShowEnhancedChargeMapping(true)}
+            />
+
+            {/* Enhanced Charge Mapping Dialog */}
+            <EnhancedChargeMapping
+                isOpen={showEnhancedChargeMapping}
+                onClose={() => setShowEnhancedChargeMapping(false)}
+                carrierId={carrierId}
+                carrierName={carrierName}
+                zoneConfig={zoneConfig}
             />
         </Dialog>
     );

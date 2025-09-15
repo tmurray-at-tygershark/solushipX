@@ -7,7 +7,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Box, Typography, Button, Chip, CircularProgress, Card, Fab, Tooltip,
-    Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, ListItemText
+    Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, ListItemText,
+    CardHeader, CardContent, IconButton, TextField, Checkbox, FormControlLabel,
+    FormControl, InputLabel, Select, MenuItem, InputAdornment,
+    Accordion, AccordionSummary, AccordionDetails
 } from '@mui/material';
 import {
     PanTool as PanToolIcon,
@@ -15,20 +18,44 @@ import {
     RadioButtonUnchecked as CircleIcon,
     Pentagon as PolygonIcon,
     Delete as DeleteIcon,
-    NearMe as ArrowIcon
+    NearMe as ArrowIcon,
+    Layers as ZonesIcon,
+    Add as AddIcon,
+    Edit as EditIcon,
+    ChevronRight as ChevronRightIcon,
+    ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { loadGoogleMaps } from '../../../../utils/googleMapsLoader';
 import { collection, query, where, getDocs, limit, orderBy, startAfter } from 'firebase/firestore';
-import { db } from '../../../../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../../../firebase';
+import { useAuth } from '../../../../contexts/AuthContext';
+
+// Zone color palette for visual distinction
+const ZONE_COLORS = [
+    { primary: '#3b82f6', secondary: '#dbeafe', name: 'Blue' },      // Blue
+    { primary: '#10b981', secondary: '#d1fae5', name: 'Green' },     // Green  
+    { primary: '#f59e0b', secondary: '#fef3c7', name: 'Orange' },    // Orange
+    { primary: '#ef4444', secondary: '#fee2e2', name: 'Red' },       // Red
+    { primary: '#8b5cf6', secondary: '#ede9fe', name: 'Purple' },    // Purple
+    { primary: '#06b6d4', secondary: '#cffafe', name: 'Cyan' },      // Cyan
+    { primary: '#ec4899', secondary: '#fce7f3', name: 'Pink' },      // Pink
+    { primary: '#84cc16', secondary: '#ecfccb', name: 'Lime' },      // Lime
+    { primary: '#f97316', secondary: '#fed7aa', name: 'Amber' },     // Amber
+    { primary: '#6366f1', secondary: '#e0e7ff', name: 'Indigo' }     // Indigo
+];
 
 const MapCitySelector = ({
     selectedCities = [],
     onSelectionComplete,
     zoneCategory = 'pickupZones',
-    onDone
+    onDone,
+    zonesWithColors = [],
+    carrierId
 }) => {
     const { enqueueSnackbar } = useSnackbar();
+    const { currentUser, isAuthenticated } = useAuth();
     const mapRef = useRef(null);
     const googleMapRef = useRef(null);
     const drawingManagerRef = useRef(null);
@@ -62,10 +89,844 @@ const MapCitySelector = ({
     // City dataset cache
     const citiesCacheRef = useRef({ loaded: false, cities: [] });
 
+    // Zone visualization state
+    const zoneOverlaysRef = useRef([]);
+    const [showZones, setShowZones] = useState(true);
+
+    // Zone creation flow state - Two Phase Process
+    const [zoneCreationPhase, setZoneCreationPhase] = useState(null); // null | 'form' | 'polygon' | 'confirmation'
+    const zoneCreationPhaseRef = useRef(null);
+    const [zoneFormData, setZoneFormData] = useState({
+        name: '',
+        code: '',
+        description: '',
+        serviceType: 'standard',
+        priority: 1
+    });
+    const [generatingCode, setGeneratingCode] = useState(false);
+    const [currentPolygon, setCurrentPolygon] = useState(null);
+    const [polygonConfirmed, setPolygonConfirmed] = useState(false);
+    const [detectedCities, setDetectedCities] = useState([]);
+    const [savingZone, setSavingZone] = useState(false);
+    const [detectingCities, setDetectingCities] = useState(false);
+
+    // Zone management state
+    const [editingZone, setEditingZone] = useState(null);
+    const customZoneBoundariesRef = useRef([]);
+
+    // Legacy state (keeping for compatibility)
+    const [zoneDrawingMode, setZoneDrawingMode] = useState(false);
+    const [selectedZoneForDrawing, setSelectedZoneForDrawing] = useState(null);
+    const [creatingNewZone, setCreatingNewZone] = useState(false);
+    const [zoneFormOpen, setZoneFormOpen] = useState(false);
+    const [editingZoneBoundary, setEditingZoneBoundary] = useState(null);
+
+    // Zone legend and controls
+    const [zoneLegendOpen, setZoneLegendOpen] = useState(false);
+    const [showSystemZones, setShowSystemZones] = useState(true);
+    const [showCustomZones, setShowCustomZones] = useState(true);
+    const [customCarrierZones, setCustomCarrierZones] = useState([]);
+
+    // Accordion section states - only zone creation expanded by default
+    const [expandedSections, setExpandedSections] = useState({
+        zoneCreation: true,
+        zoneLayers: false,
+        systemZones: false,
+        customZones: false
+    });
+
     // Initialize and sync visual cities with selectedCities prop
     useEffect(() => {
         setVisualCities(selectedCities);
     }, [selectedCities]); // Sync whenever selectedCities changes
+
+    // Load existing custom carrier zones
+    const loadCustomCarrierZones = useCallback(async () => {
+        if (!carrierId) {
+            console.log('⏸️ No carrierId provided, skipping zone loading');
+            return;
+        }
+
+        try {
+            console.log('🔄 Loading custom zones for carrier:', carrierId);
+            const loadZoneBoundariesFn = httpsCallable(functions, 'loadZoneBoundaries');
+            const result = await loadZoneBoundariesFn({
+                carrierId: carrierId,
+                zoneCategory: zoneCategory || 'pickupZones'
+            });
+
+            if (result.data.success && result.data.boundaries) {
+                console.log('✅ Loaded custom carrier zones:', result.data.boundaries.length, 'zones');
+                setCustomCarrierZones(result.data.boundaries);
+
+                // Render existing zone boundaries on the map
+                result.data.boundaries.forEach(zone => {
+                    if (zone.boundary && zone.boundary.coordinates && googleMapRef.current) {
+                        renderCustomZoneBoundary(zone);
+                    }
+                });
+            } else {
+                console.log('📭 No custom zones found for carrier:', carrierId);
+                setCustomCarrierZones([]);
+            }
+        } catch (error) {
+            console.error('❌ Error loading custom carrier zones:', error);
+
+            // Handle specific error types
+            if (error.code === 'unauthenticated') {
+                console.warn('🔐 Authentication required for loading zones');
+                // Don't show error to user for auth issues, just log
+            } else if (error.code === 'permission-denied') {
+                console.warn('🚫 Permission denied for loading zones');
+            } else {
+                // Show user-friendly error for other issues
+                enqueueSnackbar('Unable to load existing zones', { variant: 'warning' });
+            }
+
+            // Set empty zones on error to prevent UI issues
+            setCustomCarrierZones([]);
+        }
+    }, [carrierId, zoneCategory, enqueueSnackbar]);
+
+    // Load custom zones when component mounts or carrierId changes
+    useEffect(() => {
+        loadCustomCarrierZones();
+    }, [loadCustomCarrierZones]);
+
+    // Sync zone creation phase ref with state
+    useEffect(() => {
+        zoneCreationPhaseRef.current = zoneCreationPhase;
+    }, [zoneCreationPhase]);
+
+    // Render zone overlays on the map
+    const renderZoneOverlays = useCallback(() => {
+        if (!googleMapRef.current || !showZones) return;
+
+        // Clear existing zone overlays
+        zoneOverlaysRef.current.forEach(overlay => {
+            if (overlay.setMap) {
+                overlay.setMap(null);
+            } else if (overlay.close) {
+                // InfoWindow
+                overlay.close();
+            }
+        });
+        zoneOverlaysRef.current = [];
+
+        // Close any open InfoWindows
+        if (window.currentZoneInfoWindow) {
+            window.currentZoneInfoWindow.close();
+            window.currentZoneInfoWindow = null;
+        }
+
+        console.log('🗺️ Rendering zone overlays:', zonesWithColors.length, 'zones');
+
+        zonesWithColors.forEach((zone, index) => {
+            console.log(`🏷️ Processing zone ${index + 1}:`, zone.zoneName || zone.name, `(${zone.cities?.length || 0} cities)`);
+
+            if (zone.cities && zone.cities.length > 0) {
+                // Create a polygon around the zone's cities
+                const coordinates = zone.cities
+                    .filter(city => city.latitude && city.longitude)
+                    .map(city => ({
+                        lat: parseFloat(city.latitude),
+                        lng: parseFloat(city.longitude)
+                    }));
+
+                if (coordinates.length >= 3) {
+                    // Create convex hull for zone boundary
+                    const hull = getConvexHull(coordinates);
+
+                    if (hull.length >= 3) {
+                        const zonePolygon = new window.google.maps.Polygon({
+                            paths: hull,
+                            fillColor: zone.color.primary,
+                            fillOpacity: 0.15,
+                            strokeColor: zone.color.primary,
+                            strokeWeight: 2,
+                            strokeOpacity: 0.8,
+                            map: googleMapRef.current,
+                            clickable: true
+                        });
+
+                        // Add zone label
+                        const bounds = new window.google.maps.LatLngBounds();
+                        hull.forEach(coord => bounds.extend(coord));
+                        const center = bounds.getCenter();
+
+                        // Create simple zone label with Google Maps InfoWindow (but minimal)
+                        const zoneLabel = new window.google.maps.InfoWindow({
+                            content: `<div style="font-size: 11px; font-weight: 600; color: ${zone.color.primary}; text-align: center; padding: 2px 4px;">
+                                        ${zone.zoneName || zone.name}<br>
+                                        <span style="font-size: 9px; color: #6b7280;">${zone.cities.length} cities</span>
+                                      </div>`,
+                            position: center,
+                            disableAutoPan: true,
+                            disableCloseButton: true
+                        });
+
+                        // Show label on polygon click with console logging
+                        zonePolygon.addListener('click', (event) => {
+                            console.log('🖱️ Zone polygon clicked:', zone.zoneName || zone.name);
+
+                            // Close any existing InfoWindows
+                            if (window.currentZoneInfoWindow) {
+                                window.currentZoneInfoWindow.close();
+                            }
+
+                            // Open this InfoWindow
+                            zoneLabel.open(googleMapRef.current);
+                            window.currentZoneInfoWindow = zoneLabel;
+                        });
+
+                        zoneOverlaysRef.current.push(zonePolygon, zoneLabel);
+                    }
+                } else if (coordinates.length >= 1) {
+                    // Fallback for zones with 1-2 cities: Create circular area around cities
+                    coordinates.forEach((coord, index) => {
+                        const circle = new window.google.maps.Circle({
+                            center: coord,
+                            radius: coordinates.length === 1 ? 25000 : 15000, // 25km for single city, 15km for 2 cities
+                            fillColor: zone.color.primary,
+                            fillOpacity: 0.1,
+                            strokeColor: zone.color.primary,
+                            strokeWeight: 2,
+                            strokeOpacity: 0.6,
+                            map: googleMapRef.current,
+                            clickable: true
+                        });
+
+                        zoneOverlaysRef.current.push(circle);
+                    });
+
+                    // Add zone label at first city
+                    const circleZoneLabel = new window.google.maps.InfoWindow({
+                        content: `<div style="font-size: 11px; font-weight: 600; color: ${zone.color.primary}; text-align: center; padding: 2px 4px;">
+                                    ${zone.zoneName || zone.name}<br>
+                                    <span style="font-size: 9px; color: #6b7280;">${zone.cities.length} cities</span>
+                                  </div>`,
+                        position: coordinates[0],
+                        disableAutoPan: true,
+                        disableCloseButton: true
+                    });
+
+                    // Show label on circle click with console logging
+                    coordinates.forEach((coord, index) => {
+                        const circle = zoneOverlaysRef.current[zoneOverlaysRef.current.length - coordinates.length + index];
+                        if (circle) {
+                            circle.addListener('click', (event) => {
+                                console.log('🖱️ Zone circle clicked:', zone.zoneName || zone.name);
+
+                                // Close any existing InfoWindows
+                                if (window.currentZoneInfoWindow) {
+                                    window.currentZoneInfoWindow.close();
+                                }
+
+                                // Open this InfoWindow
+                                circleZoneLabel.open(googleMapRef.current);
+                                window.currentZoneInfoWindow = circleZoneLabel;
+                            });
+                        }
+                    });
+
+                    zoneOverlaysRef.current.push(circleZoneLabel);
+                }
+            }
+        });
+    }, [zonesWithColors, showZones]);
+
+    // Simple convex hull algorithm for zone boundaries
+    const getConvexHull = useCallback((points) => {
+        if (points.length < 3) return points;
+
+        // Find the bottom-most point (and left-most in case of tie)
+        let start = 0;
+        for (let i = 1; i < points.length; i++) {
+            if (points[i].lat < points[start].lat ||
+                (points[i].lat === points[start].lat && points[i].lng < points[start].lng)) {
+                start = i;
+            }
+        }
+
+        // Sort points by polar angle with respect to start point
+        const startPoint = points[start];
+        const sortedPoints = points.filter((_, i) => i !== start).sort((a, b) => {
+            const angleA = Math.atan2(a.lat - startPoint.lat, a.lng - startPoint.lng);
+            const angleB = Math.atan2(b.lat - startPoint.lat, b.lng - startPoint.lng);
+            return angleA - angleB;
+        });
+
+        // Build convex hull
+        const hull = [startPoint];
+        for (const point of sortedPoints) {
+            while (hull.length > 1) {
+                const cross = (hull[hull.length - 1].lng - hull[hull.length - 2].lng) * (point.lat - hull[hull.length - 2].lat) -
+                    (hull[hull.length - 1].lat - hull[hull.length - 2].lat) * (point.lng - hull[hull.length - 2].lng);
+                if (cross > 0) break;
+                hull.pop();
+            }
+            hull.push(point);
+        }
+
+        return hull;
+    }, []);
+
+    // Handle zone boundary drawing completion - NEW TWO-PHASE APPROACH
+    const handleZoneBoundaryComplete = useCallback(async (overlay) => {
+        if (!overlay) return;
+
+        try {
+            console.log('🗺️ Polygon completion handler triggered');
+            console.log('📊 Current zone creation phase:', zoneCreationPhase);
+            console.log('✏️ Editing zone:', editingZone ? editingZone.name : 'none');
+
+            // Get polygon path coordinates
+            const path = overlay.getPath();
+            const coordinates = [];
+
+            for (let i = 0; i < path.getLength(); i++) {
+                const latLng = path.getAt(i);
+                coordinates.push({
+                    lat: latLng.lat(),
+                    lng: latLng.lng()
+                });
+            }
+
+            console.log('🗺️ Polygon drawn with coordinates:', coordinates.length, 'points');
+
+            // Assign color for preview
+            const colorIndex = customCarrierZones.length % ZONE_COLORS.length;
+            const zoneColor = ZONE_COLORS[colorIndex];
+
+            // Style the polygon for preview with distances
+            overlay.setOptions({
+                fillColor: zoneColor.primary,
+                fillOpacity: 0.3,
+                strokeColor: zoneColor.primary,
+                strokeWeight: 3,
+                strokeOpacity: 0.9,
+                clickable: true,
+                editable: true // Allow editing during confirmation phase
+            });
+
+            // Store the polygon data
+            setCurrentPolygon({
+                overlay: overlay,
+                coordinates: coordinates,
+                color: zoneColor
+            });
+
+            // Check current zone creation phase from ref (more reliable)
+            const currentPhase = zoneCreationPhaseRef.current;
+            console.log('🔍 Zone phase check - state:', zoneCreationPhase, 'ref:', currentPhase);
+
+            if (editingZone) {
+                // Editing existing zone - go straight to confirmation
+                console.log('✏️ Editing existing zone - setting confirmation phase');
+                setZoneCreationPhase('confirmation');
+            } else if (currentPhase === 'polygon') {
+                // New zone creation - STOP at shape confirmation (DO NOT detect cities automatically)
+                console.log('🛑 Zone polygon phase detected - moving to confirmation');
+                setZoneCreationPhase('confirmation');
+                zoneCreationPhaseRef.current = 'confirmation'; // Keep ref in sync
+                setZoneDrawingMode(false);
+                setDrawingMode('pan');
+
+                // Ensure city detection state is reset - user must manually confirm
+                setPolygonConfirmed(false);
+                setDetectedCities([]);
+
+                // Auto-open the zone legend panel to show confirmation UI
+                setZoneLegendOpen(true);
+
+                console.log('🛑 Polygon complete - STOPPING at shape confirmation phase');
+                enqueueSnackbar('Polygon created! Check the zone panel to review and confirm the shape', { variant: 'success' });
+
+                // DO NOT CALL confirmPolygonAndDetectCities automatically
+                return; // Exit early to prevent any automatic city detection
+            } else {
+                console.log('⚠️ Polygon completed but not in zone creation mode - phase:', currentPhase);
+            }
+
+        } catch (error) {
+            console.error('❌ Error handling polygon completion:', error);
+            enqueueSnackbar('Error processing polygon', { variant: 'error' });
+        }
+    }, [customCarrierZones.length, editingZone, zoneCreationPhase, enqueueSnackbar]);
+
+    // Render a custom zone boundary on the map
+    const renderCustomZoneBoundary = useCallback((zone) => {
+        if (!googleMapRef.current || !zone.boundary || !zone.boundary.coordinates) return;
+
+        try {
+            // Create polygon overlay
+            const polygon = new window.google.maps.Polygon({
+                paths: zone.boundary.coordinates.map(coord => ({
+                    lat: coord.lat,
+                    lng: coord.lng
+                })),
+                fillColor: zone.color?.primary || '#6b7280',
+                fillOpacity: 0.2,
+                strokeColor: zone.color?.primary || '#6b7280',
+                strokeWeight: 3,
+                strokeOpacity: 0.8,
+                clickable: true,
+                editable: false
+            });
+
+            polygon.setMap(googleMapRef.current);
+
+            // Add to persistent overlays
+            customZoneBoundariesRef.current.push({
+                overlay: polygon,
+                zone: zone,
+                coordinates: zone.boundary.coordinates
+            });
+
+            console.log('✅ Rendered custom zone boundary:', zone.name || zone.zoneName);
+        } catch (error) {
+            console.error('❌ Error rendering custom zone boundary:', error);
+        }
+    }, []);
+
+    // Generate unique zone code - MATCH EXISTING CARRIER PROCESS
+    const generateZoneCode = useCallback(async (zoneName) => {
+        if (!zoneName.trim() || !carrierId) return '';
+
+        try {
+            // Get existing carrier zones to check for duplicates
+            const getCarrierZoneSets = httpsCallable(functions, 'getCarrierCustomZoneSets');
+            const result = await getCarrierZoneSets({ carrierId });
+
+            const existingZoneCodes = new Set();
+            if (result.data.success) {
+                const zoneSets = result.data.zoneSets || [];
+                zoneSets.forEach(zoneSet => {
+                    if (zoneSet.zones && Array.isArray(zoneSet.zones)) {
+                        zoneSet.zones.forEach(zone => {
+                            if (zone.zoneId || zone.zoneCode) {
+                                existingZoneCodes.add((zone.zoneId || zone.zoneCode).toUpperCase());
+                            }
+                        });
+                    }
+                });
+            }
+
+            // Generate base code from zone name - EXACT SAME LOGIC
+            const baseCode = zoneName
+                .trim()
+                .toUpperCase()
+                .replace(/[^A-Z0-9\s]/g, '') // Remove special characters
+                .replace(/\s+/g, '_') // Replace spaces with underscores
+                .substring(0, 20); // Limit length
+
+            // Find unique code
+            let uniqueCode = baseCode;
+            let counter = 1;
+
+            while (existingZoneCodes.has(uniqueCode)) {
+                uniqueCode = `${baseCode}${counter}`;
+                counter++;
+            }
+
+            return uniqueCode;
+        } catch (error) {
+            console.error('Error generating zone code:', error);
+            // Fallback to simple generation
+            return zoneName
+                .trim()
+                .toUpperCase()
+                .replace(/[^A-Z0-9\s]/g, '')
+                .replace(/\s+/g, '_')
+                .substring(0, 20);
+        }
+    }, [carrierId]);
+
+    // Reset zone creation flow
+    const resetZoneCreation = useCallback(() => {
+        console.log('🔄 Resetting zone creation flow');
+        setZoneCreationPhase(null);
+        zoneCreationPhaseRef.current = null; // Keep ref in sync
+        setZoneFormData({
+            name: '',
+            code: '',
+            description: '',
+            serviceType: 'standard',
+            priority: 1
+        });
+        setCurrentPolygon(null);
+        setPolygonConfirmed(false);
+        setDetectedCities([]);
+        setZoneDrawingMode(false);
+        setDrawingMode('pan');
+        setSavingZone(false);
+        setDetectingCities(false);
+        setEditingZone(null);
+
+        // Remove any temporary polygon
+        if (currentPolygon?.overlay) {
+            currentPolygon.overlay.setMap(null);
+        }
+    }, [currentPolygon]);
+
+    // Start Phase 1: Zone Form
+    const startZoneCreation = useCallback(() => {
+        console.log('🚀 Starting zone creation - Phase 1: Form');
+        setZoneCreationPhase('form');
+
+        // Also open the zone legend panel if it's closed
+        if (!zoneLegendOpen) {
+            setZoneLegendOpen(true);
+        }
+    }, [zoneLegendOpen]);
+
+    // Handle accordion section toggle
+    const handleAccordionToggle = useCallback((section) => {
+        setExpandedSections(prev => ({
+            ...prev,
+            [section]: !prev[section]
+        }));
+    }, []);
+
+    // Move to Phase 2: Polygon Drawing
+    const proceedToPolygonDrawing = useCallback(() => {
+        if (!zoneFormData.name.trim()) {
+            enqueueSnackbar('Please enter a zone name', { variant: 'warning' });
+            return;
+        }
+
+        console.log('🚀 Moving to polygon drawing phase');
+        setZoneCreationPhase('polygon');
+        zoneCreationPhaseRef.current = 'polygon'; // Keep ref in sync
+        setZoneDrawingMode(true);
+        setDrawingMode('polygon');
+
+        // Generate zone code if not provided
+        if (!zoneFormData.code.trim()) {
+            const generatedCode = generateZoneCode(zoneFormData.name);
+            setZoneFormData(prev => ({ ...prev, code: generatedCode }));
+        }
+
+        enqueueSnackbar('Draw the zone boundary on the map', { variant: 'info' });
+    }, [zoneFormData.name, zoneFormData.code, enqueueSnackbar]);
+
+    // Move to Phase 3: Confirmation
+    const proceedToConfirmation = useCallback(() => {
+        if (!currentPolygon) {
+            enqueueSnackbar('Please draw a polygon first', { variant: 'warning' });
+            return;
+        }
+
+        setZoneCreationPhase('confirmation');
+        setZoneDrawingMode(false);
+        setDrawingMode('pan');
+    }, [currentPolygon, enqueueSnackbar]);
+
+    // Handle zone name change with async code generation - MATCH EXISTING PROCESS
+    const handleZoneNameChange = useCallback(async (name) => {
+        setZoneFormData(prev => ({ ...prev, name: name }));
+
+        // Auto-generate zone code if name provided
+        if (name.trim()) {
+            setGeneratingCode(true);
+            try {
+                const generatedCode = await generateZoneCode(name);
+                setZoneFormData(prev => ({ ...prev, code: generatedCode }));
+            } catch (error) {
+                console.error('Error generating zone code:', error);
+            } finally {
+                setGeneratingCode(false);
+            }
+        } else {
+            setZoneFormData(prev => ({ ...prev, code: '' }));
+        }
+    }, [generateZoneCode]);
+
+    // Handle other form field changes
+    const handleZoneFormChange = useCallback((field, value) => {
+        setZoneFormData(prev => ({ ...prev, [field]: value }));
+    }, []);
+
+    // Save new custom zone with detected cities
+    const handleSaveNewZone = useCallback(async () => {
+        if (!currentPolygon || !zoneFormData.name.trim() || !polygonConfirmed) {
+            enqueueSnackbar('Please complete all steps before saving', { variant: 'warning' });
+            return;
+        }
+
+        // Check authentication before proceeding
+        if (!isAuthenticated || !currentUser) {
+            enqueueSnackbar('Authentication required. Please refresh the page and log in again.', { variant: 'error' });
+            return;
+        }
+
+        setSavingZone(true);
+        try {
+            const zoneData = {
+                name: zoneFormData.name.trim(), // Updated to match cloud function
+                code: zoneFormData.code.trim() || generateZoneCode(zoneFormData.name),
+                description: zoneFormData.description.trim(),
+                serviceType: zoneFormData.serviceType || 'standard',
+                priority: parseInt(zoneFormData.priority) || 1,
+                active: true,
+                zoneType: 'custom_carrier_zone',
+                boundary: {
+                    type: 'polygon',
+                    coordinates: currentPolygon.coordinates
+                },
+                carrierId: carrierId,
+                zoneCategory: zoneCategory,
+                color: currentPolygon.color || { primary: '#6b7280', secondary: '#f3f4f6' },
+                cities: detectedCities.map(city => ({
+                    id: city.id || city.searchKey,
+                    city: city.city,
+                    provinceState: city.provinceState,
+                    country: city.country,
+                    latitude: city.latitude,
+                    longitude: city.longitude,
+                    searchKey: city.searchKey || city.id
+                })),
+                cityCount: detectedCities.length,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            console.log('💾 Saving zone with data:', zoneData);
+            console.log('🔐 Authentication status:', {
+                isAuthenticated,
+                hasCurrentUser: !!currentUser,
+                userId: currentUser?.uid,
+                email: currentUser?.email
+            });
+
+            // Save to database
+            const saveZoneBoundaryFn = httpsCallable(functions, 'saveZoneBoundary');
+            const result = await saveZoneBoundaryFn(zoneData);
+
+            if (result.data && result.data.success) {
+                console.log('✅ Zone saved successfully:', result.data);
+
+                // Create the new zone object
+                const newZone = {
+                    id: result.data.id || result.data.boundaryId,
+                    ...zoneData,
+                    overlay: currentPolygon.overlay,
+                    cities: detectedCities,
+                    cityCount: detectedCities.length
+                };
+
+                // Add to custom zones list
+                setCustomCarrierZones(prev => [...prev, newZone]);
+
+                // Update overlay styling to final state
+                if (currentPolygon.overlay && currentPolygon.color) {
+                    currentPolygon.overlay.setOptions({
+                        fillColor: currentPolygon.color.primary,
+                        fillOpacity: 0.2,
+                        strokeColor: currentPolygon.color.primary,
+                        strokeWeight: 3,
+                        strokeOpacity: 0.8,
+                        clickable: true,
+                        editable: false
+                    });
+                }
+
+                // Add to persistent overlays
+                customZoneBoundariesRef.current.push({
+                    overlay: currentPolygon.overlay,
+                    zone: newZone,
+                    coordinates: currentPolygon.coordinates
+                });
+
+                // Add detected cities to the visual cities list
+                const updatedVisualCities = [...visualCities];
+                detectedCities.forEach(city => {
+                    if (!updatedVisualCities.some(vc =>
+                        (vc.searchKey || vc.id) === (city.searchKey || city.id)
+                    )) {
+                        updatedVisualCities.push(city);
+                    }
+                });
+                setVisualCities(updatedVisualCities);
+
+                // Notify parent component of the changes
+                if (onSelectionComplete) {
+                    onSelectionComplete(updatedVisualCities);
+                }
+
+                enqueueSnackbar(`Zone "${zoneFormData.name}" created with ${detectedCities.length} cities`, { variant: 'success' });
+
+                // Reset the creation flow
+                resetZoneCreation();
+
+            } else {
+                throw new Error(result.data?.message || 'Failed to save zone - no success response');
+            }
+        } catch (error) {
+            console.error('❌ Error saving zone:', error);
+            let errorMessage = 'Failed to save zone';
+
+            if (error.code === 'functions/unauthenticated') {
+                errorMessage = 'Authentication session expired. Please refresh the page and try again.';
+            } else if (error.code === 'functions/invalid-argument') {
+                errorMessage = 'Invalid zone data provided';
+            } else if (error.code === 'functions/internal') {
+                errorMessage = 'Server error occurred. Please try again or contact support.';
+            } else if (error.message) {
+                errorMessage = `Failed to save zone: ${error.message}`;
+            }
+
+            enqueueSnackbar(errorMessage, { variant: 'error' });
+        } finally {
+            setSavingZone(false);
+        }
+    }, [currentPolygon, zoneFormData, polygonConfirmed, detectedCities, carrierId, zoneCategory, generateZoneCode, enqueueSnackbar, resetZoneCreation, visualCities, onSelectionComplete, isAuthenticated, currentUser]);
+
+    // Update existing zone boundary
+    const handleUpdateZoneBoundary = useCallback(async (zone, coordinates, overlay) => {
+        try {
+            const updateData = {
+                boundaryId: zone.id,
+                boundary: {
+                    type: 'polygon',
+                    coordinates: coordinates
+                },
+                updatedAt: new Date().toISOString()
+            };
+
+            // Update in database
+            const updateZoneBoundaryFn = httpsCallable(functions, 'updateZoneBoundary');
+            const result = await updateZoneBoundaryFn(updateData);
+
+            if (result.data.success) {
+                // Update local state
+                setCustomCarrierZones(prev => prev.map(z =>
+                    z.id === zone.id
+                        ? { ...z, boundary: updateData.boundary, overlay: overlay }
+                        : z
+                ));
+
+                // Update overlay reference
+                const overlayIndex = customZoneBoundariesRef.current.findIndex(
+                    boundary => boundary.zone.id === zone.id
+                );
+                if (overlayIndex !== -1) {
+                    customZoneBoundariesRef.current[overlayIndex] = {
+                        overlay: overlay,
+                        zone: { ...zone, boundary: updateData.boundary },
+                        coordinates: coordinates
+                    };
+                }
+
+                enqueueSnackbar(`Zone "${zone.name}" updated successfully`, { variant: 'success' });
+                setEditingZone(null);
+                setZoneDrawingMode(false);
+                setDrawingMode('pan');
+            }
+        } catch (error) {
+            console.error('❌ Error updating zone:', error);
+            enqueueSnackbar('Failed to update zone', { variant: 'error' });
+        }
+    }, [enqueueSnackbar]);
+
+    // Detect cities within polygon boundary
+    const detectCitiesInPolygon = useCallback(async (polygon) => {
+        if (!polygon || !polygon.coordinates || !window.google) return [];
+
+        try {
+            console.log('🔍 Detecting cities within polygon...');
+            console.log('📊 Polygon coordinates:', polygon.coordinates.length, 'points');
+
+            // Ensure geometry library is loaded
+            if (!window.google.maps.geometry || !window.google.maps.geometry.poly) {
+                console.error('❌ Google Maps geometry library not loaded');
+                return [];
+            }
+
+            // Create Google Maps polygon for point-in-polygon testing
+            const googlePolygon = new window.google.maps.Polygon({
+                paths: polygon.coordinates
+            });
+
+            // Get all cities from cached function (this ensures cities are loaded)
+            console.log('🏙️ Loading all cities from cache...');
+            const allCities = await getAllCitiesWithCoordinatesCached();
+            console.log('🏙️ Loaded', allCities.length, 'cities for polygon testing');
+
+            if (allCities.length === 0) {
+                console.warn('⚠️ No cities loaded from cache');
+                return [];
+            }
+
+            const citiesInPolygon = [];
+            let citiesChecked = 0;
+            let citiesWithCoords = 0;
+
+            // Test each city to see if it's inside the polygon
+            allCities.forEach((city, index) => {
+                if (city.latitude && city.longitude) {
+                    citiesWithCoords++;
+                    const cityLatLng = new window.google.maps.LatLng(city.latitude, city.longitude);
+
+                    try {
+                        if (window.google.maps.geometry.poly.containsLocation(cityLatLng, googlePolygon)) {
+                            citiesInPolygon.push(city);
+                            console.log(`✅ City inside polygon: ${city.city}, ${city.provinceState} (${city.latitude}, ${city.longitude})`);
+                        }
+                        citiesChecked++;
+                    } catch (pointError) {
+                        console.error(`❌ Error checking city ${city.city}:`, pointError);
+                    }
+                } else if (index < 5) {
+                    console.warn(`⚠️ City ${city.city} missing coordinates:`, { lat: city.latitude, lng: city.longitude });
+                }
+            });
+
+            console.log('🔍 Polygon detection stats:', {
+                totalCities: allCities.length,
+                citiesWithCoords,
+                citiesChecked,
+                citiesFound: citiesInPolygon.length,
+                polygonPoints: polygon.coordinates.length
+            });
+
+            console.log('✅ Found', citiesInPolygon.length, 'cities within polygon');
+            return citiesInPolygon;
+
+        } catch (error) {
+            console.error('❌ Error detecting cities in polygon:', error);
+            return [];
+        }
+    }, []); // getAllCitiesWithCoordinatesCached is stable, no need to include in deps
+
+    // Confirm polygon and detect cities - MANUAL TRIGGER ONLY
+    const confirmPolygonAndDetectCities = useCallback(async () => {
+        console.log('🔍 Manual city detection triggered by user');
+
+        if (!currentPolygon) {
+            console.log('❌ No polygon available for city detection');
+            return;
+        }
+
+        setDetectingCities(true);
+        try {
+            console.log('🏙️ Starting city detection within polygon...');
+
+            // Detect cities within the polygon
+            const cities = await detectCitiesInPolygon(currentPolygon);
+            setDetectedCities(cities);
+            setPolygonConfirmed(true);
+
+            console.log('✅ City detection complete:', cities.length, 'cities found');
+            enqueueSnackbar(`Found ${cities.length} cities within the zone boundary`, { variant: 'success' });
+
+        } catch (error) {
+            console.error('❌ Error confirming polygon:', error);
+            enqueueSnackbar('Error detecting cities in zone', { variant: 'error' });
+        } finally {
+            setDetectingCities(false);
+        }
+    }, [currentPolygon, detectCitiesInPolygon, enqueueSnackbar]);
 
     // Load and cache all cities with coordinates
     const loadAllCitiesWithCoordinates = useCallback(async () => {
@@ -1122,10 +1983,19 @@ const MapCitySelector = ({
                 }
             });
 
-            // Update drawing manager options - green for add, red for delete
-            const updateDrawingOptions = (isDeleteMode) => {
-                const fillColor = isDeleteMode ? '#ef4444' : '#10b981'; // Red for delete, green for add
-                const strokeColor = isDeleteMode ? '#dc2626' : '#059669'; // Dark red for delete, dark green for add
+            // Update drawing manager options - green for add, red for delete, zone color for zone drawing
+            const updateDrawingOptions = (isDeleteMode, zoneColor = null) => {
+                let fillColor, strokeColor;
+
+                if (zoneColor) {
+                    // Zone drawing mode - use zone color
+                    fillColor = zoneColor.primary;
+                    strokeColor = zoneColor.primary;
+                } else {
+                    // Regular city selection mode
+                    fillColor = isDeleteMode ? '#ef4444' : '#10b981'; // Red for delete, green for add
+                    strokeColor = isDeleteMode ? '#dc2626' : '#059669'; // Dark red for delete, dark green for add
+                }
 
                 drawingManager.setOptions({
                     polygonOptions: {
@@ -1173,7 +2043,26 @@ const MapCitySelector = ({
                         shapeType = 'unknown';
                 }
 
-                // Add real-time distance measurement labels
+                // Use ref to check current zone creation phase (avoid closure issues)
+                const currentZonePhase = zoneCreationPhaseRef.current;
+
+                // Check if we're in zone creation polygon phase
+                if (currentZonePhase === 'polygon' && shapeType === 'polygon') {
+                    console.log('🎯 [Zone Creation] Polygon completed - calling handleZoneBoundaryComplete');
+                    // Handle zone boundary drawing completion
+                    handleZoneBoundaryComplete(event.overlay);
+                    return;
+                }
+
+                // Check if we're editing an existing zone
+                if (editingZone && shapeType === 'polygon') {
+                    console.log('✏️ [Zone Editing] Polygon completed - calling handleZoneBoundaryComplete');
+                    // Handle zone boundary editing
+                    handleZoneBoundaryComplete(event.overlay);
+                    return;
+                }
+
+                // Regular city selection mode - Add real-time distance measurement labels
                 addRealTimeDistanceMeasurement(event.overlay, shapeType);
 
                 // Add real-time update listeners for live measurement updates
@@ -1200,7 +2089,13 @@ const MapCitySelector = ({
                     });
                 }
 
-                handleShapeComplete(event.overlay, shapeType);
+                // Use ref to get current zone creation phase (avoids closure issues)
+                const currentZonePhaseForShapeHandler = zoneCreationPhaseRef.current;
+
+                // Only call handleShapeComplete for regular city selection, NOT zone creation
+                if (currentZonePhaseForShapeHandler !== 'polygon' && !editingZone) {
+                    handleShapeComplete(event.overlay, shapeType);
+                }
             });
 
             setDrawingToolsReady(true);
@@ -1238,7 +2133,40 @@ const MapCitySelector = ({
         }
     }, [mapLoaded, visualCities, mapMode, renderCityMarkers]); // Use visualCities for immediate updates
 
+    // Render zone overlays when zones change
+    useEffect(() => {
+        if (mapLoaded && googleMapRef.current && zonesWithColors.length > 0) {
+            setTimeout(() => {
+                renderZoneOverlays();
+            }, 500); // Small delay to ensure map is fully loaded
+        }
+    }, [mapLoaded, zonesWithColors, renderZoneOverlays]);
 
+    // Toggle zone visibility
+    useEffect(() => {
+        if (mapLoaded && googleMapRef.current) {
+            if (showZones) {
+                renderZoneOverlays();
+            } else {
+                // Hide all zone overlays
+                zoneOverlaysRef.current.forEach(overlay => {
+                    overlay.setMap(null);
+                });
+                zoneOverlaysRef.current = [];
+            }
+        }
+    }, [showZones, mapLoaded, renderZoneOverlays]);
+
+    // Update drawing options when zone drawing mode changes
+    useEffect(() => {
+        if (drawingManagerRef.current && drawingManagerRef.current.updateDrawingOptions) {
+            if (zoneDrawingMode && selectedZoneForDrawing) {
+                drawingManagerRef.current.updateDrawingOptions(false, selectedZoneForDrawing.color);
+            } else {
+                drawingManagerRef.current.updateDrawingOptions(deleteMode);
+            }
+        }
+    }, [zoneDrawingMode, selectedZoneForDrawing, deleteMode]);
 
     useEffect(() => {
         cityMarkersRef.current = cityMarkers;
@@ -1306,7 +2234,15 @@ const MapCitySelector = ({
             bgcolor: 'background.paper'
         }}>
             {/* Map Container */}
-            <Box ref={mapRef} sx={{ width: '100%', height: '100%', bgcolor: '#e0e0e0' }} />
+            <Box
+                ref={mapRef}
+                sx={{
+                    width: '100%',
+                    height: '100%',
+                    bgcolor: '#e0e0e0',
+                    cursor: zoneCreationPhase === 'polygon' ? 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23000000\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'><path d=\'m12 19 7-7 3 3-7 7-3-3z\'></path><path d=\'m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z\'></path><path d=\'m2 2 7.586 7.586\'></path><circle cx=\'11\' cy=\'11\' r=\'2\'></circle></svg>") 12 12, crosshair' : 'default'
+                }}
+            />
 
             {/* Modern Floating Toolbar */}
             <Box sx={{
@@ -1402,6 +2338,48 @@ const MapCitySelector = ({
                 </Tooltip>
 
                 <Box sx={{ width: '100%', height: 1, bgcolor: '#e5e7eb', my: 1 }} />
+
+                {/* Zone Visibility Toggle */}
+                {zonesWithColors.length > 0 && (
+                    <Tooltip title={showZones ? "Hide Zone Boundaries" : "Show Zone Boundaries"} placement="right">
+                        <Fab
+                            size="small"
+                            color={showZones ? 'primary' : 'default'}
+                            onClick={() => setShowZones(!showZones)}
+                            sx={{
+                                width: 40,
+                                height: 40,
+                                backgroundColor: showZones ? '#3b82f6' : undefined
+                            }}
+                        >
+                            <ZonesIcon fontSize="small" />
+                        </Fab>
+                    </Tooltip>
+                )}
+
+                <Box sx={{ width: '100%', height: 1, bgcolor: '#e5e7eb', my: 1 }} />
+
+                {/* Create New Custom Zone */}
+                <Tooltip title={zoneCreationPhase ? "Zone Creation in Progress" : "Create New Custom Zone"} placement="right">
+                    <Fab
+                        size="small"
+                        color="secondary"
+                        onClick={startZoneCreation}
+                        sx={{
+                            width: 40,
+                            height: 40,
+                            backgroundColor: zoneCreationPhase ? '#8b5cf6' : undefined,
+                            transform: zoneCreationPhase ? 'scale(1.1)' : 'scale(1)',
+                            transition: 'all 0.2s ease-in-out',
+                            '&:hover': {
+                                transform: 'scale(1.1)',
+                                backgroundColor: zoneCreationPhase ? '#7c3aed' : undefined
+                            }
+                        }}
+                    >
+                        <AddIcon fontSize="small" />
+                    </Fab>
+                </Tooltip>
 
                 {/* Delete Mode Toggle */}
                 <Tooltip title={deleteMode ? "Switch to Add Mode" : "Switch to Delete Mode"} placement="right">
@@ -1543,6 +2521,614 @@ const MapCitySelector = ({
                         </Typography>
                     </Card>
                 </Box>
+            )}
+
+            {/* Zone Legend Panel - Always Show for Carriers */}
+            {carrierId && (
+                <Card sx={{
+                    position: 'absolute',
+                    top: 120,
+                    right: 16,
+                    width: zoneLegendOpen ? 320 : 48,
+                    maxHeight: '80vh',
+                    zIndex: 1000,
+                    transition: 'width 0.3s ease-in-out',
+                    overflow: 'hidden'
+                }}>
+                    <CardHeader
+                        title={
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                {zoneLegendOpen && (
+                                    <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                        Zone Management
+                                    </Typography>
+                                )}
+                                <IconButton
+                                    size="small"
+                                    onClick={() => setZoneLegendOpen(!zoneLegendOpen)}
+                                >
+                                    {zoneLegendOpen ? <ChevronRightIcon /> : <ZonesIcon />}
+                                </IconButton>
+                            </Box>
+                        }
+                        sx={{
+                            py: 1,
+                            px: 2,
+                            '& .MuiCardHeader-title': {
+                                fontSize: '14px'
+                            }
+                        }}
+                    />
+
+                    {zoneLegendOpen && (
+                        <CardContent sx={{ p: 0, maxHeight: 'calc(80vh - 80px)', overflow: 'auto' }}>
+                            {/* Zone Creation Section - Expanded by Default */}
+                            <Accordion
+                                expanded={expandedSections.zoneCreation}
+                                onChange={() => handleAccordionToggle('zoneCreation')}
+                                sx={{
+                                    boxShadow: 'none',
+                                    '&:before': { display: 'none' },
+                                    borderBottom: '1px solid #e5e7eb'
+                                }}
+                            >
+                                <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ fontSize: '16px' }} />}>
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                        🆕 Create Custom Zone
+                                    </Typography>
+                                </AccordionSummary>
+                                <AccordionDetails sx={{ p: 2 }}>
+                                    {/* Phase Indicator */}
+                                    {zoneCreationPhase && (
+                                        <Box sx={{
+                                            display: 'flex',
+                                            justifyContent: 'center',
+                                            mb: 2,
+                                            gap: 1
+                                        }}>
+                                            <Chip
+                                                label="1. Form"
+                                                size="small"
+                                                color={zoneCreationPhase === 'form' ? 'secondary' : 'default'}
+                                                variant={zoneCreationPhase === 'form' ? 'filled' : 'outlined'}
+                                                sx={{ fontSize: '9px' }}
+                                            />
+                                            <Chip
+                                                label="2. Polygon"
+                                                size="small"
+                                                color={zoneCreationPhase === 'polygon' ? 'secondary' : 'default'}
+                                                variant={zoneCreationPhase === 'polygon' ? 'filled' : 'outlined'}
+                                                sx={{ fontSize: '9px' }}
+                                            />
+                                            <Chip
+                                                label="3. Confirm"
+                                                size="small"
+                                                color={zoneCreationPhase === 'confirmation' ? 'secondary' : 'default'}
+                                                variant={zoneCreationPhase === 'confirmation' ? 'filled' : 'outlined'}
+                                                sx={{ fontSize: '9px' }}
+                                            />
+                                        </Box>
+                                    )}
+
+                                    {/* Start Creation Button */}
+                                    {!zoneCreationPhase && (
+                                        <Button
+                                            variant="contained"
+                                            color="secondary"
+                                            size="small"
+                                            startIcon={<AddIcon />}
+                                            onClick={startZoneCreation}
+                                            fullWidth
+                                            sx={{ fontSize: '11px' }}
+                                        >
+                                            Create New Zone
+                                        </Button>
+                                    )}
+
+                                    {/* Phase 2: Polygon Drawing */}
+                                    {zoneCreationPhase === 'polygon' && (
+                                        <Box sx={{ textAlign: 'center' }}>
+                                            <Typography sx={{
+                                                fontSize: '10px',
+                                                color: '#8b5cf6',
+                                                fontWeight: 500,
+                                                mb: 2
+                                            }}>
+                                                🗺️ Draw the zone boundary on the map
+                                            </Typography>
+                                            <Button
+                                                variant="outlined"
+                                                color="error"
+                                                size="small"
+                                                onClick={resetZoneCreation}
+                                                fullWidth
+                                                sx={{ fontSize: '10px' }}
+                                            >
+                                                Cancel
+                                            </Button>
+                                        </Box>
+                                    )}
+
+                                    {/* Phase 3: Shape Confirmation */}
+                                    {zoneCreationPhase === 'confirmation' && (
+                                        <Box>
+                                            {!polygonConfirmed ? (
+                                                // Step 1: Confirm Shape
+                                                <>
+                                                    <Typography sx={{
+                                                        fontSize: '11px',
+                                                        color: '#374151',
+                                                        fontWeight: 500,
+                                                        mb: 1,
+                                                        textAlign: 'center'
+                                                    }}>
+                                                        🎯 Review & Confirm Zone Shape
+                                                    </Typography>
+
+                                                    {currentPolygon && (
+                                                        <Box sx={{
+                                                            p: 1.5,
+                                                            backgroundColor: '#fef3c7',
+                                                            borderRadius: 1,
+                                                            border: '1px solid #f59e0b',
+                                                            mb: 2
+                                                        }}>
+                                                            <Typography sx={{ fontSize: '10px', fontWeight: 500, color: '#92400e' }}>
+                                                                📍 Polygon: {currentPolygon.coordinates.length} coordinate points
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '9px', color: '#92400e', mt: 0.5 }}>
+                                                                ⚠️ Review the shape before detecting cities
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
+
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                        <Button
+                                                            variant="contained"
+                                                            color="secondary"
+                                                            size="small"
+                                                            onClick={confirmPolygonAndDetectCities}
+                                                            disabled={detectingCities}
+                                                            fullWidth
+                                                            sx={{ fontSize: '11px' }}
+                                                            startIcon={detectingCities ? <CircularProgress size={14} /> : null}
+                                                        >
+                                                            {detectingCities ? 'Detecting Cities...' : '✅ Confirm Shape & Detect Cities'}
+                                                        </Button>
+                                                        <Button
+                                                            variant="outlined"
+                                                            size="small"
+                                                            onClick={() => {
+                                                                setZoneCreationPhase('polygon');
+                                                                setZoneDrawingMode(true);
+                                                                setDrawingMode('polygon');
+                                                                // Remove current polygon to redraw
+                                                                if (currentPolygon?.overlay) {
+                                                                    currentPolygon.overlay.setMap(null);
+                                                                    setCurrentPolygon(null);
+                                                                }
+                                                            }}
+                                                            fullWidth
+                                                            sx={{ fontSize: '11px' }}
+                                                        >
+                                                            ✏️ Edit Shape
+                                                        </Button>
+                                                    </Box>
+                                                </>
+                                            ) : (
+                                                // Step 2: Save Zone with Cities
+                                                <>
+                                                    <Typography sx={{
+                                                        fontSize: '11px',
+                                                        color: '#374151',
+                                                        fontWeight: 500,
+                                                        mb: 1,
+                                                        textAlign: 'center'
+                                                    }}>
+                                                        ✅ Cities Detected - Ready to Save
+                                                    </Typography>
+
+                                                    {currentPolygon && (
+                                                        <Box sx={{
+                                                            p: 1.5,
+                                                            backgroundColor: '#f0fdf4',
+                                                            borderRadius: 1,
+                                                            border: '1px solid #10b981',
+                                                            mb: 2
+                                                        }}>
+                                                            <Typography sx={{ fontSize: '10px', fontWeight: 500, color: '#047857' }}>
+                                                                📍 Polygon: {currentPolygon.coordinates.length} points
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '10px', color: '#047857', mt: 0.5 }}>
+                                                                🏙️ Cities: {detectedCities.length} detected within boundary
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
+
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                        <Button
+                                                            variant="contained"
+                                                            color="primary"
+                                                            size="small"
+                                                            onClick={handleSaveNewZone}
+                                                            disabled={savingZone}
+                                                            fullWidth
+                                                            sx={{ fontSize: '11px' }}
+                                                            startIcon={savingZone ? <CircularProgress size={14} /> : null}
+                                                        >
+                                                            {savingZone ? 'Saving Zone...' : `💾 Save Zone (${detectedCities.length} cities)`}
+                                                        </Button>
+                                                        <Button
+                                                            variant="outlined"
+                                                            size="small"
+                                                            onClick={() => {
+                                                                // Go back to shape confirmation
+                                                                setPolygonConfirmed(false);
+                                                                setDetectedCities([]);
+                                                            }}
+                                                            fullWidth
+                                                            sx={{ fontSize: '11px' }}
+                                                        >
+                                                            ↩️ Back to Shape Review
+                                                        </Button>
+                                                        <Button
+                                                            variant="outlined"
+                                                            color="error"
+                                                            size="small"
+                                                            onClick={resetZoneCreation}
+                                                            fullWidth
+                                                            sx={{ fontSize: '10px' }}
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    </Box>
+                                                </>
+                                            )}
+                                        </Box>
+                                    )}
+                                </AccordionDetails>
+                            </Accordion>
+
+                            {/* Zone Layer Controls Section */}
+                            <Accordion
+                                expanded={expandedSections.zoneLayers}
+                                onChange={() => handleAccordionToggle('zoneLayers')}
+                                sx={{
+                                    boxShadow: 'none',
+                                    '&:before': { display: 'none' },
+                                    borderBottom: '1px solid #e5e7eb'
+                                }}
+                            >
+                                <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ fontSize: '16px' }} />}>
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                        🎛️ Zone Layers
+                                    </Typography>
+                                </AccordionSummary>
+                                <AccordionDetails sx={{ p: 2 }}>
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={showSystemZones}
+                                                onChange={(e) => setShowSystemZones(e.target.checked)}
+                                                size="small"
+                                            />
+                                        }
+                                        label={
+                                            <Typography sx={{ fontSize: '11px' }}>
+                                                System Zones ({zonesWithColors.filter(z => z.type.includes('system')).length})
+                                            </Typography>
+                                        }
+                                    />
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={showCustomZones}
+                                                onChange={(e) => setShowCustomZones(e.target.checked)}
+                                                size="small"
+                                            />
+                                        }
+                                        label={
+                                            <Typography sx={{ fontSize: '11px' }}>
+                                                Custom Zones ({customCarrierZones.length})
+                                            </Typography>
+                                        }
+                                    />
+                                </AccordionDetails>
+                            </Accordion>
+
+                            {/* System Zones Section */}
+                            {showSystemZones && zonesWithColors.filter(z => z.type.includes('system')).length > 0 && (
+                                <Accordion
+                                    expanded={expandedSections.systemZones}
+                                    onChange={() => handleAccordionToggle('systemZones')}
+                                    sx={{
+                                        boxShadow: 'none',
+                                        '&:before': { display: 'none' },
+                                        borderBottom: '1px solid #e5e7eb'
+                                    }}
+                                >
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ fontSize: '16px' }} />}>
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                            📋 System Zones ({zonesWithColors.filter(z => z.type.includes('system')).length})
+                                        </Typography>
+                                    </AccordionSummary>
+                                    <AccordionDetails sx={{ p: 2 }}>
+                                        {zonesWithColors.filter(z => z.type.includes('system')).map((zone) => (
+                                            <Box key={zone.id} sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                p: 1,
+                                                mb: 0.5,
+                                                border: '1px solid #e5e7eb',
+                                                borderRadius: 1,
+                                                backgroundColor: zone.color.secondary
+                                            }}>
+                                                <Box sx={{
+                                                    width: 12,
+                                                    height: 12,
+                                                    backgroundColor: zone.color.primary,
+                                                    borderRadius: '50%',
+                                                    mr: 1
+                                                }} />
+                                                <Box sx={{ flex: 1 }}>
+                                                    <Typography sx={{ fontSize: '10px', fontWeight: 500 }}>
+                                                        {zone.zoneName || zone.name}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '9px', color: '#6b7280' }}>
+                                                        {zone.cities.length} cities
+                                                    </Typography>
+                                                </Box>
+                                                <Chip
+                                                    label="System"
+                                                    size="small"
+                                                    variant="outlined"
+                                                    sx={{
+                                                        fontSize: '8px',
+                                                        height: 16,
+                                                        borderColor: zone.color.primary,
+                                                        color: zone.color.primary
+                                                    }}
+                                                />
+                                            </Box>
+                                        ))}
+                                    </AccordionDetails>
+                                </Accordion>
+                            )}
+
+                            {/* Custom Zones Section */}
+                            {showCustomZones && (
+                                <Accordion
+                                    expanded={expandedSections.customZones}
+                                    onChange={() => handleAccordionToggle('customZones')}
+                                    sx={{
+                                        boxShadow: 'none',
+                                        '&:before': { display: 'none' }
+                                    }}
+                                >
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ fontSize: '16px' }} />}>
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                            ✏️ Custom Carrier Zones ({customCarrierZones.length})
+                                        </Typography>
+                                    </AccordionSummary>
+                                    <AccordionDetails sx={{ p: 2 }}>
+                                        {customCarrierZones.length === 0 ? (
+                                            <Typography sx={{ fontSize: '10px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                No custom zones created yet
+                                            </Typography>
+                                        ) : (
+                                            customCarrierZones.map((zone) => (
+                                                <Box key={zone.id} sx={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    p: 1,
+                                                    mb: 0.5,
+                                                    border: '1px solid #e5e7eb',
+                                                    borderRadius: 1,
+                                                    backgroundColor: '#f8fafc'
+                                                }}>
+                                                    <Box sx={{
+                                                        width: 12,
+                                                        height: 12,
+                                                        backgroundColor: zone.color?.primary || '#6b7280',
+                                                        borderRadius: '50%',
+                                                        mr: 1
+                                                    }} />
+                                                    <Box sx={{ flex: 1 }}>
+                                                        <Typography sx={{ fontSize: '10px', fontWeight: 500 }}>
+                                                            {zone.name}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '9px', color: '#6b7280' }}>
+                                                            Custom boundary
+                                                        </Typography>
+                                                    </Box>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => {
+                                                            // Start editing zone boundary
+                                                            setEditingZone(zone);
+                                                            setZoneDrawingMode(true);
+                                                            setDrawingMode('polygon');
+
+                                                            // Remove current overlay to redraw
+                                                            const overlayIndex = customZoneBoundariesRef.current.findIndex(
+                                                                boundary => boundary.zone.id === zone.id
+                                                            );
+                                                            if (overlayIndex !== -1) {
+                                                                const boundary = customZoneBoundariesRef.current[overlayIndex];
+                                                                boundary.overlay.setMap(null);
+                                                                customZoneBoundariesRef.current.splice(overlayIndex, 1);
+                                                            }
+                                                        }}
+                                                        sx={{ p: 0.5 }}
+                                                    >
+                                                        <EditIcon sx={{ fontSize: '12px' }} />
+                                                    </IconButton>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={async () => {
+                                                            try {
+                                                                // Delete zone boundary from database
+                                                                const deleteZoneBoundaryFn = httpsCallable(functions, 'deleteZoneBoundary');
+                                                                const result = await deleteZoneBoundaryFn({
+                                                                    boundaryId: zone.id,
+                                                                    carrierId: carrierId
+                                                                });
+
+                                                                if (result.data.success) {
+                                                                    // Remove from custom zones list
+                                                                    setCustomCarrierZones(prev => prev.filter(z => z.id !== zone.id));
+
+                                                                    // Remove overlay from map
+                                                                    const overlayIndex = customZoneBoundariesRef.current.findIndex(
+                                                                        boundary => boundary.zone.id === zone.id
+                                                                    );
+                                                                    if (overlayIndex !== -1) {
+                                                                        const boundary = customZoneBoundariesRef.current[overlayIndex];
+                                                                        boundary.overlay.setMap(null);
+                                                                        customZoneBoundariesRef.current.splice(overlayIndex, 1);
+                                                                    }
+
+                                                                    enqueueSnackbar(`Zone "${zone.name}" deleted successfully`, { variant: 'success' });
+                                                                }
+                                                            } catch (error) {
+                                                                console.error('❌ Error deleting zone:', error);
+                                                                enqueueSnackbar('Failed to delete zone', { variant: 'error' });
+                                                            }
+                                                        }}
+                                                        sx={{ p: 0.5, color: '#ef4444' }}
+                                                    >
+                                                        <DeleteIcon sx={{ fontSize: '12px' }} />
+                                                    </IconButton>
+                                                </Box>
+                                            ))
+                                        )}
+                                    </AccordionDetails>
+                                </Accordion>
+                            )}
+                        </CardContent>
+                    )}
+                </Card>
+            )}
+
+            {/* Phase 1: Zone Form Sliding Panel */}
+            {zoneCreationPhase === 'form' && (
+                <Card sx={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    width: 400,
+                    height: '100%',
+                    zIndex: 1200,
+                    backgroundColor: 'white',
+                    borderLeft: '1px solid #e5e7eb',
+                    boxShadow: '-4px 0 20px rgba(0,0,0,0.1)'
+                }}>
+                    <CardHeader
+                        title={
+                            <Typography sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                                📝 Phase 1: Zone Information
+                            </Typography>
+                        }
+                        action={
+                            <IconButton onClick={resetZoneCreation} size="small">
+                                <ChevronRightIcon />
+                            </IconButton>
+                        }
+                        sx={{ borderBottom: '1px solid #e5e7eb' }}
+                    />
+
+                    <CardContent sx={{ p: 3, height: 'calc(100% - 140px)', overflow: 'auto' }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {/* Zone Name */}
+                            <TextField
+                                label="Zone Name"
+                                value={zoneFormData.name}
+                                onChange={(e) => handleZoneNameChange(e.target.value)}
+                                placeholder="e.g., Downtown Toronto"
+                                required
+                                fullWidth
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
+                                helperText="Enter a descriptive name for this zone"
+                            />
+
+                            {/* Zone Code */}
+                            <TextField
+                                label="Zone Code"
+                                value={zoneFormData.code}
+                                onChange={(e) => handleZoneFormChange('code', e.target.value.toUpperCase())}
+                                placeholder="Auto-generated from zone name"
+                                fullWidth
+                                size="small"
+                                InputProps={{
+                                    sx: { fontSize: '12px' },
+                                    readOnly: true, // Auto-generated, read-only like existing process
+                                    endAdornment: generatingCode && (
+                                        <CircularProgress size={16} />
+                                    )
+                                }}
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                                helperText="Auto-generated from zone name"
+                                required
+                            />
+
+                            {/* Description */}
+                            <TextField
+                                label="Description"
+                                value={zoneFormData.description}
+                                onChange={(e) => handleZoneFormChange('description', e.target.value)}
+                                placeholder="Optional description of the zone"
+                                fullWidth
+                                size="small"
+                                multiline
+                                rows={2}
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                }}
+                                helperText="Optional description for this zone"
+                            />
+                        </Box>
+                    </CardContent>
+
+                    <Box sx={{
+                        p: 3,
+                        borderTop: '1px solid #e5e7eb',
+                        display: 'flex',
+                        gap: 2,
+                        justifyContent: 'flex-end'
+                    }}>
+                        <Button
+                            onClick={resetZoneCreation}
+                            size="small"
+                            sx={{
+                                fontSize: '12px',
+                                textTransform: 'none'
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={proceedToPolygonDrawing}
+                            variant="contained"
+                            color="secondary"
+                            size="small"
+                            disabled={!zoneFormData.name.trim()}
+                            sx={{
+                                fontSize: '12px',
+                                textTransform: 'none'
+                            }}
+                        >
+                            Continue to Draw Boundary →
+                        </Button>
+                    </Box>
+                </Card>
             )}
 
             {/* Professional Confirmation Dialog */}

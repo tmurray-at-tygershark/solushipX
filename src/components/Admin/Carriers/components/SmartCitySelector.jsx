@@ -35,7 +35,8 @@ const SmartCitySelector = ({
     onMapAreaSave,
     savedAreas = [],
     carrierId,
-    carrierName
+    carrierName,
+    zonesWithColors = []
 }) => {
     const { enqueueSnackbar } = useSnackbar();
     const { searchCities } = useGeographicData();
@@ -683,6 +684,7 @@ const SmartCitySelector = ({
                         onDone={() => setActiveTab(0)}
                         initialAreas={savedAreas.filter(a => a.zoneCategory === zoneCategory)}
                         carrierId={carrierId}
+                        zonesWithColors={zonesWithColors}
                     />
                 </Suspense>
             </Box>

@@ -51,7 +51,8 @@ const SystemZoneSelector = ({
     showActions = false,
     onEditZone,
     onDeleteZone,
-    enabledZoneIds = null // Filter to only show these zone IDs
+    enabledZoneIds = null, // Filter to only show these zone IDs
+    confirmButton = false // When true, don't auto-call onZoneSelection
 }) => {
     const { enqueueSnackbar } = useSnackbar();
 
@@ -207,18 +208,27 @@ const SystemZoneSelector = ({
             }
 
             setSelectedZones(newSelection);
-            onZoneSelection(newSelection);
+            if (!confirmButton) {
+                onZoneSelection(newSelection);
+            }
         } else {
             setSelectedZones([zone]);
-            onZoneSelection([zone]);
+            if (!confirmButton) {
+                onZoneSelection([zone]);
+            }
         }
-    }, [selectedZones, multiSelect, onZoneSelection]);
+    }, [selectedZones, multiSelect, onZoneSelection, confirmButton]);
 
     // Handle search
     const handleSearch = useCallback(() => {
         setSearchTerm(searchDisplay);
         setPage(0); // Reset to first page when searching
     }, [searchDisplay]);
+
+    // Handle confirm selection (when confirmButton is true)
+    const handleConfirmSelection = useCallback(() => {
+        onZoneSelection(selectedZones);
+    }, [selectedZones, onZoneSelection]);
 
     // Auto-search with debounce
     useEffect(() => {
@@ -508,9 +518,21 @@ const SystemZoneSelector = ({
             {/* Selection Summary */}
             {multiSelect && selectedZones.length > 0 && (
                 <Box sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                    <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
-                        Selected Zones ({selectedZones.length}):
-                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                            Selected Zones ({selectedZones.length}):
+                        </Typography>
+                        {confirmButton && (
+                            <Button
+                                variant="contained"
+                                size="small"
+                                onClick={handleConfirmSelection}
+                                sx={{ fontSize: '11px', minWidth: 'auto', px: 2 }}
+                            >
+                                Add Selected Zones
+                            </Button>
+                        )}
+                    </Box>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                         {selectedZones.map(zone => (
                             <Chip

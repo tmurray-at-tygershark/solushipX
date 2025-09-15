@@ -3487,14 +3487,6 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                     </ListItemText>
                 </MenuItem>
 
-                <MenuItem onClick={() => handleManageRoutes(selectedQuickshipCarrier)}>
-                    <ListItemIcon>
-                        <RouteIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>Carrier Routes</Typography>
-                    </ListItemText>
-                </MenuItem>
 
                 <MenuItem onClick={() => handleManageWeight(selectedQuickshipCarrier)}>
                     <ListItemIcon>
@@ -3514,34 +3506,6 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                     </ListItemText>
                 </MenuItem>
 
-                <MenuItem onClick={() => handleManageDimFactors(selectedQuickshipCarrier)}>
-                    <ListItemIcon>
-                        <CalculateIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>DIM Factor Management</Typography>
-                    </ListItemText>
-                </MenuItem>
-
-                <Divider />
-
-                <MenuItem onClick={() => handleUploadRateCard(selectedQuickshipCarrier)}>
-                    <ListItemIcon>
-                        <CloudUploadIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>Upload Rate Card</Typography>
-                    </ListItemText>
-                </MenuItem>
-
-                <MenuItem onClick={() => handleConvertToConnected(selectedQuickshipCarrier)}>
-                    <ListItemIcon>
-                        <UpgradeIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>Convert to Connected</Typography>
-                    </ListItemText>
-                </MenuItem>
 
                 <Divider />
                 <MenuItem onClick={() => handleDeleteQuickshipCarrier(selectedQuickshipCarrier)}>

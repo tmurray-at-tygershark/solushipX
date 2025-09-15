@@ -656,15 +656,64 @@ const RateDetails = ({
         });
 
         // Tax charges should not have profit calculations - they are pass-through charges
-        if (item.isTax || isTaxCharge(item.code)) {
-            console.log(`🚫 Returning null for tax charge: ${item.code}`);
+        // CRITICAL FIX: Never treat FRT as a tax item, even if isTax flag is incorrectly set
+        const isActuallyTaxItem = (item.code !== 'FRT') && (item.isTax || isTaxCharge(item.code));
+
+        if (isActuallyTaxItem) {
+            console.log(`🚫 Returning null for tax charge: ${item.code}`, {
+                itemIsTax: item.isTax,
+                isTaxChargeResult: isTaxCharge(item.code),
+                code: item.code,
+                description: item.description
+            });
             return null; // Special value to indicate $0.00 for taxes
         }
 
-        const actualCost = parseFloat(item.actualCost) || 0;
-        const quotedCost = parseFloat(item.quotedCost) || 0;
-        const actualCharge = parseFloat(item.actualCharge) || 0;
-        const quotedCharge = parseFloat(item.quotedCharge) || 0;
+        console.log(`✅ Processing non-tax item for profit: ${item.code}`, {
+            itemIsTax: item.isTax,
+            isTaxChargeResult: isTaxCharge(item.code),
+            code: item.code,
+            description: item.description,
+            isActuallyTaxItem
+        });
+
+        // Robust parsing that handles currency symbols and formatting
+        const parseAmount = (value) => {
+            if (typeof value === 'number') return value;
+            if (typeof value === 'string') {
+                // Remove currency symbols, commas, and spaces
+                const cleaned = value.replace(/[\$,\s]/g, '');
+                const parsed = parseFloat(cleaned);
+                return isNaN(parsed) ? 0 : parsed;
+            }
+            return 0;
+        };
+
+        const actualCost = parseAmount(item.actualCost);
+        const quotedCost = parseAmount(item.quotedCost);
+        const actualCharge = parseAmount(item.actualCharge);
+        const quotedCharge = parseAmount(item.quotedCharge);
+
+        console.log(`🔍 DETAILED PARSING for ${item.id} (${item.code}):`, {
+            raw: {
+                actualCost: item.actualCost,
+                quotedCost: item.quotedCost,
+                actualCharge: item.actualCharge,
+                quotedCharge: item.quotedCharge
+            },
+            parsed: {
+                actualCost,
+                quotedCost,
+                actualCharge,
+                quotedCharge
+            },
+            types: {
+                actualCost: typeof item.actualCost,
+                quotedCost: typeof item.quotedCost,
+                actualCharge: typeof item.actualCharge,
+                quotedCharge: typeof item.quotedCharge
+            }
+        });
 
         // Get currency information
         const actualCostCurrency = item.actualCostCurrency || item.currency || 'CAD';
@@ -709,11 +758,22 @@ const RateDetails = ({
         // If currencies are the same, do simple calculation
         if (costCurrency === chargeCurrency) {
             const profit = chargeAmount - costAmount;
-            console.log(`💰 Simple profit calculation for ${item.id}: ${chargeAmount} - ${costAmount} = ${profit}`);
+            console.log(`💰 Simple profit calculation for ${item.id}: ${chargeAmount} - ${costAmount} = ${profit}`, {
+                costAmount,
+                chargeAmount,
+                costCurrency,
+                chargeCurrency,
+                actualCost,
+                actualCharge,
+                quotedCost,
+                quotedCharge
+            });
             return {
                 profit: profit,
                 currency: chargeCurrency,
-                conversionApplied: false
+                conversionApplied: false,
+                originalCostCurrency: costCurrency,
+                originalChargeCurrency: chargeCurrency
             };
         }
 
@@ -794,8 +854,16 @@ const RateDetails = ({
                         actualCharge: item.actualCharge
                     });
 
-                    if (item.isTax || isTaxCharge(item.code)) {
-                        console.log(`💰 Tax item ${item.id}: Setting profit to null`);
+                    // CRITICAL FIX: Never treat FRT as a tax item, even if isTax flag is incorrectly set
+                    const isActuallyTaxItem = (item.code !== 'FRT') && (item.isTax || isTaxCharge(item.code));
+
+                    if (isActuallyTaxItem) {
+                        console.log(`💰 Tax item ${item.id}: Setting profit to null`, {
+                            itemIsTax: item.isTax,
+                            isTaxChargeResult: isTaxCharge(item.code),
+                            code: item.code,
+                            description: item.description
+                        });
                         profitResults[item.id] = null; // $0.00 for tax charges
                         continue;
                     }
@@ -816,6 +884,8 @@ const RateDetails = ({
                         // Convert async function to return promise
                         const profitResult = await calculateLineItemProfit(item, rates);
                         console.log(`💰 Calculated profit for item ${item.id}:`, profitResult);
+                        console.log(`🔑 Setting profitResults[${item.id}] =`, profitResult);
+                        console.log(`🔑 Item ID type: ${typeof item.id}, value: "${item.id}"`);
                         profitResults[item.id] = profitResult;
                     } catch (error) {
                         console.error(`❌ Error calculating profit for item ${item.id}:`, error);
@@ -942,16 +1012,36 @@ const RateDetails = ({
             effectiveTotalChargeCAD += effectiveChargeCAD;
         }
 
-        // Calculate total profit using cached profit calculations (all should be in CAD now)
+        // Calculate total profit using cached profit calculations, converting all to CAD
         const totalProfit = localRateBreakdown.reduce((sum, item) => {
             const profitResult = profitCalculations[item.id];
+
             if (profitResult === null || profitResult === undefined) {
                 return sum; // Skip tax charges or uncalculated profits
             }
 
-            // Use the profit amount from the cached calculation (should be in CAD)
-            const profit = typeof profitResult === 'object' ? profitResult.profit : profitResult;
-            return sum + (profit || 0);
+            // Extract profit amount and currency
+            let profit, profitCurrency;
+            if (typeof profitResult === 'object') {
+                profit = profitResult.profit || 0;
+                profitCurrency = profitResult.currency || 'CAD';
+            } else {
+                profit = profitResult || 0;
+                profitCurrency = 'CAD'; // Assume CAD for simple number results
+            }
+
+            // Convert to CAD if needed
+            let profitCAD = profit;
+            if (profitCurrency !== 'CAD' && rates) {
+                try {
+                    profitCAD = currencyConversionService.convertCurrency(profit, profitCurrency, rates);
+                } catch (error) {
+                    console.warn(`Failed to convert profit from ${profitCurrency} to CAD:`, error);
+                    // Use original value as fallback
+                }
+            }
+
+            return sum + profitCAD;
         }, 0);
 
         // Legacy support - keep these for backward compatibility 
@@ -1081,8 +1171,8 @@ const RateDetails = ({
 
             // Convert to legacy format for current UI compatibility
             let breakdown = rateData.charges.map((charge, index) => ({
-                // CRITICAL FIX: Ensure every item has a consistent ID
-                id: charge.id || `${shipment.id}_charge_${index}`,
+                // CRITICAL FIX: Ensure every item has a truly unique ID using code + index
+                id: `${charge.code || 'UNK'}_${index}`,
                 code: charge.code || 'UNK',
                 // Prefer description, then name, then code-based defaults
                 description: resolveChargeDescription(charge),
@@ -1900,20 +1990,67 @@ const RateDetails = ({
                                                                 );
                                                             }
 
+                                                            // Calculate real-time profit for editing mode with currency conversion
                                                             const actualCost = parseFloat(editingValues.actualCost) || 0;
                                                             const quotedCost = parseFloat(editingValues.quotedCost) || 0;
                                                             const actualCharge = parseFloat(editingValues.actualCharge) || 0;
                                                             const quotedCharge = parseFloat(editingValues.quotedCharge) || 0;
 
-                                                            let profit = 0;
+                                                            // Get currency information from editing values or fall back to item
+                                                            const actualCostCurrency = editingValues.actualCostCurrency || item.actualCostCurrency || item.currency || 'CAD';
+                                                            const quotedCostCurrency = editingValues.quotedCostCurrency || item.quotedCostCurrency || item.currency || 'CAD';
+                                                            const actualChargeCurrency = editingValues.actualChargeCurrency || item.actualChargeCurrency || item.currency || 'CAD';
+                                                            const quotedChargeCurrency = editingValues.quotedChargeCurrency || item.quotedChargeCurrency || item.currency || 'CAD';
+
+                                                            // Determine which values to use for profit calculation
+                                                            let costAmount, chargeAmount, costCurrency, chargeCurrency;
                                                             if (actualCost > 0 && actualCharge > 0) {
-                                                                profit = actualCharge - actualCost;
+                                                                costAmount = actualCost;
+                                                                chargeAmount = actualCharge;
+                                                                costCurrency = actualCostCurrency;
+                                                                chargeCurrency = actualChargeCurrency;
                                                             } else if (actualCost > 0) {
-                                                                profit = quotedCharge - actualCost;
+                                                                costAmount = actualCost;
+                                                                chargeAmount = quotedCharge;
+                                                                costCurrency = actualCostCurrency;
+                                                                chargeCurrency = quotedChargeCurrency;
                                                             } else if (actualCharge > 0) {
-                                                                profit = actualCharge - quotedCost;
+                                                                costAmount = quotedCost;
+                                                                chargeAmount = actualCharge;
+                                                                costCurrency = quotedCostCurrency;
+                                                                chargeCurrency = actualChargeCurrency;
                                                             } else {
-                                                                profit = quotedCharge - quotedCost;
+                                                                costAmount = quotedCost;
+                                                                chargeAmount = quotedCharge;
+                                                                costCurrency = quotedCostCurrency;
+                                                                chargeCurrency = quotedChargeCurrency;
+                                                            }
+
+                                                            let profit = 0;
+                                                            let profitCurrency = 'CAD';
+
+                                                            if (costCurrency === chargeCurrency) {
+                                                                // Same currency - simple calculation
+                                                                profit = chargeAmount - costAmount;
+                                                                profitCurrency = chargeCurrency;
+                                                            } else {
+                                                                // Different currencies - convert to CAD for comparison
+                                                                try {
+                                                                    if (exchangeRates) {
+                                                                        const costCAD = currencyConversionService.convertCurrency(costAmount, costCurrency, exchangeRates);
+                                                                        const chargeCAD = currencyConversionService.convertCurrency(chargeAmount, chargeCurrency, exchangeRates);
+                                                                        profit = chargeCAD - costCAD;
+                                                                        profitCurrency = 'CAD';
+                                                                    } else {
+                                                                        // Fallback to simple calculation if no exchange rates
+                                                                        profit = chargeAmount - costAmount;
+                                                                        profitCurrency = chargeCurrency;
+                                                                    }
+                                                                } catch (error) {
+                                                                    // Fallback to simple calculation on error
+                                                                    profit = chargeAmount - costAmount;
+                                                                    profitCurrency = chargeCurrency;
+                                                                }
                                                             }
 
                                                             const isProfit = profit > 0;
@@ -1927,7 +2064,7 @@ const RateDetails = ({
                                                                     color: color,
                                                                     fontWeight: 400
                                                                 }}>
-                                                                    {`${prefix}${formatCurrency(absProfit, true, item.currency)}`}
+                                                                    {`${prefix}${formatCurrency(absProfit, true, profitCurrency)}`}
                                                                 </Typography>
                                                             );
                                                         })()
@@ -1947,11 +2084,33 @@ const RateDetails = ({
                                                                 );
                                                             }
 
-                                                            // Simple calculation: Actual Charge - Actual Cost (in original currency)
-                                                            const actualCost = parseFloat(item.actualCost) || 0;
-                                                            const actualCharge = parseFloat(item.actualCharge) || 0;
-                                                            const profit = actualCharge - actualCost;
-                                                            const currency = item.currency || 'CAD';
+                                                            // Use cached profit calculation with currency conversion
+                                                            const profitResult = profitCalculations[item.id];
+                                                            console.log(`🎯 DISPLAY: Looking up profit for item ${item.id}:`, {
+                                                                profitResult,
+                                                                profitCalculationsKeys: Object.keys(profitCalculations),
+                                                                itemCode: item.code,
+                                                                itemDescription: item.description,
+                                                                lookupId: item.id,
+                                                                lookupIdType: typeof item.id,
+                                                                profitCalculationsEntries: Object.entries(profitCalculations)
+                                                            });
+
+                                                            if (!profitResult || profitResult === null) {
+                                                                // No profit calculation available (likely a tax charge)
+                                                                return (
+                                                                    <Typography sx={{
+                                                                        fontSize: '12px',
+                                                                        color: '#6b7280',
+                                                                        fontWeight: 400
+                                                                    }}>
+                                                                        $0.00 CAD
+                                                                    </Typography>
+                                                                );
+                                                            }
+
+                                                            const profit = typeof profitResult === 'object' ? profitResult.profit : profitResult;
+                                                            const currency = typeof profitResult === 'object' ? profitResult.currency : 'CAD';
 
                                                             const isProfit = profit > 0;
                                                             const isLoss = profit < 0;
@@ -2142,29 +2301,8 @@ const RateDetails = ({
                                         {canViewFinancials && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700, verticalAlign: 'top' }}>
                                                 {(() => {
-                                                    // FIXED: Direct total profit calculation with USD to CAD conversion
-                                                    let totalNonTaxActualCostUSD = 0;
-                                                    let totalNonTaxActualChargeUSD = 0;
-
-                                                    // Calculate totals excluding tax items (in original USD)
-                                                    localRateBreakdown.forEach(item => {
-                                                        // Skip tax charges
-                                                        if (item.isTax || isTaxCharge(item.code)) {
-                                                            return;
-                                                        }
-
-                                                        totalNonTaxActualCostUSD += parseFloat(item.actualCost) || 0;
-                                                        totalNonTaxActualChargeUSD += parseFloat(item.actualCharge) || 0;
-                                                    });
-
-                                                    // Calculate profit in USD first
-                                                    const profitUSD = totalNonTaxActualChargeUSD - totalNonTaxActualCostUSD;
-
-                                                    // Convert USD profit to CAD using actual exchange rates
-                                                    const usdToCadRate = exchangeRates?.USD ? (1 / exchangeRates.USD) : 1.38; // 1 USD = X CAD
-                                                    const profit = profitUSD * usdToCadRate;
-
-                                                    console.log(`💱 [TOTAL] Profit conversion: $${profitUSD} USD × ${usdToCadRate.toFixed(3)} = $${profit.toFixed(2)} CAD`);
+                                                    // Use the sophisticated total profit calculation that properly handles currency conversion
+                                                    const profit = totalsData?.totalProfit || 0;
                                                     const isProfit = profit > 0;
                                                     const isLoss = profit < 0;
                                                     const prefix = isProfit ? '+' : (isLoss ? '-' : '');

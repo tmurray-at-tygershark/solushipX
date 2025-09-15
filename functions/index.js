@@ -870,6 +870,15 @@ const {
     generateRateCardTemplate,
     importRateCards
 } = require('./src/rates/rateCardImportService');
+const {
+    getCarrierRoutes,
+    createEnhancedRateCard,
+    updateEnhancedRateCard,
+    getEnhancedRateCards,
+    deleteEnhancedRateCard,
+    calculateEnhancedChargeMappingRates,
+    bulkImportEnhancedRateCards
+} = require('./src/carriers/enhancedChargeMapping');
 
 exports.calculateCarrierRates = calculateCarrierRates;
 exports.createCarrierRateCard = createCarrierRateCard;
@@ -877,6 +886,15 @@ exports.updateCarrierRateCard = updateCarrierRateCard;
 exports.deleteCarrierRateCard = deleteCarrierRateCard;
 exports.getCarrierRateCards = getCarrierRateCards;
 exports.manageDIMFactor = manageDIMFactor;
+
+// Enhanced Charge Mapping Functions
+exports.getCarrierRoutes = getCarrierRoutes;
+exports.createEnhancedRateCard = createEnhancedRateCard;
+exports.updateEnhancedRateCard = updateEnhancedRateCard;
+exports.getEnhancedRateCards = getEnhancedRateCards;
+exports.deleteEnhancedRateCard = deleteEnhancedRateCard;
+exports.calculateEnhancedChargeMappingRates = calculateEnhancedChargeMappingRates;
+exports.bulkImportEnhancedRateCards = bulkImportEnhancedRateCards;
 exports.createConnectedCarrier = createConnectedCarrier;
 exports.updateQuickShipCarrier = updateQuickShipCarrier;
 exports.getConversionCandidates = getConversionCandidates;
@@ -1138,6 +1156,22 @@ const {
     deleteCarrierCustomZoneSet
 } = require('./src/carriers/customZoneManagement');
 
+// Zone Boundary Management
+const {
+    saveZoneBoundary,
+    loadZoneBoundaries,
+    updateZoneBoundary,
+    deleteZoneBoundary
+} = require('./src/carriers/zoneBoundaryManagement');
+
+// Route Matrix Generation
+const {
+    generateCarrierRouteMatrix,
+    loadCarrierRouteMatrix,
+    updateCarrierRoute,
+    deleteCarrierRoutes
+} = require('./src/carriers/routeMatrixGeneration');
+
 exports.expandSystemZoneToCities = expandSystemZoneToCities;
 exports.expandZoneSetToCities = expandZoneSetToCities;
 exports.expandCarrierCustomZonesToCities = expandCarrierCustomZonesToCities;
@@ -1147,3 +1181,15 @@ exports.createCarrierCustomZone = createCarrierCustomZone;
 exports.createCarrierCustomZoneSet = createCarrierCustomZoneSet;
 exports.updateCarrierCustomZoneSet = updateCarrierCustomZoneSet;
 exports.deleteCarrierCustomZoneSet = deleteCarrierCustomZoneSet;
+
+// Zone Boundary Management exports
+exports.saveZoneBoundary = saveZoneBoundary;
+exports.loadZoneBoundaries = loadZoneBoundaries;
+exports.updateZoneBoundary = updateZoneBoundary;
+exports.deleteZoneBoundary = deleteZoneBoundary;
+
+// Route Matrix Generation exports
+exports.generateCarrierRouteMatrix = generateCarrierRouteMatrix;
+exports.loadCarrierRouteMatrix = loadCarrierRouteMatrix;
+exports.updateCarrierRoute = updateCarrierRoute;
+exports.deleteCarrierRoutes = deleteCarrierRoutes;
