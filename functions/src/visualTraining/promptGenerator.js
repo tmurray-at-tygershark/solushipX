@@ -23,11 +23,31 @@ If this invoice contains MULTIPLE SHIPMENTS (multiple Order Numbers, different t
 
 ### STEP 2: SYSTEMATIC FIELD EXTRACTION
 
-#### CARRIER INFORMATION (Usually in header/top section):
-- Extract company name exactly as written (remove "Inc.", "Ltd.", "LLC" only if needed for clarity)
+#### CARRIER IDENTIFICATION (CRITICAL - Distinguish Billing Carrier from Forwarders):
+
+**PRIMARY CARRIER IDENTIFICATION RULES:**
+1. **BILLING CARRIER** (This is your target): The company that performed the transportation service and is billing for it
+   - Look for: Company name on the ACTUAL INVOICE page (not cover pages)
+   - Indicators: "INVOICE" header, billing address, GST/tax numbers, charge line items
+   - Example: "G & S DIRECT LTD." on the detailed invoice page
+
+2. **DOCUMENT FORWARDER** (Ignore for carrier identification): Intermediary companies that forward/consolidate documents
+   - Look for: Cover pages, document transmittal headers, "please detach and return" notices
+   - Indicators: "INTEGRATED CARRIERS", forwarding instructions, multiple carrier consolidation
+   - Example: "Integrated Carriers" on cover page - this is NOT the service provider
+
+**CARRIER EXTRACTION PRIORITY:**
+1. **Primary Source**: Company name from the detailed invoice page with charges
+2. **Secondary Source**: Company name from Bill of Lading (if different from forwarder)
+3. **Validation**: Cross-check with carrier confirmation document
+4. **Ignore**: Cover page companies, document forwarders, intermediaries
+
+**BILLING CARRIER INFORMATION (Extract from invoice/BOL pages only):**
+- Company name exactly as written on INVOICE page (remove "Inc.", "Ltd.", "LLC" only if needed)
 - Full address including street, city, province/state, postal/zip code, country
-- All contact details: phone, fax, email, website
-- Tax numbers, GST/HST numbers if visible
+- All contact details: phone, fax, email, website from service provider
+- Tax numbers, GST/HST numbers from billing entity
+- **IGNORE**: Forwarder addresses and contact details
 
 #### INVOICE DETAILS (Usually top-right or center):
 - Invoice number (remove prefixes: "Invoice #", "INV:", "No.", "#")
@@ -35,17 +55,24 @@ If this invoice contains MULTIPLE SHIPMENTS (multiple Order Numbers, different t
 - Due date or payment date if shown
 - Reference numbers, PO numbers, customer numbers
 
-#### SHIPMENT IDENTIFIERS (Multiple locations possible):
-- **SHIPMENT ID (CRITICAL)**: Look for shipment numbers, job IDs, or reference numbers that match internal systems
+#### SHIPMENT IDENTIFIERS (CRITICAL - SoluShip ID Format Required):
+- **SHIPMENT ID (CRITICAL)**: Look for SoluShip format shipment IDs that match internal systems
+- **PRIMARY TARGET**: Reference numbers, customer reference numbers in SoluShip format
+- **SoluShip ID Patterns**: ICAL-XXXXX, IC-CUSTOMER-123ABC, alphanumeric codes with company prefixes
 - Bill of Lading (BOL) numbers - remove prefixes like "BOL:", "B/L:", "SI:"
-- Shipment IDs, waybill numbers, tracking numbers
-- Pro numbers, job numbers, reference numbers
-- Customer reference numbers, PO numbers
+- Tracking numbers, pro numbers (secondary identifiers)
 
-**PRIORITY EXTRACTION**: Shipment ID is essential for matching to internal shipment records. Look for:
-- Alphanumeric codes like "IC-CUSTOMER-123ABC" 
-- Job numbers, reference numbers, or shipment numbers
-- Any identifier that could link to internal shipment tracking
+**CRITICAL SHIPMENT ID EXTRACTION RULES:**
+1. **PRIORITY 1**: Look for Reference fields containing SoluShip format IDs (ICAL-XXXXX, IC-CUSTOMER-123ABC)
+2. **PRIORITY 2**: Customer reference numbers in SoluShip format
+3. **PRIORITY 3**: Any alphanumeric identifier that could be a SoluShip shipment ID
+4. **DO NOT USE**: Carrier internal order numbers (Order No: XXXXXXXX) as shipmentId
+5. **SEPARATE FIELDS**: Store carrier order numbers in orderNumber field, use SoluShip ID as shipmentId
+
+**EXAMPLES OF CORRECT EXTRACTION:**
+- If Reference shows "ICAL-24KPJ3" → shipmentId: "ICAL-24KPJ3"
+- If Order No: 10303649 with Reference: ICAL-24KPJ3 → shipmentId: "ICAL-24KPJ3", orderNumber: "10303649"
+- Reference: "4332033" (if this is the SoluShip ID) → shipmentId: "4332033"
 
 #### SHIPPER (Ship From) - Usually left side or top section:
 - Complete company name
@@ -127,12 +154,15 @@ For each charge:
 
 {
     "carrierInformation": {
-        "company": "string | null",
+        "company": "string | null (BILLING CARRIER ONLY - from invoice page, NOT forwarder)",
         "address": "string | null",
         "phone": "string | null",
         "fax": "string | null",
         "email": "string | null",
-        "taxNumber": "string | null"
+        "taxNumber": "string | null",
+        "sourcePage": "number (page where billing carrier was found)",
+        "forwarderCompany": "string | null (document forwarder if different)",
+        "isForwarderIdentified": "boolean (true if forwarder detected)"
     },
     "invoiceDetails": {
         "invoiceNumber": "string | null",
@@ -143,7 +173,8 @@ For each charge:
     },
     "shipments": [
         {
-            "shipmentId": "string | null (CRITICAL: Order No or shipment ID)",
+            "shipmentId": "string | null (CRITICAL: SoluShip format ID from Reference field - ICAL-XXXXX, IC-CUSTOMER-123ABC)",
+            "orderNumber": "string | null (carrier internal order number - Order No: XXXXXXXX)",
             "trackingNumber": "string | null",
             "proNumber": "string | null",
             "billOfLading": "string | null",
@@ -197,7 +228,21 @@ For each charge:
 9. Dates must be in YYYY-MM-DD format
 10. Extract ALL charges found, no matter how small
 11. Use exact text from document, don't paraphrase
-12. Double-check all extracted amounts add up correctly`;
+12. Double-check all extracted amounts add up correctly
+
+## CRITICAL CARRIER IDENTIFICATION REQUIREMENTS:
+13. **BILLING CARRIER ONLY**: Extract carrier from the invoice page with charges, NOT from cover pages
+14. **IGNORE FORWARDERS**: Do not use "Integrated Carriers" or similar document forwarders as the carrier
+15. **SOURCE VALIDATION**: Carrier must come from page containing actual billing information and charges
+16. **CROSS-REFERENCE**: Validate carrier name appears on both invoice and service documents (BOL/confirmation)
+17. **FORWARDER DETECTION**: If document forwarder detected, note separately but do not use as primary carrier
+
+## CRITICAL SHIPMENT ID REQUIREMENTS:
+18. **SOLUSHIP FORMAT ONLY**: shipmentId must be the SoluShip format ID (ICAL-XXXXX, IC-CUSTOMER-123ABC) from Reference field
+19. **SEPARATE ORDER NUMBERS**: Store carrier internal order numbers (Order No: XXXXXXXX) in orderNumber field
+20. **REFERENCE PRIORITY**: Always prioritize Reference field content as the shipmentId for matching
+21. **NO CARRIER ORDER IDS**: Do not use carrier internal order numbers as shipmentId - these prevent matching
+22. **MATCHING CRITICAL**: Correct shipmentId extraction is essential for automatic shipment matching in the system`;
 
 function initServices() {
     if (admin.apps.length === 0) {

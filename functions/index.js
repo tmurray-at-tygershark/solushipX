@@ -351,6 +351,15 @@ exports.sendCreateShipmentXNotifications = sendCreateShipmentXNotificationsModul
 // Export manual status override function
 exports.updateManualShipmentStatus = updateManualShipmentStatus;
 
+// Export updateShipmentInvoiceStatus function for AP processing automation
+const { updateShipmentInvoiceStatus } = require('./src/updateShipmentInvoiceStatus.js');
+exports.updateShipmentInvoiceStatus = updateShipmentInvoiceStatus;
+
+// Export intelligent auto-processing function for post-extraction automation
+const { processIntelligentAutoApproval, onAPUploadCompleted } = require('./src/intelligentAutoProcessing.js');
+exports.processIntelligentAutoApproval = processIntelligentAutoApproval;
+exports.onAPUploadCompleted = onAPUploadCompleted;
+
 // Export test functions for diagnostics
 const { testEnhancedStatusEmails } = require('./src/testEnhancedStatusEmails');
 exports.testEnhancedStatusEmails = testEnhancedStatusEmails;

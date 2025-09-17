@@ -732,13 +732,55 @@ const APProcessing = () => {
 
         // Helper functions for charge mapping
         const mapChargeToCode = (description) => {
-            const desc = description.toLowerCase();
-            if (desc.includes('freight') || desc.includes('shipping') || desc.includes('transport')) return 'FRT';
-            if (desc.includes('fuel') || desc.includes('surcharge')) return 'FSC';
-            if (desc.includes('accessorial') || desc.includes('handling')) return 'ACC';
-            if (desc.includes('border') || desc.includes('crossing')) return 'BOR';
-            if (desc.includes('insurance') || desc.includes('protection')) return 'INS';
-            return 'FRT'; // Default to freight
+            const desc = (description || '').toLowerCase().trim();
+
+            console.log('🔍 Mapping charge description to code:', { originalDescription: description, lowerCaseDesc: desc });
+
+            // Fuel surcharge classification (check fuel first, more specific)
+            if (desc.includes('fuel') || desc.includes('fsc') || desc.includes('surcharge')) {
+                console.log('🔥 FUEL DETECTED! Mapping to FSC (Fuel Surcharge) for description:', description);
+                return 'FSC';
+            }
+
+            // Base freight classification
+            if (desc.includes('base') || desc.includes('freight') || desc.includes('shipping') || desc.includes('transport')) {
+                console.log('✅ Mapped to FRT (Freight)');
+                return 'FRT';
+            }
+
+            // Accessorial charges
+            if (desc.includes('accessorial') || desc.includes('handling') || desc.includes('liftgate') || desc.includes('inside')) {
+                console.log('✅ Mapped to ACC (Accessorial)');
+                return 'ACC';
+            }
+
+            // Border/customs fees
+            if (desc.includes('border') || desc.includes('crossing') || desc.includes('customs') || desc.includes('brokerage')) {
+                console.log('✅ Mapped to BOR (Border)');
+                return 'BOR';
+            }
+
+            // Insurance
+            if (desc.includes('insurance') || desc.includes('protection') || desc.includes('declared')) {
+                console.log('✅ Mapped to INS (Insurance)');
+                return 'INS';
+            }
+
+            // Weight-based charges
+            if (desc.includes('weight') || desc.includes('dimensional')) {
+                console.log('✅ Mapped to WGT (Weight)');
+                return 'WGT';
+            }
+
+            // Wait time charges
+            if (desc.includes('wait') || desc.includes('detention') || desc.includes('delay')) {
+                console.log('✅ Mapped to WAIT (Wait Time)');
+                return 'WAIT';
+            }
+
+            // Default to miscellaneous for unknown charges
+            console.log('⚠️ No specific mapping found, defaulting to MISC');
+            return 'MISC';
         };
 
         const normalizeChargeName = (description) => {
@@ -766,6 +808,34 @@ const APProcessing = () => {
                     isExtracted: true
                 }));
 
+                // Calculate shipment total amount with better fallback logic
+                let shipmentTotal = 0;
+
+                // Priority 1: Use shipmentData.totalAmount if available
+                if (shipmentData.totalAmount && shipmentData.totalAmount > 0) {
+                    shipmentTotal = parseFloat(shipmentData.totalAmount);
+                }
+                // Priority 2: Sum charges if available
+                else if (charges.length > 0) {
+                    shipmentTotal = charges.reduce((sum, charge) => sum + (parseFloat(charge.amount) || 0), 0);
+                }
+                // Priority 3: Use invoice total if single shipment
+                else if (extractedData.shipments.length === 1 && extractedData.invoiceSummary?.totalAmount) {
+                    shipmentTotal = parseFloat(extractedData.invoiceSummary.totalAmount);
+                }
+                // Priority 4: Distribute invoice total across multiple shipments
+                else if (extractedData.shipments.length > 1 && extractedData.invoiceSummary?.totalAmount) {
+                    shipmentTotal = parseFloat(extractedData.invoiceSummary.totalAmount) / extractedData.shipments.length;
+                }
+
+                console.log(`💰 Shipment ${index + 1} total calculation:`, {
+                    shipmentId: shipmentData.shipmentId,
+                    shipmentDataTotal: shipmentData.totalAmount,
+                    chargesSum: charges.reduce((sum, charge) => sum + (parseFloat(charge.amount) || 0), 0),
+                    invoiceTotal: extractedData.invoiceSummary?.totalAmount,
+                    finalTotal: shipmentTotal
+                });
+
                 return {
                     id: `ai-shipment-${index + 1}`,
                     shipmentId: shipmentData.shipmentId || shipmentData.orderNumber || shipmentData.trackingNumber || `SHIP-${String(index + 1).padStart(3, '0')}`,
@@ -773,7 +843,7 @@ const APProcessing = () => {
                     carrier: selectedCarrier,
                     service: shipmentData.service || 'Standard',
                     status: 'extracted',
-                    totalAmount: shipmentData.totalAmount || charges.reduce((sum, charge) => sum + (parseFloat(charge.amount) || 0), 0),
+                    totalAmount: shipmentTotal,
                     currency: extractedData.invoiceSummary?.currency || 'CAD',
                     extractionConfidence: fullAiResults?.confidence || 0.8,
                     charges: charges,
@@ -811,14 +881,31 @@ const APProcessing = () => {
         const totalAmount = extractedData.totalAmount || {};
         const charges = extractedData.charges || [];
 
+        // Calculate total with better fallback logic for legacy format
+        let legacyTotal = 0;
+        if (totalAmount.amount && totalAmount.amount > 0) {
+            legacyTotal = parseFloat(totalAmount.amount);
+        } else if (extractedData.invoiceSummary?.totalAmount) {
+            legacyTotal = parseFloat(extractedData.invoiceSummary.totalAmount);
+        } else if (charges.length > 0) {
+            legacyTotal = charges.reduce((sum, charge) => sum + (parseFloat(charge.amount) || 0), 0);
+        }
+
+        console.log('💰 Legacy total calculation:', {
+            totalAmountObject: totalAmount,
+            invoiceTotal: extractedData.invoiceSummary?.totalAmount,
+            chargesSum: charges.reduce((sum, charge) => sum + (parseFloat(charge.amount) || 0), 0),
+            finalTotal: legacyTotal
+        });
+
         const shipment = {
             id: `ai-shipment-${Date.now()}`,
             shipmentId: extractedData.shipmentId || extractedData.trackingNumber || 'Unknown',
             trackingNumber: extractedData.trackingNumber || extractedData.shipmentId || 'Unknown',
             carrier: selectedCarrier,
             status: 'extracted',
-            totalAmount: totalAmount.amount || 0,
-            currency: totalAmount.currency || 'CAD',
+            totalAmount: legacyTotal,
+            currency: totalAmount.currency || extractedData.invoiceSummary?.currency || 'CAD',
             extractionConfidence: fullAiResults?.confidence || 0.8,
             charges: charges.map((charge, idx) => ({
                 id: `ai-charge-${idx}`,

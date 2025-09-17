@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSnackbar } from 'notistack';
 import PdfViewerDialog from '../../Shipments/components/PdfViewerDialog';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
     Box,
     Paper,
@@ -24,6 +25,7 @@ import {
     Stack,
     Tooltip,
     LinearProgress,
+    CircularProgress,
     Collapse,
     Dialog,
     DialogTitle,
@@ -67,8 +69,7 @@ import {
 } from '@mui/icons-material';
 import { formatCurrency } from '../../../utils/currencyUtils';
 import { db } from '../../../firebase';
-import { httpsCallable, getFunctions } from 'firebase/functions';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, updateDoc, getFirestore } from 'firebase/firestore';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 import currencyConversionService from '../../../services/currencyConversionService';
 
@@ -113,7 +114,7 @@ const TotalCalculations = ({ selectedShipmentDetail, buildComparisonRows }) => {
                 }
 
                 console.log('💱 Calculating totals with historical exchange rates for date:', shipmentDate.toDateString());
-                const comparisonRows = await buildComparisonRows(selectedShipmentDetail);
+                const comparisonData = await buildComparisonRows(selectedShipmentDetail);
                 const rates = await currencyConversionService.getRatesForDate(shipmentDate);
 
                 console.log('📊 Historical exchange rates loaded for:', {
@@ -125,8 +126,11 @@ const TotalCalculations = ({ selectedShipmentDetail, buildComparisonRows }) => {
                     rateProvider: rates.provider
                 });
 
+                // Combine all charges for total calculations
+                const allCharges = [...comparisonData.matchedCharges, ...comparisonData.unmatchedCharges];
+
                 // Calculate Total Fees (convert all invoice amounts to CAD)
-                const totalFeesCAD = comparisonRows.reduce((sum, row) => {
+                const totalFeesCAD = allCharges.reduce((sum, row) => {
                     const amountInCAD = currencyConversionService.convertCurrency(
                         row.invoiceAmount || 0,
                         row.currency,
@@ -137,7 +141,7 @@ const TotalCalculations = ({ selectedShipmentDetail, buildComparisonRows }) => {
                 }, 0);
 
                 // Calculate Total Variance (convert all variances to CAD)
-                const totalVarianceCAD = comparisonRows.reduce((sum, row) => {
+                const totalVarianceCAD = allCharges.reduce((sum, row) => {
                     const varianceInCAD = currencyConversionService.convertCurrency(
                         row.varianceCost || 0,
                         row.currency,
@@ -183,10 +187,17 @@ const ComparisonTableRows = ({
     buildComparisonRows,
     selectedCharges,
     onSelectCharge,
-    appliedCharges
+    appliedCharges,
+    setAppliedCharges,
+    uploadData,
+    fileName,
+    enqueueSnackbar
 }) => {
     const [comparisonRows, setComparisonRows] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
+    // Guard to prevent repeated auto-apply loops per shipment
+    const autoAppliedShipmentsRef = React.useRef(new Set());
+    const appliedChargesCheckedRef = React.useRef(new Set());
 
     React.useEffect(() => {
         const loadComparisonRows = async () => {
@@ -194,11 +205,105 @@ const ComparisonTableRows = ({
 
             try {
                 setLoading(true);
-                const rows = await buildComparisonRows(selectedShipmentDetail);
-                setComparisonRows(rows);
+                const comparisonData = await buildComparisonRows(selectedShipmentDetail);
+                setComparisonRows(comparisonData);
+
+                // 🚀 AUTOMATIC CHARGE APPROVAL - Apply charges recommended for auto-approval
+                const allCharges = [
+                    ...(comparisonData.matchedCharges || []),
+                    ...(comparisonData.unmatchedCharges || [])
+                ];
+
+                const autoApprovalCharges = allCharges.filter(charge =>
+                    charge.autoApprovalRecommendation === 'approve'
+                );
+
+                console.log('🤖 Checking for auto-approval after comparison loading:', {
+                    totalCharges: allCharges.length,
+                    autoApprovalCharges: autoApprovalCharges.length,
+                    autoApprovalChargeNames: autoApprovalCharges.map(c => c.name),
+                    shipmentId: selectedShipmentDetail.matchedShipmentId
+                });
+
+                // REMOVED: Frontend auto-application logic - now handled by backend Firestore trigger
+                // Backend intelligent automation automatically applies charges when extraction completes
+                console.log('🔍 Auto-approval analysis complete:', {
+                    autoApprovalCharges: autoApprovalCharges.length,
+                    shipmentId: selectedShipmentDetail.matchedShipmentId,
+                    message: 'Backend automation handles charge application automatically'
+                });
+
+                // CHECK FOR AUTOMATICALLY APPLIED CHARGES: Detect charges already applied by backend automation
+                if (selectedShipmentDetail?.matchedShipmentId && !appliedChargesCheckedRef.current.has(selectedShipmentDetail.matchedShipmentId)) {
+                    try {
+                        const db = getFirestore();
+
+                        // Try direct document lookup first, then query by shipmentID field
+                        let shipmentRef = doc(db, 'shipments', selectedShipmentDetail.matchedShipmentId);
+                        let shipmentSnap = await getDoc(shipmentRef);
+
+                        if (!shipmentSnap.exists()) {
+                            // Fallback: query by shipmentID field
+                            const q = query(
+                                collection(db, 'shipments'),
+                                where('shipmentID', '==', selectedShipmentDetail.matchedShipmentId),
+                                limit(1)
+                            );
+                            const querySnapshot = await getDocs(q);
+
+                            if (!querySnapshot.empty) {
+                                shipmentRef = querySnapshot.docs[0].ref;
+                                shipmentSnap = querySnapshot.docs[0];
+                            }
+                        }
+
+                        if (shipmentSnap.exists()) {
+                            const shipmentData = shipmentSnap.data();
+                            const alreadyAppliedIndices = new Set();
+
+                            // Check if charges have been applied (by looking at updatedCharges or manualRates)
+                            const appliedCharges = shipmentData.updatedCharges || shipmentData.manualRates || [];
+
+                            if (appliedCharges.length > 0) {
+                                console.log('🔍 Detected automatically applied charges:', appliedCharges);
+
+                                // Match applied charges with comparison rows to mark them as applied in UI
+                                allCharges.forEach((comparisonCharge, index) => {
+                                    const isApplied = appliedCharges.some(appliedCharge => {
+                                        const codeMatch = appliedCharge.chargeCode === comparisonCharge.systemCode ||
+                                            appliedCharge.chargeName === comparisonCharge.systemName ||
+                                            appliedCharge.code === comparisonCharge.systemCode;
+
+                                        const costMatch = Math.abs((appliedCharge.actualCost || appliedCharge.cost || 0) - (comparisonCharge.systemQuotedCost || 0)) < 0.01;
+
+                                        return codeMatch && costMatch;
+                                    });
+
+                                    if (isApplied) {
+                                        alreadyAppliedIndices.add(index);
+                                    }
+                                });
+
+                                if (alreadyAppliedIndices.size > 0) {
+                                    console.log(`✅ Found ${alreadyAppliedIndices.size} automatically applied charges, updating UI`);
+                                    setAppliedCharges(alreadyAppliedIndices);
+                                }
+                            }
+                        }
+
+                        // Mark this shipment as checked to prevent re-checking
+                        appliedChargesCheckedRef.current.add(selectedShipmentDetail.matchedShipmentId);
+
+                    } catch (error) {
+                        console.warn('Could not check for automatically applied charges:', error);
+                        // Still mark as checked even if there was an error
+                        appliedChargesCheckedRef.current.add(selectedShipmentDetail.matchedShipmentId);
+                    }
+                }
+
             } catch (error) {
                 console.error('❌ Error loading comparison rows:', error);
-                setComparisonRows([]);
+                setComparisonRows({ matchedCharges: [], unmatchedCharges: [] });
             } finally {
                 setLoading(false);
             }
@@ -217,7 +322,7 @@ const ComparisonTableRows = ({
         );
     }
 
-    if (comparisonRows.length === 0) {
+    if (!comparisonRows.matchedCharges && !comparisonRows.unmatchedCharges) {
         return (
             <TableRow>
                 <TableCell colSpan={10} sx={{ textAlign: 'center', fontSize: '11px' }}>
@@ -227,67 +332,212 @@ const ComparisonTableRows = ({
         );
     }
 
+    const allCharges = [...(comparisonRows.matchedCharges || []), ...(comparisonRows.unmatchedCharges || [])];
+
+    if (allCharges.length === 0) {
+        return (
+            <TableRow>
+                <TableCell colSpan={10} sx={{ textAlign: 'center', fontSize: '11px' }}>
+                    No charges found for comparison
+                </TableCell>
+            </TableRow>
+        );
+    }
+
+    // Render function for charge rows with auto-approval indicators
+    const renderChargeRow = (charge, idx, section) => {
+        const isApplied = appliedCharges.has(idx);
+
+        // Auto-approval styling based on recommendation
+        let rowBgColor = isApplied ? '#f0f9ff' : (idx % 2 === 1 ? '#f9fafb' : 'white');
+        let recommendationChip = null;
+
+        if (charge.autoApprovalRecommendation) {
+            switch (charge.autoApprovalRecommendation) {
+                case 'approve':
+                    rowBgColor = isApplied ? '#f0f9ff' : '#f0fdf4'; // Light green
+                    recommendationChip = (
+                        <Chip
+                            label={`✓ ${charge.autoApprovalConfidence}%`}
+                            size="small"
+                            sx={{
+                                fontSize: '10px',
+                                height: '18px',
+                                backgroundColor: '#dcfce7',
+                                color: '#166534',
+                                border: '1px solid #bbf7d0',
+                                '& .MuiChip-label': { px: 0.5, fontSize: '9px' }
+                            }}
+                        />
+                    );
+                    break;
+                case 'review':
+                    rowBgColor = isApplied ? '#f0f9ff' : '#fffbeb'; // Light yellow
+                    recommendationChip = (
+                        <Chip
+                            label={`⚠ ${charge.autoApprovalConfidence}%`}
+                            size="small"
+                            sx={{
+                                fontSize: '10px',
+                                height: '18px',
+                                backgroundColor: '#fef3c7',
+                                color: '#d97706',
+                                border: '1px solid #fde68a',
+                                '& .MuiChip-label': { px: 0.5, fontSize: '9px' }
+                            }}
+                        />
+                    );
+                    break;
+                case 'reject':
+                    rowBgColor = isApplied ? '#f0f9ff' : '#fef2f2'; // Light red
+                    recommendationChip = (
+                        <Chip
+                            label={`✗ ${charge.autoApprovalConfidence}%`}
+                            size="small"
+                            sx={{
+                                fontSize: '10px',
+                                height: '18px',
+                                backgroundColor: '#fecaca',
+                                color: '#dc2626',
+                                border: '1px solid #fca5a5',
+                                '& .MuiChip-label': { px: 0.5, fontSize: '9px' }
+                            }}
+                        />
+                    );
+                    break;
+            }
+        }
+
+        return (
+            <TableRow key={`${section}-${idx}`} sx={{
+                backgroundColor: rowBgColor,
+                opacity: isApplied ? 0.7 : 1,
+                ...(charge.autoApprovalRecommendation === 'approve' && !isApplied && {
+                    border: '2px solid #bbf7d0',
+                })
+            }}>
+                <TableCell sx={{ fontSize: '11px', padding: '8px', width: '40px', maxWidth: '40px', verticalAlign: 'top' }}>
+                    <Checkbox
+                        size="small"
+                        checked={selectedCharges.has(idx) || isApplied}
+                        disabled={isApplied}
+                        onChange={(e) => onSelectCharge(idx, e.target.checked)}
+                        sx={{
+                            padding: 0,
+                            '& .MuiSvgIcon-root': { fontSize: 16 },
+                            ...(isApplied && {
+                                color: '#10b981',
+                                '&.Mui-checked': {
+                                    color: '#10b981'
+                                }
+                            })
+                        }}
+                    />
+                </TableCell>
+                <TableCell sx={{ fontSize: '11px', width: '50px', textAlign: 'left', verticalAlign: 'top' }}>{charge.code}</TableCell>
+                <TableCell sx={{ fontSize: '11px', width: '200px', textAlign: 'left', verticalAlign: 'top' }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-start' }}>
+                        <Typography sx={{ fontSize: '11px' }}>{charge.name}</Typography>
+                        {recommendationChip}
+                        {charge.autoApprovalReason && (
+                            <Typography sx={{ fontSize: '9px', color: '#6b7280', fontStyle: 'italic' }}>
+                                {charge.autoApprovalReason}
+                            </Typography>
+                        )}
+                    </Box>
+                </TableCell>
+                <TableCell sx={{ fontSize: '11px', width: '100px', textAlign: 'left', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                    {formatCurrency(charge.invoiceAmount, charge.currency)}
+                </TableCell>
+                <TableCell sx={{ fontSize: '11px', width: '100px', textAlign: 'left', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                    {formatCurrency(charge.systemQuotedCost, charge.currency)}
+                </TableCell>
+                <TableCell sx={{ fontSize: '11px', width: '100px', textAlign: 'left', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                    {formatCurrency(charge.systemQuotedCharge, charge.currency)}
+                </TableCell>
+                <TableCell sx={{ fontSize: '11px', width: '100px', textAlign: 'left', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                    {formatCurrency(charge.systemActualCost, charge.currency)}
+                </TableCell>
+                <TableCell sx={{ fontSize: '11px', width: '100px', textAlign: 'left', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                    {formatCurrency(charge.systemActualCharge, charge.currency)}
+                </TableCell>
+                <TableCell sx={{
+                    fontSize: '11px',
+                    width: '90px',
+                    textAlign: 'left',
+                    whiteSpace: 'nowrap',
+                    verticalAlign: 'top',
+                    color: Math.abs(charge.varianceCost) > 0.009 ? '#b45309' : '#065f46',
+                    fontWeight: 600
+                }}>
+                    {formatCurrency(charge.varianceCost, charge.currency)}
+                </TableCell>
+                <TableCell sx={{
+                    fontSize: '11px',
+                    width: '100px',
+                    textAlign: 'left',
+                    whiteSpace: 'nowrap',
+                    verticalAlign: 'top',
+                    color: charge.profit && charge.profit > 0 ? '#059669' : '#dc2626',
+                    fontWeight: 600
+                }}>
+                    {charge.profit ? formatCurrency(charge.profit, 'CAD') : 'N/A'}
+                </TableCell>
+            </TableRow>
+        );
+    };
+
     return (
         <>
-            {comparisonRows.map((r, idx) => {
-                const isApplied = appliedCharges.has(idx);
-                return (
-                    <TableRow key={idx} sx={{
-                        backgroundColor: isApplied ? '#f0f9ff' : (idx % 2 === 1 ? '#f9fafb' : 'white'),
-                        opacity: isApplied ? 0.7 : 1
-                    }}>
-                        <TableCell sx={{ fontSize: '11px', padding: '8px' }}>
-                            <Checkbox
-                                size="small"
-                                checked={selectedCharges.has(idx) || isApplied}
-                                disabled={isApplied}
-                                onChange={(e) => onSelectCharge(idx, e.target.checked)}
-                                sx={{
-                                    padding: 0,
-                                    '& .MuiSvgIcon-root': { fontSize: 16 },
-                                    ...(isApplied && {
-                                        color: '#10b981',
-                                        '&.Mui-checked': {
-                                            color: '#10b981'
-                                        }
-                                    })
-                                }}
-                            />
-                        </TableCell>
-                        <TableCell sx={{ fontSize: '11px' }}>{r.code}</TableCell>
-                        <TableCell sx={{ fontSize: '11px' }}>{r.name}</TableCell>
-                        <TableCell sx={{ fontSize: '11px' }}>
-                            {formatCurrency(r.invoiceAmount, r.currency)}
-                        </TableCell>
-                        <TableCell sx={{ fontSize: '11px' }}>
-                            {formatCurrency(r.systemQuotedCost, r.currency)}
-                        </TableCell>
-                        <TableCell sx={{ fontSize: '11px' }}>
-                            {formatCurrency(r.systemQuotedCharge, r.currency)}
-                        </TableCell>
-                        <TableCell sx={{ fontSize: '11px' }}>
-                            {formatCurrency(r.systemActualCost, r.currency)}
-                        </TableCell>
-                        <TableCell sx={{ fontSize: '11px' }}>
-                            {formatCurrency(r.systemActualCharge, r.currency)}
-                        </TableCell>
-                        <TableCell sx={{
-                            fontSize: '11px',
-                            color: Math.abs(r.varianceCost) > 0.009 ? '#b45309' : '#065f46',
-                            fontWeight: 600
-                        }}>
-                            {formatCurrency(r.varianceCost, r.currency)}
-                        </TableCell>
-                        <TableCell sx={{
-                            fontSize: '11px',
-                            color: r.profit && r.profit > 0 ? '#059669' : '#dc2626',
-                            fontWeight: 600
-                        }}>
-                            {r.profit ? formatCurrency(r.profit, 'CAD') : 'N/A'}
+            {/* Matched Charges Section */}
+            {comparisonRows.matchedCharges && comparisonRows.matchedCharges.length > 0 && (
+                <>
+                    <TableRow>
+                        <TableCell
+                            colSpan={10}
+                            sx={{
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                backgroundColor: '#f0fdf4',
+                                color: '#166534',
+                                textAlign: 'center',
+                                border: '1px solid #bbf7d0',
+                                py: 1
+                            }}
+                        >
+                            MATCHED CHARGES ({comparisonRows.matchedCharges.length})
                         </TableCell>
                     </TableRow>
-                );
-            })}
+                    {comparisonRows.matchedCharges.map((charge, idx) =>
+                        renderChargeRow(charge, idx, 'matched')
+                    )}
+                </>
+            )}
+
+            {/* Unmatched Charges Section */}
+            {comparisonRows.unmatchedCharges && comparisonRows.unmatchedCharges.length > 0 && (
+                <>
+                    <TableRow>
+                        <TableCell
+                            colSpan={10}
+                            sx={{
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                backgroundColor: '#fef2f2',
+                                color: '#991b1b',
+                                textAlign: 'center',
+                                border: '1px solid #fecaca',
+                                py: 1
+                            }}
+                        >
+                            UNMATCHED CHARGES ({comparisonRows.unmatchedCharges.length})
+                        </TableCell>
+                    </TableRow>
+                    {comparisonRows.unmatchedCharges.map((charge, idx) =>
+                        renderChargeRow(charge, idx + (comparisonRows.matchedCharges?.length || 0), 'unmatched')
+                    )}
+                </>
+            )}
         </>
     );
 };
@@ -297,9 +547,11 @@ export default function APProcessingResults({
     matchingResults,
     fileName,
     uploadData,
+    uploadId,
     onApprove,
     onReject,
-    onClose
+    onClose,
+    onStatusUpdate
 }) {
     const { enqueueSnackbar } = useSnackbar();
     const [activeTab, setActiveTab] = useState(0);
@@ -325,9 +577,306 @@ export default function APProcessingResults({
     const [selectedCharges, setSelectedCharges] = useState(new Set());
     const [selectAllCharges, setSelectAllCharges] = useState(false);
     const [appliedCharges, setAppliedCharges] = useState(new Set());
+    const [isApplyingCharges, setIsApplyingCharges] = useState(false);
+    const [isUnapplyingCharges, setIsUnapplyingCharges] = useState(false);
+    const [autoProcessingTriggered, setAutoProcessingTriggered] = useState(new Set()); // Track which shipments have been auto-processed
+
+    // Checkbox Selection State for Shipments (Bulk Actions)
+    const [selectedShipments, setSelectedShipments] = useState(new Set());
+    const [selectAllShipments, setSelectAllShipments] = useState(false);
+    const [isBulkApproving, setIsBulkApproving] = useState(false);
+    const [isBulkExcepting, setIsBulkExcepting] = useState(false);
+
+    // Auto-matching loading state
+    const [isAutoMatching, setIsAutoMatching] = useState(false);
+
+    // Initialize applied charges from persisted data when component loads
+    useEffect(() => {
+        console.log('🔍 APProcessingResults received uploadData:', {
+            id: uploadData?.id,
+            fileName: uploadData?.fileName,
+            hasChargeApplications: !!uploadData?.chargeApplications,
+            chargeApplicationsLength: uploadData?.chargeApplications?.length,
+            chargeApplications: uploadData?.chargeApplications,
+            hasAppliedCharges: uploadData?.hasAppliedCharges
+        });
+
+        if (uploadData?.chargeApplications && uploadData.chargeApplications.length > 0) {
+            console.log('🔄 Loading persisted applied charges:', uploadData.chargeApplications);
+
+            // Create Set of applied charge indices from persisted data
+            const appliedIndices = new Set(
+                uploadData.chargeApplications
+                    .filter(app => app.status === 'applied')
+                    .map(app => app.chargeIndex)
+                    .filter(index => typeof index === 'number') // Ensure valid indices
+            );
+
+            console.log('✅ Initialized applied charges from persisted data:', appliedIndices);
+            setAppliedCharges(appliedIndices);
+
+            // Check if any shipments should be marked as approved based on loaded data
+            if (tableData.length > 0) {
+                tableData.forEach(async (row) => {
+                    try {
+                        const comparisonRows = await buildComparisonRows(row);
+                        const totalCharges = comparisonRows.length;
+
+                        // Check if all charges for this shipment are applied
+                        const shipmentAppliedCharges = uploadData.chargeApplications.filter(app =>
+                            app.status === 'applied' &&
+                            app.shipmentId === row.id // If we track shipment-specific applications
+                        );
+
+                        // For now, check if applied charges count matches total charges for any shipment
+                        if (appliedIndices.size === totalCharges && appliedIndices.size > 0) {
+                            console.log('✅ Setting shipment status to approved based on persisted data:', row.id);
+                            updateShipmentStatus(row.id, 'approved');
+                        }
+                    } catch (error) {
+                        console.warn('Could not check shipment approval status:', error);
+                    }
+                });
+
+                // Also check if any shipments should be marked as approved based on current applied charges
+                if (appliedIndices.size > 0) {
+                    console.log('✅ Checking if current shipments should be marked as approved based on applied charges...');
+                    const totalShipments = tableData.length;
+                    if (totalShipments > 0) {
+                        // For simple cases, mark all shipments as approved if we have applied charges
+                        tableData.forEach(row => {
+                            console.log(`✅ Marking shipment ${row.id} as approved due to applied charges`);
+                            updateShipmentStatus(row.id, 'approved');
+                        });
+                    }
+                }
+            }
+        } else {
+            console.log('ℹ️ No persisted charge applications found, starting with empty applied charges');
+            console.log('   - uploadData exists:', !!uploadData);
+            console.log('   - chargeApplications exists:', !!uploadData?.chargeApplications);
+            console.log('   - chargeApplications length:', uploadData?.chargeApplications?.length);
+            setAppliedCharges(new Set());
+        }
+    }, [uploadData?.id, uploadData?.chargeApplications]);
+
+    // Shipment Selection handling functions
+    const handleSelectShipment = (shipmentId, checked) => {
+        const newSelected = new Set(selectedShipments);
+        if (checked) {
+            newSelected.add(shipmentId);
+        } else {
+            newSelected.delete(shipmentId);
+        }
+        setSelectedShipments(newSelected);
+
+        // Update select all state
+        setSelectAllShipments(newSelected.size === tableData.length && tableData.length > 0);
+    };
+
+    const handleSelectAllShipments = (checked) => {
+        if (checked) {
+            // Select all shipments
+            const allShipmentIds = tableData.map(row => row.id);
+            setSelectedShipments(new Set(allShipmentIds));
+        } else {
+            // Deselect all shipments
+            setSelectedShipments(new Set());
+        }
+        setSelectAllShipments(checked);
+    };
+
+    // Bulk action functions
+    const handleBulkApprove = async () => {
+        if (selectedShipments.size === 0) {
+            enqueueSnackbar('Please select at least one shipment to approve', { variant: 'warning' });
+            return;
+        }
+
+        setIsBulkApproving(true);
+        try {
+            console.log('🔄 Bulk approving shipments:', Array.from(selectedShipments));
+
+            // For each selected shipment, apply all charges
+            for (const shipmentId of selectedShipments) {
+                const shipmentRow = tableData.find(row => row.id === shipmentId);
+                if (shipmentRow?.matchedShipmentId) {
+                    // Get all charge indices for this shipment
+                    const comparisonRows = await buildComparisonRows(shipmentRow);
+                    const allChargeIndices = comparisonRows.map((_, index) => index);
+
+                    // Apply all charges for this shipment
+                    await applyChargesToShipment(shipmentRow, allChargeIndices);
+
+                    // Update status to "Approved" since all charges are being applied
+                    updateShipmentStatus(shipmentId, 'approved');
+                }
+            }
+
+            enqueueSnackbar(`Successfully approved ${selectedShipments.size} shipment(s)`, { variant: 'success' });
+
+            // Clear selections
+            setSelectedShipments(new Set());
+            setSelectAllShipments(false);
+
+        } catch (error) {
+            console.error('❌ Error bulk approving shipments:', error);
+            enqueueSnackbar('Error approving shipments', { variant: 'error' });
+        } finally {
+            setIsBulkApproving(false);
+        }
+    };
+
+    const handleBulkException = async () => {
+        if (selectedShipments.size === 0) {
+            enqueueSnackbar('Please select at least one shipment to mark as exception', { variant: 'warning' });
+            return;
+        }
+
+        setIsBulkExcepting(true);
+        try {
+            console.log('🔄 Bulk marking invoices as exception:', Array.from(selectedShipments));
+
+            // For each selected shipment, mark the invoice status as exception
+            for (const shipmentId of selectedShipments) {
+                const shipmentRow = tableData.find(row => row.id === shipmentId);
+                if (shipmentRow?.matchedShipmentId) {
+                    // Mark the matched system shipment's invoice status as exception
+                    await markInvoiceAsException(shipmentRow.matchedShipmentId, 'AP Processing Exception', shipmentRow.shipmentId);
+                }
+
+                // Update local table status
+                updateShipmentStatus(shipmentId, 'exception');
+            }
+
+            enqueueSnackbar(`Successfully marked ${selectedShipments.size} invoice(s) as exception`, { variant: 'success' });
+
+            // Clear selections
+            setSelectedShipments(new Set());
+            setSelectAllShipments(false);
+
+        } catch (error) {
+            console.error('❌ Error marking invoices as exception:', error);
+            enqueueSnackbar('Error marking invoices as exception', { variant: 'error' });
+        } finally {
+            setIsBulkExcepting(false);
+        }
+    };
+
+    // Helper function to mark a shipment's invoice status as exception
+    const markInvoiceAsException = async (shipmentId, reason, invoiceShipmentId) => {
+        try {
+            console.log(`🚨 Marking invoice status as exception for shipment ${shipmentId} due to AP Processing`);
+
+            // First, find the shipment document by shipmentID field
+            const shipmentRef = await findShipmentByShipmentId(shipmentId);
+            if (!shipmentRef) {
+                console.warn(`⚠️ Shipment ${shipmentId} not found in system, skipping invoice exception marking`);
+                return { success: false, error: 'Shipment not found in system' };
+            }
+
+            // Update the shipment's invoice status directly in Firestore
+            await updateDoc(shipmentRef, {
+                invoiceStatus: 'exception',
+                invoiceStatusReason: `${reason} - Invoice Shipment: ${invoiceShipmentId}`,
+                invoiceStatusUpdatedAt: new Date(),
+                invoiceStatusUpdatedBy: 'AP Processing System',
+                updatedAt: new Date()
+            });
+
+            console.log(`✅ Successfully marked invoice status as exception for shipment ${shipmentId} (doc: ${shipmentRef.id})`);
+            return { success: true };
+
+        } catch (error) {
+            console.error(`❌ Error marking invoice status as exception for shipment ${shipmentId}:`, error);
+            throw error;
+        }
+    };
+
+    // Helper function to find shipment document by shipmentID field
+    const findShipmentByShipmentId = async (shipmentId) => {
+        try {
+            // First try direct document lookup (in case it's already a doc ID)
+            const directRef = doc(db, 'shipments', shipmentId);
+            const directDoc = await getDoc(directRef);
+
+            if (directDoc.exists()) {
+                console.log(`📋 Found shipment by direct document ID: ${shipmentId}`);
+                return directRef;
+            }
+
+            // If not found, query by shipmentID field
+            console.log(`🔍 Searching for shipment by shipmentID field: ${shipmentId}`);
+            const q = query(
+                collection(db, 'shipments'),
+                where('shipmentID', '==', shipmentId),
+                limit(1)
+            );
+
+            const querySnapshot = await getDocs(q);
+
+            if (!querySnapshot.empty) {
+                const shipmentDoc = querySnapshot.docs[0];
+                console.log(`📋 Found shipment by shipmentID field: ${shipmentId} → doc: ${shipmentDoc.id}`);
+                return shipmentDoc.ref;
+            }
+
+            console.warn(`⚠️ Shipment not found by either method: ${shipmentId}`);
+            return null;
+
+        } catch (error) {
+            console.error(`❌ Error finding shipment ${shipmentId}:`, error);
+            return null;
+        }
+    };
+
+    // Helper function to apply charges to a shipment
+    const applyChargesToShipment = async (shipmentRow, chargeIndices) => {
+        if (!shipmentRow?.matchedShipmentId) return;
+
+        const comparisonRows = await buildComparisonRows(shipmentRow);
+        const selectedChargeData = chargeIndices.map(index => comparisonRows[index]);
+
+        const functions = getFunctions();
+        const applyInvoiceCharges = httpsCallable(functions, 'applyInvoiceCharges');
+
+        const result = await applyInvoiceCharges({
+            shipmentId: shipmentRow.matchedShipmentId,
+            invoiceData: {
+                invoiceNumber: uploadData.invoiceNumber || extractedData?.invoice_number,
+                invoiceRef: uploadData.metadata?.invoiceRef || uploadData.invoiceNumber,
+                fileName: fileName
+            },
+            charges: selectedChargeData.map(charge => ({
+                code: charge.systemCode || charge.code || charge.chargeCode || 'MISC',
+                name: charge.name || charge.systemName || 'Unknown Charge',
+                invoiceAmount: charge.invoiceAmount || 0,
+                currency: charge.currency || 'CAD',
+                actualCost: charge.actualCost,
+                actualCharge: charge.actualCharge,
+                quotedCost: charge.quotedCost,
+                quotedCharge: charge.quotedCharge
+            }))
+        });
+
+        if (!result.data.success) {
+            throw new Error(result.data.error || 'Failed to apply charges');
+        }
+    };
+
+    // Helper function to update shipment status in the table
+    const updateShipmentStatus = (shipmentId, status) => {
+        setTableData(prev => prev.map(row =>
+            row.id === shipmentId
+                ? { ...row, status: status, lastUpdated: new Date() }
+                : row
+        ));
+    };
 
     // Checkbox handling functions
     const handleSelectCharge = (chargeIndex, checked) => {
+        console.log('🔲 Checkbox selection changed:', { chargeIndex, checked, currentSelected: Array.from(selectedCharges) });
+
         const newSelected = new Set(selectedCharges);
         if (checked) {
             newSelected.add(chargeIndex);
@@ -335,6 +884,8 @@ export default function APProcessingResults({
             newSelected.delete(chargeIndex);
         }
         setSelectedCharges(newSelected);
+
+        console.log('🔲 Updated selection:', { newSelected: Array.from(newSelected) });
 
         // Update select all state based on current selection
         const totalCharges = selectedShipmentDetail?.charges?.length || 0;
@@ -364,16 +915,49 @@ export default function APProcessingResults({
             return;
         }
 
+        setIsApplyingCharges(true);
         try {
             // Get comparison rows to extract the actual charge data
             const comparisonRows = await buildComparisonRows(selectedShipmentDetail);
-            const selectedChargeData = Array.from(selectedCharges).map(index => comparisonRows[index]);
+
+            console.log('🔍 buildComparisonRows result:', {
+                result: comparisonRows,
+                isArray: Array.isArray(comparisonRows),
+                type: typeof comparisonRows,
+                length: comparisonRows?.length,
+                keys: comparisonRows ? Object.keys(comparisonRows) : 'null'
+            });
+            // Combine matched and unmatched charges into a single array for indexing
+            const allComparisonCharges = [
+                ...(comparisonRows.matchedCharges || []),
+                ...(comparisonRows.unmatchedCharges || [])
+            ];
+
+            const selectedChargeData = Array.from(selectedCharges)
+                .map(index => allComparisonCharges[index])
+                .filter(charge => charge !== undefined); // Filter out undefined charges
 
             console.log('🔄 Applying selected charges to shipment:', {
                 shipmentId: selectedShipmentDetail.matchedShipmentId,
                 selectedCharges: selectedChargeData,
-                chargeCount: selectedCharges.size
+                chargeCount: selectedCharges.size,
+                allComparisonChargesCount: allComparisonCharges.length,
+                matchedChargesCount: comparisonRows.matchedCharges?.length || 0,
+                unmatchedChargesCount: comparisonRows.unmatchedCharges?.length || 0,
+                selectedIndices: Array.from(selectedCharges),
+                allChargesSample: allComparisonCharges.slice(0, 3).map((row, idx) => ({
+                    index: idx,
+                    name: row?.name || row?.chargeName,
+                    invoiceAmount: row?.invoiceAmount,
+                    hasData: !!row
+                }))
             });
+
+            // Validate that we have charges to apply
+            if (selectedChargeData.length === 0) {
+                enqueueSnackbar('No valid charges found to apply. Please check your selection.', { variant: 'warning' });
+                return;
+            }
 
             // Call cloud function to update shipment with actual charges
             const functions = getFunctions();
@@ -387,11 +971,11 @@ export default function APProcessingResults({
                     fileName: fileName
                 },
                 charges: selectedChargeData.map(charge => ({
-                    code: charge.code,
-                    name: charge.name,
-                    actualCost: charge.systemActualCost,
-                    actualCharge: charge.systemActualCharge,
-                    currency: charge.currency,
+                    code: charge.systemCode || charge.code || charge.chargeCode || 'MISC',
+                    name: charge.systemName || charge.name || charge.chargeName || charge.description || 'Unknown Charge',
+                    actualCost: charge.systemQuotedCost || charge.systemActualCost || charge.actualCost || charge.quotedCost || 0,
+                    actualCharge: charge.systemQuotedCharge || charge.systemActualCharge || charge.actualCharge || charge.quotedCharge || 0,
+                    currency: charge.systemCurrency || charge.currency || 'CAD',
                     ediNumber: uploadData.invoiceNumber || uploadData.metadata?.invoiceRef
                 }))
             });
@@ -406,6 +990,56 @@ export default function APProcessingResults({
                 // Clear selections after successful apply
                 setSelectedCharges(new Set());
                 setSelectAllCharges(false);
+
+                // Update shipment invoice status after successful charge application
+                try {
+                    const updateShipmentInvoiceStatus = httpsCallable(functions, 'updateShipmentInvoiceStatus');
+                    await updateShipmentInvoiceStatus({
+                        shipmentId: selectedShipmentDetail.matchedShipmentId,
+                        invoiceStatus: 'processed',
+                        invoiceData: {
+                            invoiceNumber: uploadData.invoiceNumber,
+                            totalChargesProcessed: selectedCharges.size,
+                            processingDate: new Date().toISOString(),
+                            autoProcessed: false // Manual processing
+                        }
+                    });
+                    console.log('✅ Successfully updated shipment invoice status to processed');
+                } catch (statusError) {
+                    console.warn('⚠️ Failed to update shipment invoice status:', statusError);
+                    // Don't fail the main operation if status update fails
+                }
+
+                // Check if all charges for this shipment are now applied and update shipment status
+                const comparisonRows = await buildComparisonRows(selectedShipmentDetail);
+                const totalCharges = comparisonRows.length;
+                const isShipmentFullyApproved = newAppliedCharges.size === totalCharges;
+
+                if (isShipmentFullyApproved) {
+                    console.log('✅ All charges applied for shipment, updating status to Approved');
+                    updateShipmentStatus(selectedShipmentDetail.id, 'approved');
+                }
+
+                // Update upload status to reflect charge applications
+                if (onStatusUpdate && uploadData?.id) {
+                    const appliedChargesList = Array.from(newAppliedCharges);
+                    const chargeApplications = appliedChargesList.map(index => ({
+                        chargeIndex: index,
+                        chargeCode: comparisonRows[index]?.code,
+                        chargeName: comparisonRows[index]?.name,
+                        status: 'applied',
+                        appliedAt: new Date()
+                    }));
+
+                    onStatusUpdate(uploadData.id, {
+                        chargeApplications: chargeApplications,
+                        // Pass shipment-level status updates
+                        shipmentStatuses: isShipmentFullyApproved ? [{
+                            shipmentId: selectedShipmentDetail.id,
+                            status: 'approved'
+                        }] : []
+                    });
+                }
             } else {
                 throw new Error(result.data.error || 'Failed to apply charges');
             }
@@ -413,6 +1047,8 @@ export default function APProcessingResults({
         } catch (error) {
             console.error('❌ Error applying charges to shipment:', error);
             enqueueSnackbar(error.message || 'Error applying charges to shipment', { variant: 'error' });
+        } finally {
+            setIsApplyingCharges(false);
         }
     };
 
@@ -434,16 +1070,36 @@ export default function APProcessingResults({
             return;
         }
 
+        setIsUnapplyingCharges(true);
         try {
             // Get comparison rows to extract the charge data
             const comparisonRows = await buildComparisonRows(selectedShipmentDetail);
-            const selectedChargeData = appliedSelectedCharges.map(index => comparisonRows[index]);
+
+            // Combine matched and unmatched charges into a single array for indexing
+            const allComparisonCharges = [
+                ...(comparisonRows.matchedCharges || []),
+                ...(comparisonRows.unmatchedCharges || [])
+            ];
+
+            const selectedChargeData = appliedSelectedCharges
+                .map(index => allComparisonCharges[index])
+                .filter(charge => charge !== undefined); // Filter out undefined charges
 
             console.log('🔄 Unapplying selected charges from shipment:', {
                 shipmentId: selectedShipmentDetail.matchedShipmentId,
                 selectedCharges: selectedChargeData,
-                chargeCount: appliedSelectedCharges.length
+                chargeCount: appliedSelectedCharges.length,
+                allComparisonChargesCount: allComparisonCharges.length,
+                matchedChargesCount: comparisonRows.matchedCharges?.length || 0,
+                unmatchedChargesCount: comparisonRows.unmatchedCharges?.length || 0,
+                selectedIndices: appliedSelectedCharges
             });
+
+            // Validate that we have charges to unapply
+            if (selectedChargeData.length === 0) {
+                enqueueSnackbar('No valid charges found to unapply. Please check your selection.', { variant: 'warning' });
+                return;
+            }
 
             // Call cloud function to remove actual charges from shipment
             const functions = getFunctions();
@@ -457,8 +1113,8 @@ export default function APProcessingResults({
                     fileName: fileName
                 },
                 charges: selectedChargeData.map(charge => ({
-                    code: charge.code,
-                    name: charge.name
+                    code: charge.systemCode || charge.code || charge.chargeCode || 'MISC',
+                    name: charge.name || charge.systemName || 'Unknown Charge'
                 }))
             });
 
@@ -473,6 +1129,23 @@ export default function APProcessingResults({
                 // Clear selections after successful unapply
                 setSelectedCharges(new Set());
                 setSelectAllCharges(false);
+
+                // Update upload status to reflect charge unapplications
+                if (onStatusUpdate && uploadData?.id) {
+                    const remainingAppliedCharges = Array.from(newAppliedCharges);
+                    const comparisonRows = await buildComparisonRows(selectedShipmentDetail);
+                    const chargeApplications = remainingAppliedCharges.map(index => ({
+                        chargeIndex: index,
+                        chargeCode: comparisonRows[index]?.code,
+                        chargeName: comparisonRows[index]?.name,
+                        status: 'applied',
+                        appliedAt: new Date()
+                    }));
+
+                    onStatusUpdate(uploadData.id, {
+                        chargeApplications: chargeApplications
+                    });
+                }
             } else {
                 throw new Error(result.data.error || 'Failed to unapply charges');
             }
@@ -480,6 +1153,194 @@ export default function APProcessingResults({
         } catch (error) {
             console.error('❌ Error unapplying charges from shipment:', error);
             enqueueSnackbar(error.message || 'Error unapplying charges from shipment', { variant: 'error' });
+        } finally {
+            setIsUnapplyingCharges(false);
+        }
+    };
+
+    const handleAutoApproveCharges = async () => {
+        if (!selectedShipmentDetail?.matchedShipmentId) {
+            enqueueSnackbar('No matched shipment found. Please match a shipment first.', { variant: 'error' });
+            return;
+        }
+
+        setIsApplyingCharges(true);
+        try {
+            // Get comparison rows to find auto-approved charges - USING SAME ROBUST LOGIC AS MANUAL APPROVAL
+            const comparisonRows = await buildComparisonRows(selectedShipmentDetail);
+
+            console.log('🔍 buildComparisonRows result for auto-approval:', {
+                result: comparisonRows,
+                isArray: Array.isArray(comparisonRows),
+                type: typeof comparisonRows,
+                length: comparisonRows?.length,
+                keys: comparisonRows ? Object.keys(comparisonRows) : 'null'
+            });
+
+            // Combine matched and unmatched charges into a single array for indexing - SAME AS MANUAL APPROVAL
+            const allComparisonCharges = [
+                ...(comparisonRows.matchedCharges || []),
+                ...(comparisonRows.unmatchedCharges || [])
+            ];
+
+            // Filter for auto-approved charges - ENHANCED LOGIC
+            const autoApprovalCharges = allComparisonCharges.filter(charge => charge.autoApprovalRecommendation === 'approve');
+
+            console.log('🤖 Auto-applying recommended charges:', {
+                shipmentId: selectedShipmentDetail.matchedShipmentId,
+                autoApprovalCharges: autoApprovalCharges,
+                chargeCount: autoApprovalCharges.length,
+                allComparisonChargesCount: allComparisonCharges.length,
+                matchedChargesCount: comparisonRows.matchedCharges?.length || 0,
+                unmatchedChargesCount: comparisonRows.unmatchedCharges?.length || 0,
+                allChargesSample: allComparisonCharges.slice(0, 3).map((row, idx) => ({
+                    index: idx,
+                    name: row?.name || row?.chargeName,
+                    invoiceAmount: row?.invoiceAmount,
+                    autoApprovalRecommendation: row?.autoApprovalRecommendation,
+                    autoApprovalConfidence: row?.autoApprovalConfidence,
+                    autoApprovalReason: row?.autoApprovalReason,
+                    hasData: !!row
+                }))
+            });
+
+            // ENHANCED DEBUGGING: Show detailed breakdown of why charges aren't auto-approved
+            if (autoApprovalCharges.length === 0) {
+                console.log('🔍 DEBUGGING: No charges recommended for auto-approval. Here\'s why:');
+                allComparisonCharges.forEach((charge, index) => {
+                    console.log(`   Charge ${index + 1}: "${charge.name}"`, {
+                        autoApprovalRecommendation: charge.autoApprovalRecommendation,
+                        autoApprovalConfidence: charge.autoApprovalConfidence,
+                        autoApprovalReason: charge.autoApprovalReason,
+                        invoiceAmount: charge.invoiceAmount,
+                        systemQuotedCost: charge.systemQuotedCost,
+                        systemActualCost: charge.systemActualCost,
+                        varianceCost: charge.varianceCost,
+                        needsApproval: charge.autoApprovalRecommendation === 'approve' ? '✅ YES' : '❌ NO'
+                    });
+                });
+
+                const approveCount = allComparisonCharges.filter(c => c.autoApprovalRecommendation === 'approve').length;
+                const reviewCount = allComparisonCharges.filter(c => c.autoApprovalRecommendation === 'review').length;
+                const rejectCount = allComparisonCharges.filter(c => c.autoApprovalRecommendation === 'reject').length;
+
+                console.log('📊 Auto-approval breakdown:', {
+                    totalCharges: allComparisonCharges.length,
+                    approveRecommended: approveCount,
+                    reviewRecommended: reviewCount,
+                    rejectRecommended: rejectCount,
+                    unclassified: allComparisonCharges.length - approveCount - reviewCount - rejectCount
+                });
+            }
+
+            // Validate that we have charges to apply - SAME AS MANUAL APPROVAL
+            if (autoApprovalCharges.length === 0) {
+                enqueueSnackbar('No charges recommended for auto-approval', { variant: 'warning' });
+                return;
+            }
+
+            // Call cloud function to update shipment with auto-approved charges - SAME ROBUST DATA STRUCTURE AS MANUAL
+            const functions = getFunctions();
+            const applyInvoiceCharges = httpsCallable(functions, 'applyInvoiceCharges');
+
+            const result = await applyInvoiceCharges({
+                shipmentId: selectedShipmentDetail.matchedShipmentId,
+                invoiceData: {
+                    invoiceNumber: uploadData.invoiceNumber,
+                    invoiceRef: uploadData.metadata?.invoiceRef || uploadData.invoiceNumber,
+                    fileName: fileName,
+                    autoApproval: true
+                },
+                charges: autoApprovalCharges.map(charge => ({
+                    // USING SAME ROBUST FIELD MAPPING AS MANUAL APPROVAL
+                    code: charge.systemCode || charge.code || charge.chargeCode || 'MISC',
+                    name: charge.systemName || charge.name || charge.chargeName || charge.description || 'Unknown Charge',
+                    actualCost: charge.systemQuotedCost || charge.systemActualCost || charge.actualCost || charge.quotedCost || 0,
+                    actualCharge: charge.systemQuotedCharge || charge.systemActualCharge || charge.actualCharge || charge.quotedCharge || 0,
+                    currency: charge.systemCurrency || charge.currency || 'CAD',
+                    ediNumber: uploadData.invoiceNumber || uploadData.metadata?.invoiceRef,
+                    autoApprovalReason: charge.autoApprovalReason,
+                    autoApprovalConfidence: charge.autoApprovalConfidence
+                }))
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(`Successfully auto-applied ${autoApprovalCharges.length} recommended charge(s) to shipment ${selectedShipmentDetail.matchedShipmentId}`, { variant: 'success' });
+
+                // ENHANCED INDEX TRACKING - Find indices of auto-approved charges and mark them as applied
+                const autoApprovalIndices = new Set();
+                autoApprovalCharges.forEach(autoCharge => {
+                    const index = allComparisonCharges.findIndex(charge =>
+                        // ROBUST MATCHING CRITERIA
+                        (charge.code === autoCharge.code || charge.systemCode === autoCharge.systemCode) &&
+                        (charge.name === autoCharge.name || charge.systemName === autoCharge.systemName) &&
+                        charge.autoApprovalRecommendation === 'approve'
+                    );
+                    if (index !== -1) {
+                        autoApprovalIndices.add(index);
+                        console.log(`✅ Found auto-approved charge at index ${index}:`, {
+                            name: autoCharge.name,
+                            code: autoCharge.code,
+                            confidence: autoCharge.autoApprovalConfidence
+                        });
+                    }
+                });
+
+                // Mark charges as applied
+                const newAppliedCharges = new Set([...appliedCharges, ...autoApprovalIndices]);
+                setAppliedCharges(newAppliedCharges);
+
+                // ADDED: Update shipment invoice status after successful charge application - SAME AS MANUAL
+                try {
+                    const updateShipmentInvoiceStatus = httpsCallable(functions, 'updateShipmentInvoiceStatus');
+                    await updateShipmentInvoiceStatus({
+                        shipmentId: selectedShipmentDetail.matchedShipmentId,
+                        invoiceStatus: 'ready_to_invoice', // CRITICAL FIX: Use 'ready_to_invoice' instead of 'processed'
+                        invoiceData: {
+                            invoiceNumber: uploadData.invoiceNumber,
+                            totalChargesProcessed: autoApprovalCharges.length,
+                            processingDate: new Date().toISOString(),
+                            autoProcessed: true // Auto processing
+                        }
+                    });
+                    console.log('✅ Successfully updated shipment invoice status to ready_to_invoice via auto-approval');
+                } catch (statusError) {
+                    console.warn('⚠️ Failed to update shipment invoice status:', statusError);
+                    // Don't fail the main operation if status update fails
+                }
+
+                // Check if all charges for this shipment are now applied and update shipment status - SAME AS MANUAL
+                const totalCharges = allComparisonCharges.length;
+                const isShipmentFullyApproved = newAppliedCharges.size === totalCharges;
+
+                if (isShipmentFullyApproved) {
+                    console.log('✅ All charges applied for shipment via auto-approval, updating status to Approved');
+                    updateShipmentStatus(selectedShipmentDetail.id, 'approved');
+                }
+
+                // Update upload status to reflect charge applications
+                if (onStatusUpdate) {
+                    const appliedShipments = tableData.filter(row => row.status === 'approved').length;
+                    const totalShipments = tableData.length;
+                    const isPartiallyProcessed = appliedShipments > 0 && appliedShipments < totalShipments;
+                    const isFullyProcessed = appliedShipments === totalShipments;
+
+                    if (isFullyProcessed) {
+                        onStatusUpdate('processed');
+                    } else if (isPartiallyProcessed) {
+                        onStatusUpdate('partially_processed');
+                    }
+                }
+
+                console.log('✅ Auto-approval completed successfully');
+            } else {
+                throw new Error(result.data.error || 'Failed to auto-apply charges');
+            }
+        } catch (error) {
+            console.error('❌ Error auto-applying charges:', error);
+            enqueueSnackbar(`Failed to auto-apply charges: ${error.message}`, { variant: 'error' });
+        } finally {
+            setIsApplyingCharges(false);
         }
     };
 
@@ -491,6 +1352,26 @@ export default function APProcessingResults({
         extractedDataKeys: extractedData ? Object.keys(extractedData) : 'null',
         matchingResultsKeys: matchingResults ? Object.keys(matchingResults) : 'null'
     });
+
+    // Trigger automation when viewing results if we have extracted data
+    useEffect(() => {
+        console.log('🔍 Automation useEffect triggered:', {
+            hasExtractedData: !!extractedData,
+            hasUploadId: !!uploadId,
+            extractedDataKeys: extractedData ? Object.keys(extractedData) : null,
+            shipments: extractedData?.shipments?.length || 0,
+            charges: extractedData?.charges?.length || 0
+        });
+
+        // REMOVED: Frontend automation trigger - backend intelligent auto-processing already handles this
+        // after AI extraction completes. Frontend should only display the results.
+        console.log('🔍 APProcessingResults loaded:', {
+            extractedData: !!extractedData,
+            uploadId: uploadId,
+            hasShipments: extractedData?.shipments?.length > 0,
+            hasCharges: extractedData?.charges?.length > 0
+        });
+    }, [extractedData, uploadId, onStatusUpdate]);
 
     // Deep debug of the extractedData structure
     if (extractedData) {
@@ -616,7 +1497,7 @@ export default function APProcessingResults({
 
                 return {
                     id: shipment.id || `shipment-${index}`,
-                    shipmentId: shipment.references?.manifestRef || shipment.references?.customerRef || shipment.references?.invoiceRef || shipment.shipmentId || `SHIP-${String(index + 1).padStart(3, '0')}`,
+                    shipmentId: shipment.shipmentId || shipment.references?.manifestRef || shipment.references?.customerRef || shipment.references?.invoiceRef || shipment.id || shipment.trackingNumber || `SHIP-${String(index + 1).padStart(3, '0')}`,
                     trackingNumber: shipment.trackingNumber || 'N/A',
                     carrier: shipment.carrier || actualData.carrierInformation?.company || results.carrierInformation?.company || actualData.carrierDetails?.name?.value || results.carrierDetails?.name?.value || 'Unknown',
                     service: shipment.service || shipment.serviceType || 'Standard',
@@ -634,7 +1515,7 @@ export default function APProcessingResults({
                     currency: shipment.currency || actualData.invoiceSummary?.currency || results.invoiceSummary?.currency || actualData.invoiceHeader?.currency?.value || results.invoiceHeader?.currency?.value || 'CAD',
                     references: {
                         customerRef: shipment.references?.customerRef || shipment.customerRef || shipment.customerReferenceNumber || shipment.referenceNumbers?.customerRef || actualData.shipmentReferences?.customerRef || shipment.trackingNumber || 'N/A',
-                        invoiceRef: shipment.references?.invoiceRef || shipment.invoiceRef || shipment.invoiceNumber || shipment.shipmentId || actualData.invoiceDetails?.invoiceNumber || actualData.invoiceDetails?.billOfLading || results.invoiceDetails?.invoiceNumber || 'N/A',
+                        invoiceRef: actualData.invoiceDetails?.invoiceNumber || actualData.invoiceNumber || actualData.invoiceSummary?.invoiceNumber || results.invoiceDetails?.invoiceNumber || results.invoiceNumber || results.invoiceSummary?.invoiceNumber || shipment.references?.invoiceRef || shipment.invoiceRef || shipment.invoiceNumber || 'N/A',
                         manifestRef: shipment.references?.manifestRef || shipment.manifestRef || shipment.proNumber || shipment.billOfLading || actualData.invoiceDetails?.billOfLading || actualData.shipmentReferences?.manifestRef || 'N/A',
                         other: shipment.references?.other || shipment.otherReferences || actualData.shipmentReferences?.other || []
                     },
@@ -752,7 +1633,7 @@ export default function APProcessingResults({
             currency: actualData.currency || actualData.invoiceSummary?.currency || actualData.invoiceHeader?.currency?.value || results.currency || results.invoiceSummary?.currency || results.invoiceHeader?.currency?.value || 'CAD',
             references: {
                 customerRef: actualData.customerRef || actualData.shipmentReferences?.customerRef || actualData.customerReferenceNumber || results.customerRef || results.customerReferenceNumber || 'N/A',
-                invoiceRef: actualData.invoiceRef || actualData.invoiceDetails?.invoiceNumber || actualData.invoiceDetails?.billOfLading || actualData.invoiceNumber || results.invoiceRef || results.invoiceDetails?.invoiceNumber || results.invoiceNumber || 'N/A',
+                invoiceRef: actualData.invoiceDetails?.invoiceNumber || actualData.invoiceNumber || actualData.invoiceSummary?.invoiceNumber || results.invoiceDetails?.invoiceNumber || results.invoiceNumber || results.invoiceSummary?.invoiceNumber || actualData.invoiceRef || results.invoiceRef || 'N/A',
                 manifestRef: actualData.manifestRef || actualData.invoiceDetails?.billOfLading || actualData.shipmentReferences?.manifestRef || actualData.billOfLading || actualData.proNumber || results.manifestRef || results.billOfLading || results.proNumber || 'N/A',
                 other: actualData.shipmentReferences?.other || actualData.otherReferences || results.otherReferences || []
             },
@@ -783,7 +1664,10 @@ export default function APProcessingResults({
 
         // Auto-match shipments after data is normalized
         if (initialTableData.length > 0) {
-            autoMatchShipments(initialTableData);
+            setIsAutoMatching(true);
+            autoMatchShipments(initialTableData).finally(() => {
+                setIsAutoMatching(false);
+            });
         }
     }, [extractedData]);
 
@@ -838,7 +1722,29 @@ export default function APProcessingResults({
         }
 
         // If no system shipment match, show AP processing status
-        const apStatus = row.apStatus || 'extracted';
+        // Check for updated status first (from our status updates)
+        const apStatus = row.status || row.apStatus || 'extracted';
+
+        // Handle automation statuses from intelligent processing
+        if (apStatus === 'processed') {
+            return { label: 'Processed', color: '#10b981', backgroundColor: '#d1fae5' };
+        }
+        if (apStatus === 'processed_with_exception') {
+            return { label: 'Processed with Exception', color: '#f59e0b', backgroundColor: '#fef3c7' };
+        }
+        if (apStatus === 'partially_processed') {
+            return { label: 'Partially Processed', color: '#3b82f6', backgroundColor: '#dbeafe' };
+        }
+        if (apStatus === 'ready_to_invoice') {
+            return { label: 'Ready to Invoice', color: '#059669', backgroundColor: '#d1fae5' };
+        }
+
+        // IMPORTANT: Check if this shipment has applied charges to determine if it should be "Approved"
+        if (apStatus === 'extracted' && appliedCharges.size > 0) {
+            // If we have applied charges, this should be "Approved" not "Extracted"
+            return { label: 'Approved', color: '#059669', backgroundColor: '#d1fae5' };
+        }
+
         if (apStatus === 'extracted') {
             return { label: 'Extracted', color: '#3b82f6', backgroundColor: '#dbeafe' };
         }
@@ -847,6 +1753,12 @@ export default function APProcessingResults({
         }
         if (apStatus === 'applied') {
             return { label: 'Applied', color: '#059669', backgroundColor: '#d1fae5' };
+        }
+        if (apStatus === 'approved') {
+            return { label: 'Approved', color: '#059669', backgroundColor: '#d1fae5' };
+        }
+        if (apStatus === 'exception') {
+            return { label: 'Exception', color: '#dc2626', backgroundColor: '#fee2e2' };
         }
         if (apStatus === 'rejected') {
             return { label: 'Rejected', color: '#dc2626', backgroundColor: '#fee2e2' };
@@ -861,11 +1773,363 @@ export default function APProcessingResults({
         return { label: 'Needs Matching', color: '#f59e0b', backgroundColor: '#fef3c7' };
     };
 
-    // Build stacked comparison rows for the Compare tab with intelligent charge matching
-    const buildComparisonRows = async (detail) => {
-        if (!detail) return [];
+    // Note: Auto-processing now happens in the background via Cloud Functions
+    // This frontend component only displays the results of background automation
 
-        console.log('🔗 Building intelligent charge comparison for:', detail.shipmentId);
+    // Execute Intelligent Auto-Processing - Automate the entire approval workflow
+    const executeIntelligentAutoProcessing = async (matchedCharges, unmatchedCharges, shipmentDate) => {
+        console.log('🚀 Starting intelligent auto-processing workflow...');
+
+        if (!selectedShipmentDetail?.matchedShipmentId) {
+            console.log('⚠️ No matched shipment found, skipping auto-processing');
+            return;
+        }
+
+        const functions = getFunctions();
+        const applyInvoiceCharges = httpsCallable(functions, 'applyInvoiceCharges');
+
+        // Step 1: Auto-approve charges with 100% confidence (perfect matches)
+        const perfectMatches = matchedCharges.filter(charge =>
+            charge.autoApprovalRecommendation === 'approve' &&
+            charge.autoApprovalConfidence >= 95
+        );
+
+        // Step 2: Exception charges (variance detected but mappable)
+        const exceptionCharges = matchedCharges.filter(charge =>
+            charge.autoApprovalRecommendation === 'approve' &&
+            charge.autoApprovalConfidence < 95 &&
+            charge.autoApprovalConfidence >= 80
+        );
+
+        let processedCharges = [];
+        let shipmentStatus = 'processing';
+        let invoiceStatus = 'processed';
+
+        try {
+            // Process perfect matches - apply as actual charges
+            if (perfectMatches.length > 0) {
+                console.log(`✅ Auto-processing ${perfectMatches.length} perfect matches...`);
+
+                const perfectMatchResult = await applyInvoiceCharges({
+                    shipmentId: selectedShipmentDetail.matchedShipmentId,
+                    invoiceData: {
+                        invoiceNumber: uploadData.invoiceNumber,
+                        invoiceRef: uploadData.metadata?.invoiceRef || uploadData.invoiceNumber,
+                        fileName: fileName,
+                        autoProcessing: true,
+                        processingType: 'perfect_match'
+                    },
+                    charges: perfectMatches.map(charge => ({
+                        // USING SAME ROBUST FIELD MAPPING AS MANUAL APPROVAL
+                        code: charge.systemCode || charge.code || charge.chargeCode || 'MISC',
+                        name: charge.systemName || charge.name || charge.chargeName || charge.description || 'Unknown Charge',
+                        actualCost: charge.systemQuotedCost || charge.systemActualCost || charge.actualCost || charge.quotedCost || 0,
+                        actualCharge: charge.systemQuotedCharge || charge.systemActualCharge || charge.actualCharge || charge.quotedCharge || 0,
+                        currency: charge.systemCurrency || charge.currency || 'CAD',
+                        ediNumber: uploadData.invoiceNumber || uploadData.metadata?.invoiceRef,
+                        autoApprovalReason: charge.autoApprovalReason,
+                        autoApprovalConfidence: charge.autoApprovalConfidence,
+                        processingType: 'auto_approved'
+                    }))
+                });
+
+                if (perfectMatchResult.data.success) {
+                    processedCharges.push(...perfectMatches);
+                    console.log(`✅ Successfully auto-applied ${perfectMatches.length} perfect matches`);
+                }
+            }
+
+            // Process exception charges - apply with actual costs from invoice
+            if (exceptionCharges.length > 0) {
+                console.log(`⚠️ Processing ${exceptionCharges.length} exception charges...`);
+
+                const exceptionResult = await applyInvoiceCharges({
+                    shipmentId: selectedShipmentDetail.matchedShipmentId,
+                    invoiceData: {
+                        invoiceNumber: uploadData.invoiceNumber,
+                        invoiceRef: uploadData.metadata?.invoiceRef || uploadData.invoiceNumber,
+                        fileName: fileName,
+                        autoProcessing: true,
+                        processingType: 'exception'
+                    },
+                    charges: exceptionCharges.map(charge => ({
+                        // USING SAME ROBUST FIELD MAPPING AS MANUAL APPROVAL
+                        code: charge.systemCode || charge.code || charge.chargeCode || 'MISC',
+                        name: charge.systemName || charge.name || charge.chargeName || charge.description || 'Unknown Charge',
+                        actualCost: charge.invoiceAmount || charge.systemQuotedCost || charge.systemActualCost || charge.actualCost || charge.quotedCost || 0,
+                        actualCharge: charge.systemQuotedCharge || charge.systemActualCharge || charge.actualCharge || charge.quotedCharge || 0,
+                        currency: charge.systemCurrency || charge.currency || 'CAD',
+                        ediNumber: uploadData.invoiceNumber || uploadData.metadata?.invoiceRef,
+                        autoApprovalReason: charge.autoApprovalReason,
+                        autoApprovalConfidence: charge.autoApprovalConfidence,
+                        processingType: 'exception'
+                    }))
+                });
+
+                if (exceptionResult.data.success) {
+                    processedCharges.push(...exceptionCharges);
+                    invoiceStatus = 'exception';
+                    console.log(`⚠️ Successfully processed ${exceptionCharges.length} exception charges`);
+                }
+            }
+
+            // Determine final shipment and invoice status
+            const totalCharges = matchedCharges.length;
+            const processedCount = processedCharges.length;
+            const hasExceptions = exceptionCharges.length > 0;
+
+            console.log('📊 Processing summary:', {
+                totalCharges,
+                processedCount,
+                perfectMatches: perfectMatches.length,
+                exceptionCharges: exceptionCharges.length,
+                hasExceptions
+            });
+
+            // Update shipment invoice status - USING SAME LOGIC AS MANUAL APPROVAL
+            if (processedCount === totalCharges) {
+                // All charges processed
+                if (hasExceptions) {
+                    shipmentStatus = 'exception';
+                    invoiceStatus = 'processed_with_exception';
+                } else {
+                    shipmentStatus = 'approved';
+                    invoiceStatus = 'ready_to_invoice'; // CRITICAL FIX: Use 'ready_to_invoice' instead of 'processed'
+                }
+            } else if (processedCount > 0) {
+                // Partially processed
+                shipmentStatus = 'partially_processed';
+                invoiceStatus = 'partially_processed';
+            }
+
+            // Update shipment invoice status in database - SAME AS MANUAL APPROVAL
+            try {
+                const updateShipmentInvoiceStatus = httpsCallable(functions, 'updateShipmentInvoiceStatus');
+                await updateShipmentInvoiceStatus({
+                    shipmentId: selectedShipmentDetail.matchedShipmentId,
+                    invoiceStatus: invoiceStatus, // CRITICAL FIX: Use the correct invoiceStatus
+                    invoiceData: {
+                        invoiceNumber: uploadData.invoiceNumber,
+                        totalChargesProcessed: processedCount,
+                        totalCharges: totalCharges,
+                        processingDate: new Date().toISOString(),
+                        autoProcessed: true // Intelligent auto processing
+                    }
+                });
+                console.log(`✅ Successfully updated shipment invoice status to ${invoiceStatus} via intelligent auto-processing`);
+            } catch (statusError) {
+                console.warn('⚠️ Failed to update shipment invoice status:', statusError);
+                // Don't fail the main operation if status update fails
+            }
+
+            // Update UI status for this shipment in the results table
+            updateShipmentStatus(selectedShipmentDetail.id, invoiceStatus);
+
+            // Mark charges as applied in the UI - USING SAME ROBUST LOGIC AS MANUAL APPROVAL
+            const allCharges = [...matchedCharges, ...unmatchedCharges];
+            const appliedIndices = new Set();
+            processedCharges.forEach(processedCharge => {
+                const index = allCharges.findIndex(charge =>
+                    // ROBUST MATCHING CRITERIA
+                    (charge.code === processedCharge.code || charge.systemCode === processedCharge.systemCode) &&
+                    (charge.name === processedCharge.name || charge.systemName === processedCharge.systemName)
+                );
+                if (index !== -1) {
+                    appliedIndices.add(index);
+                    console.log(`✅ Found processed charge at index ${index}:`, {
+                        name: processedCharge.name,
+                        code: processedCharge.code,
+                        processingType: processedCharge.processingType
+                    });
+                }
+            });
+
+            setAppliedCharges(prev => new Set([...prev, ...appliedIndices]));
+
+            // Update main upload status
+            if (onStatusUpdate) {
+                if (invoiceStatus === 'processed') {
+                    onStatusUpdate('processed');
+                } else if (invoiceStatus === 'processed_with_exception') {
+                    onStatusUpdate('processed_with_exception');
+                } else if (invoiceStatus === 'partially_processed') {
+                    onStatusUpdate('partially_processed');
+                }
+            }
+
+            // Show success notification
+            const statusMessage = hasExceptions
+                ? `Auto-processed ${processedCount} charges (${exceptionCharges.length} with exceptions)`
+                : `Auto-processed ${processedCount} charges successfully`;
+
+            enqueueSnackbar(statusMessage, {
+                variant: hasExceptions ? 'warning' : 'success',
+                autoHideDuration: hasExceptions ? 8000 : 5000
+            });
+
+            console.log('🎉 Intelligent auto-processing completed:', {
+                shipmentStatus,
+                invoiceStatus,
+                processedCharges: processedCount,
+                totalCharges
+            });
+
+        } catch (error) {
+            console.error('❌ Error during intelligent auto-processing:', error);
+            enqueueSnackbar(`Auto-processing failed: ${error.message}`, { variant: 'error' });
+        }
+    };
+
+    // Intelligent Auto-Approval System for Carrier Invoice Processing
+    const applyIntelligentAutoApproval = async (matchedCharges, unmatchedCharges, invoiceCharges, shipmentDate) => {
+        console.log('🤖 Starting intelligent auto-approval analysis...');
+
+        // Get exchange rates for currency conversion
+        const rates = await currencyConversionService.getRatesForDate(shipmentDate);
+
+        // Helper function to convert amounts to CAD for comparison
+        const convertToCAD = (amount, currency) => {
+            return currencyConversionService.convertCurrency(amount, currency, 'CAD', rates);
+        };
+
+        // Group invoice charges by charge type families for intelligent matching
+        const invoiceChargeGroups = {
+            freight: [],
+            fuel: [],
+            accessorial: [],
+            other: []
+        };
+
+        invoiceCharges.forEach(charge => {
+            const desc = charge.name.toLowerCase();
+            if (desc.includes('base') || desc.includes('freight') || desc.includes('line') || desc.includes('transport')) {
+                invoiceChargeGroups.freight.push(charge);
+            } else if (desc.includes('fuel') || desc.includes('fsc') || desc.includes('surcharge')) {
+                invoiceChargeGroups.fuel.push(charge);
+            } else if (desc.includes('accessorial') || desc.includes('handling') || desc.includes('liftgate') || desc.includes('residential')) {
+                invoiceChargeGroups.accessorial.push(charge);
+            } else {
+                invoiceChargeGroups.other.push(charge);
+            }
+        });
+
+        console.log('📊 Invoice charge groups:', {
+            freight: invoiceChargeGroups.freight.map(c => `${c.name}: ${c.currency} ${c.invoiceAmount}`),
+            fuel: invoiceChargeGroups.fuel.map(c => `${c.name}: ${c.currency} ${c.invoiceAmount}`),
+            accessorial: invoiceChargeGroups.accessorial.map(c => `${c.name}: ${c.currency} ${c.invoiceAmount}`),
+            other: invoiceChargeGroups.other.map(c => `${c.name}: ${c.currency} ${c.invoiceAmount}`)
+        });
+
+        // Enhanced auto-approval logic for each matched charge
+        const enhancedMatchedCharges = await Promise.all(matchedCharges.map(async (charge) => {
+            let autoApprovalRecommendation = null;
+            let autoApprovalReason = '';
+            let autoApprovalConfidence = 0;
+
+            // Case 1: Freight charge that might include separated fuel costs
+            if (charge.code === 'FRT' || charge.name.toLowerCase().includes('freight') || charge.name.toLowerCase().includes('base')) {
+                // Calculate total of freight + fuel charges from invoice
+                const freightTotal = invoiceChargeGroups.freight.reduce((sum, c) => sum + convertToCAD(c.invoiceAmount, c.currency), 0);
+                const fuelTotal = invoiceChargeGroups.fuel.reduce((sum, c) => sum + convertToCAD(c.invoiceAmount, c.currency), 0);
+                const combinedInvoiceTotal = freightTotal + fuelTotal;
+
+                const systemCostCAD = convertToCAD(charge.systemActualCost, charge.currency);
+                const systemChargeCAD = convertToCAD(charge.systemActualCharge, charge.currency);
+
+                // Check if combined invoice total matches system cost (within 5% tolerance)
+                const costVariance = Math.abs(combinedInvoiceTotal - systemCostCAD);
+                const costVariancePercent = systemCostCAD > 0 ? (costVariance / systemCostCAD) * 100 : 100;
+
+                console.log(`🔍 Freight analysis for ${charge.name}:`, {
+                    freightTotal: freightTotal.toFixed(2),
+                    fuelTotal: fuelTotal.toFixed(2),
+                    combinedInvoiceTotal: combinedInvoiceTotal.toFixed(2),
+                    systemCostCAD: systemCostCAD.toFixed(2),
+                    costVariancePercent: costVariancePercent.toFixed(2) + '%'
+                });
+
+                if (costVariancePercent <= 15) { // TEMPORARILY INCREASED FROM 5% TO 15% FOR TESTING
+                    autoApprovalRecommendation = 'approve';
+                    autoApprovalReason = `Combined invoice charges (Base: ${formatCurrency(freightTotal, 'CAD')} + Fuel: ${formatCurrency(fuelTotal, 'CAD')} = ${formatCurrency(combinedInvoiceTotal, 'CAD')}) match system cost ${formatCurrency(systemCostCAD, 'CAD')} within ${costVariancePercent.toFixed(1)}% tolerance`;
+                    autoApprovalConfidence = Math.max(0, 100 - costVariancePercent * 4); // Higher confidence for smaller variance
+
+                    console.log(`✅ AUTO-APPROVAL RECOMMENDED for ${charge.name}: ${autoApprovalReason}`);
+                } else if (costVariancePercent <= 25) { // TEMPORARILY INCREASED FROM 15% TO 25%
+                    autoApprovalRecommendation = 'review';
+                    autoApprovalReason = `Combined invoice total has ${costVariancePercent.toFixed(1)}% variance - requires manual review`;
+                    autoApprovalConfidence = Math.max(0, 100 - costVariancePercent * 2);
+
+                    console.log(`⚠️ MANUAL REVIEW RECOMMENDED for ${charge.name}: ${autoApprovalReason}`);
+                } else {
+                    autoApprovalRecommendation = 'reject';
+                    autoApprovalReason = `Combined invoice total has ${costVariancePercent.toFixed(1)}% variance - significant discrepancy`;
+                    autoApprovalConfidence = Math.max(0, 50 - costVariancePercent);
+
+                    console.log(`❌ REJECTION RECOMMENDED for ${charge.name}: ${autoApprovalReason}`);
+                }
+            }
+
+            // Case 2: Exact amount matching
+            else {
+                const invoiceAmountCAD = convertToCAD(charge.invoiceAmount, charge.currency);
+                const systemCostCAD = convertToCAD(charge.systemActualCost, charge.currency);
+
+                const variance = Math.abs(invoiceAmountCAD - systemCostCAD);
+                const variancePercent = systemCostCAD > 0 ? (variance / systemCostCAD) * 100 : 100;
+
+                if (variancePercent <= 2) {
+                    autoApprovalRecommendation = 'approve';
+                    autoApprovalReason = `Exact match within ${variancePercent.toFixed(1)}% tolerance`;
+                    autoApprovalConfidence = Math.max(0, 100 - variancePercent * 10);
+                } else if (variancePercent <= 10) {
+                    autoApprovalRecommendation = 'review';
+                    autoApprovalReason = `${variancePercent.toFixed(1)}% variance requires review`;
+                    autoApprovalConfidence = Math.max(0, 100 - variancePercent * 5);
+                } else {
+                    autoApprovalRecommendation = 'reject';
+                    autoApprovalReason = `${variancePercent.toFixed(1)}% variance exceeds tolerance`;
+                    autoApprovalConfidence = Math.max(0, 50 - variancePercent);
+                }
+            }
+
+            return {
+                ...charge,
+                autoApprovalRecommendation,
+                autoApprovalReason,
+                autoApprovalConfidence: Math.round(autoApprovalConfidence)
+            };
+        }));
+
+        // Apply auto-approval confidence to unmatched charges
+        const enhancedUnmatchedCharges = unmatchedCharges.map(charge => ({
+            ...charge,
+            autoApprovalRecommendation: 'review',
+            autoApprovalReason: 'Unmatched charge requires manual review',
+            autoApprovalConfidence: 0
+        }));
+
+        const autoApprovalSummary = {
+            approve: enhancedMatchedCharges.filter(c => c.autoApprovalRecommendation === 'approve').length,
+            review: enhancedMatchedCharges.filter(c => c.autoApprovalRecommendation === 'review').length + enhancedUnmatchedCharges.length,
+            reject: enhancedMatchedCharges.filter(c => c.autoApprovalRecommendation === 'reject').length
+        };
+
+        console.log('🎯 Auto-approval summary:', autoApprovalSummary);
+
+        // Note: Auto-processing is handled separately to avoid infinite loops
+        // The executeIntelligentAutoProcessing function is triggered only once when needed
+
+        return {
+            matchedCharges: enhancedMatchedCharges,
+            unmatchedCharges: enhancedUnmatchedCharges
+        };
+    };
+
+    // Build enhanced comparison structure with matched and unmatched charges 
+    const buildComparisonRows = async (detail) => {
+        if (!detail) return { matchedCharges: [], unmatchedCharges: [] };
+
+        console.log('🔗 Building enhanced charge comparison for:', detail.shipmentId);
         console.log('📄 Invoice charges:', detail.charges);
         console.log('🏭 System charges:', detail.systemRateData?.charges);
 
@@ -901,13 +2165,46 @@ export default function APProcessingResults({
 
         console.log('📅 Using shipment date for currency conversion:', shipmentDate);
 
+        // Helper function to classify charge types based on description
+        const classifyChargeCode = (description) => {
+            const desc = (description || '').toLowerCase();
+
+            // Fuel surcharge classification
+            if (desc.includes('fuel') || desc.includes('fsc')) return 'FSC';
+
+            // Base freight classification
+            if (desc.includes('base') || desc.includes('freight') || desc.includes('shipping') || desc.includes('transport')) return 'FRT';
+
+            // Tax classifications
+            if (desc.includes('tax') || desc.includes('hst') || desc.includes('gst') || desc.includes('pst') || desc.includes('qst')) return 'TAX';
+
+            // Accessorial charges
+            if (desc.includes('accessorial') || desc.includes('handling') || desc.includes('liftgate') || desc.includes('residential')) return 'ACC';
+
+            // Border/customs
+            if (desc.includes('border') || desc.includes('crossing') || desc.includes('customs') || desc.includes('duty')) return 'BOR';
+
+            // Insurance
+            if (desc.includes('insurance') || desc.includes('protection') || desc.includes('coverage')) return 'INS';
+
+            // Weight-based charges
+            if (desc.includes('weight') || desc.includes('dimensional')) return 'WGT';
+
+            // Wait time
+            if (desc.includes('wait') || desc.includes('detention') || desc.includes('demurrage')) return 'WAIT';
+
+            // Default to freight if no classification found
+            return 'FRT';
+        };
+
         const invoiceCharges = (detail.charges || []).map(ch => ({
-            code: ch.code || 'FRT',
+            code: ch.code || classifyChargeCode(ch.name || ch.description),
             name: ch.name || ch.description || 'Charge',
             currency: ch.currency || detail.currency || 'CAD',
             invoiceAmount: Number(ch.amount || 0)
         }));
 
+        // System charges from shipment (these become the primary display)
         const systemCharges = (detail.systemRateData?.charges || []).map(c => ({
             code: c.code || 'FRT',
             name: c.name || 'Charge',
@@ -918,36 +2215,36 @@ export default function APProcessingResults({
             actualCharge: c.actualCharge != null ? Number(c.actualCharge) : (c.charge != null ? Number(c.charge) : 0)
         }));
 
-        // Create intelligent charge matching
         const matchedCharges = [];
-        const usedSystemCharges = new Set();
+        const unmatchedCharges = [];
+        const usedInvoiceCharges = new Set();
 
-        // Function to find best matching system charge for an invoice charge
-        const findBestSystemMatch = (invoiceCharge) => {
+        // Function to find best matching invoice charge for a system charge
+        const findBestInvoiceMatch = (systemCharge) => {
             let bestMatch = null;
             let bestScore = 0;
 
-            systemCharges.forEach((systemCharge, index) => {
-                if (usedSystemCharges.has(index)) return;
+            invoiceCharges.forEach((invoiceCharge, index) => {
+                if (usedInvoiceCharges.has(index)) return;
 
                 let score = 0;
 
                 // Exact code match (highest priority)
-                if (invoiceCharge.code === systemCharge.code) {
+                if (systemCharge.code === invoiceCharge.code) {
                     score += 50;
                 }
 
                 // Name similarity matching
-                const invoiceName = invoiceCharge.name.toLowerCase();
                 const systemName = systemCharge.name.toLowerCase();
+                const invoiceName = invoiceCharge.name.toLowerCase();
 
                 // Exact name match
-                if (invoiceName === systemName) {
+                if (systemName === invoiceName) {
                     score += 40;
                 } else {
                     // Partial name matching for common charge types
                     const chargeKeywords = [
-                        { keywords: ['freight', 'frt'], weight: 30 },
+                        { keywords: ['freight', 'frt', 'base'], weight: 30 },
                         { keywords: ['fuel', 'fsc', 'surcharge'], weight: 25 },
                         { keywords: ['tax', 'hst', 'gst', 'pst', 'qst'], weight: 35 },
                         { keywords: ['accessorial', 'acc', 'additional'], weight: 20 },
@@ -956,16 +2253,16 @@ export default function APProcessingResults({
                     ];
 
                     chargeKeywords.forEach(({ keywords, weight }) => {
-                        const invoiceHasKeyword = keywords.some(kw => invoiceName.includes(kw));
                         const systemHasKeyword = keywords.some(kw => systemName.includes(kw));
+                        const invoiceHasKeyword = keywords.some(kw => invoiceName.includes(kw));
 
-                        if (invoiceHasKeyword && systemHasKeyword) {
+                        if (systemHasKeyword && invoiceHasKeyword) {
                             score += weight;
                         }
                     });
 
                     // String similarity for remaining cases
-                    const similarity = calculateStringSimilarity(invoiceName, systemName);
+                    const similarity = calculateStringSimilarity(systemName, invoiceName);
                     if (similarity > 0.6) {
                         score += Math.floor(similarity * 20);
                     }
@@ -973,53 +2270,35 @@ export default function APProcessingResults({
 
                 if (score > bestScore) {
                     bestScore = score;
-                    bestMatch = { charge: systemCharge, index, score };
+                    bestMatch = { charge: invoiceCharge, index, score };
                 }
             });
 
             return bestMatch;
         };
 
-        // Match invoice charges to system charges
-        invoiceCharges.forEach(invoiceCharge => {
-            const match = findBestSystemMatch(invoiceCharge);
+        // Match system charges to invoice charges (system charges drive the display)
+        systemCharges.forEach(systemCharge => {
+            const match = findBestInvoiceMatch(systemCharge);
 
             if (match && match.score > 10) { // Minimum confidence threshold
-                usedSystemCharges.add(match.index);
+                usedInvoiceCharges.add(match.index);
                 matchedCharges.push({
-                    code: invoiceCharge.code,
-                    name: invoiceCharge.name,
-                    currency: invoiceCharge.currency,
-                    invoiceAmount: invoiceCharge.invoiceAmount,
-                    systemQuotedCost: match.charge.quotedCost,
-                    systemQuotedCharge: match.charge.quotedCharge,
-                    systemActualCost: match.charge.actualCost,
-                    systemActualCharge: match.charge.actualCharge,
-                    varianceCost: invoiceCharge.invoiceAmount - match.charge.actualCost,
-                    matchScore: match.score
+                    code: systemCharge.code,
+                    name: systemCharge.name, // Use system charge name
+                    currency: systemCharge.currency,
+                    invoiceAmount: match.charge.invoiceAmount,
+                    systemQuotedCost: systemCharge.quotedCost,
+                    systemQuotedCharge: systemCharge.quotedCharge,
+                    systemActualCost: systemCharge.actualCost,
+                    systemActualCharge: systemCharge.actualCharge,
+                    varianceCost: match.charge.invoiceAmount - systemCharge.actualCost,
+                    matchScore: match.score,
+                    isMatched: true
                 });
-                console.log(`✅ Matched "${invoiceCharge.name}" → "${match.charge.name}" (score: ${match.score})`);
+                console.log(`✅ Matched system "${systemCharge.name}" → invoice "${match.charge.name}" (score: ${match.score})`);
             } else {
-                // No good match found - add invoice charge with empty system data
-                matchedCharges.push({
-                    code: invoiceCharge.code,
-                    name: invoiceCharge.name,
-                    currency: invoiceCharge.currency,
-                    invoiceAmount: invoiceCharge.invoiceAmount,
-                    systemQuotedCost: 0,
-                    systemQuotedCharge: 0,
-                    systemActualCost: 0,
-                    systemActualCharge: 0,
-                    varianceCost: invoiceCharge.invoiceAmount,
-                    matchScore: 0
-                });
-                console.log(`❌ No match found for "${invoiceCharge.name}"`);
-            }
-        });
-
-        // Add unmatched system charges
-        systemCharges.forEach((systemCharge, index) => {
-            if (!usedSystemCharges.has(index)) {
+                // No invoice match - system charge only
                 matchedCharges.push({
                     code: systemCharge.code,
                     name: systemCharge.name,
@@ -1030,14 +2309,35 @@ export default function APProcessingResults({
                     systemActualCost: systemCharge.actualCost,
                     systemActualCharge: systemCharge.actualCharge,
                     varianceCost: -systemCharge.actualCost,
-                    matchScore: 0
+                    matchScore: 0,
+                    isMatched: false
                 });
-                console.log(`🔵 Unmatched system charge: "${systemCharge.name}"`);
+                console.log(`🔵 System charge without invoice match: "${systemCharge.name}"`);
             }
         });
 
-        // Calculate profit for each charge using real currency conversion
-        const chargesWithProfit = await Promise.all(matchedCharges.map(async (charge) => {
+        // Add unmatched invoice charges to unmatchedCharges
+        invoiceCharges.forEach((invoiceCharge, index) => {
+            if (!usedInvoiceCharges.has(index)) {
+                unmatchedCharges.push({
+                    code: invoiceCharge.code,
+                    name: invoiceCharge.name,
+                    currency: invoiceCharge.currency,
+                    invoiceAmount: invoiceCharge.invoiceAmount,
+                    systemQuotedCost: 0,
+                    systemQuotedCharge: 0,
+                    systemActualCost: 0,
+                    systemActualCharge: 0,
+                    varianceCost: invoiceCharge.invoiceAmount,
+                    matchScore: 0,
+                    isMatched: false
+                });
+                console.log(`❌ Unmatched invoice charge: "${invoiceCharge.name}"`);
+            }
+        });
+
+        // Calculate profit for matched charges using real currency conversion
+        const matchedChargesWithProfit = await Promise.all(matchedCharges.map(async (charge) => {
             try {
                 // Get exchange rates for the shipment date (historical rates)
                 const rates = await currencyConversionService.getRatesForDate(shipmentDate);
@@ -1045,13 +2345,6 @@ export default function APProcessingResults({
                 // Convert amounts to CAD for profit calculation using real exchange rates
                 const invoiceAmountCAD = currencyConversionService.convertCurrency(
                     charge.invoiceAmount,
-                    charge.currency,
-                    'CAD',
-                    rates
-                );
-
-                const actualCostCAD = currencyConversionService.convertCurrency(
-                    charge.systemActualCost,
                     charge.currency,
                     'CAD',
                     rates
@@ -1067,22 +2360,12 @@ export default function APProcessingResults({
                 // Profit = What we charge customer (actual charge) - What we pay carrier (invoice amount)
                 const profit = actualChargeCAD - invoiceAmountCAD;
 
-                console.log(`💰 Profit calculation for ${charge.name} (${shipmentDate.toDateString()}):`, {
-                    invoiceAmount: `${charge.currency} ${charge.invoiceAmount}`,
-                    invoiceAmountCAD: `CAD ${invoiceAmountCAD.toFixed(2)}`,
-                    actualChargeCAD: `CAD ${actualChargeCAD.toFixed(2)}`,
-                    profit: `CAD ${profit.toFixed(2)}`,
-                    exchangeRateDate: shipmentDate.toDateString(),
-                    baseCurrency: rates.baseCurrency
-                });
-
                 return {
                     ...charge,
                     profit: profit
                 };
             } catch (error) {
                 console.error('❌ Error converting currency for profit calculation:', error);
-                // Fallback to original amount if conversion fails
                 return {
                     ...charge,
                     profit: charge.systemActualCharge - charge.invoiceAmount
@@ -1090,12 +2373,38 @@ export default function APProcessingResults({
             }
         }));
 
-        // Filter out tax items for comparison table
-        const filteredCharges = chargesWithProfit.filter(charge => {
+        // Calculate profit for unmatched charges using real currency conversion
+        const unmatchedChargesWithProfit = await Promise.all(unmatchedCharges.map(async (charge) => {
+            try {
+                const rates = await currencyConversionService.getRatesForDate(shipmentDate);
+                const invoiceAmountCAD = currencyConversionService.convertCurrency(
+                    charge.invoiceAmount,
+                    charge.currency,
+                    'CAD',
+                    rates
+                );
+
+                // For unmatched charges, profit is negative (we pay but don't charge)
+                const profit = -invoiceAmountCAD;
+
+                return {
+                    ...charge,
+                    profit: profit
+                };
+            } catch (error) {
+                console.error('❌ Error converting currency for unmatched charge:', error);
+                return {
+                    ...charge,
+                    profit: -charge.invoiceAmount
+                };
+            }
+        }));
+
+        // Filter out tax items from both sections
+        const filterTaxes = (charges) => charges.filter(charge => {
             const chargeName = charge.name.toLowerCase();
             const chargeCode = charge.code.toLowerCase();
 
-            // Remove tax-related charges (HST, GST, PST, QST, Tax)
             const isTaxCharge =
                 chargeName.includes('hst') ||
                 chargeName.includes('gst') ||
@@ -1111,8 +2420,24 @@ export default function APProcessingResults({
             return !isTaxCharge;
         });
 
-        console.log('🎯 Final matched charges (tax items filtered):', filteredCharges);
-        return filteredCharges;
+        const finalMatchedCharges = filterTaxes(matchedChargesWithProfit);
+        const finalUnmatchedCharges = filterTaxes(unmatchedChargesWithProfit);
+
+        // Apply intelligent auto-approval logic
+        const enhancedCharges = await applyIntelligentAutoApproval(
+            finalMatchedCharges,
+            finalUnmatchedCharges,
+            invoiceCharges,
+            shipmentDate
+        );
+
+        console.log('🎯 Final matched charges (tax items filtered):', enhancedCharges.matchedCharges);
+        console.log('🎯 Final unmatched charges (tax items filtered):', enhancedCharges.unmatchedCharges);
+
+        return {
+            matchedCharges: enhancedCharges.matchedCharges,
+            unmatchedCharges: enhancedCharges.unmatchedCharges
+        };
     };
 
     const handleTabChange = (event, newValue) => {
@@ -1135,20 +2460,33 @@ export default function APProcessingResults({
                     if (matchResult.match) {
                         // Get the correct shipment ID field (could be shipmentID or shipmentId)
                         const matchedSystemShipmentId = matchResult.match.shipmentID || matchResult.match.shipmentId || matchResult.match.firestoreDocId;
-                        console.log(`✅ Auto-matched: ${invoiceShipment.shipmentId} → ${matchedSystemShipmentId} (confidence: ${matchResult.confidence}%)`);
 
-                        // Extract system rate data for comparison
-                        const systemRateData = extractSystemRateData(matchResult.match);
+                        // Only auto-match if confidence is 80% or higher
+                        if (matchResult.confidence >= 80) {
+                            console.log(`✅ Auto-matched: ${invoiceShipment.shipmentId} → ${matchedSystemShipmentId} (confidence: ${matchResult.confidence}%)`);
 
-                        return {
-                            ...invoiceShipment,
-                            matchedShipmentId: matchedSystemShipmentId,
-                            matchConfidence: matchResult.confidence,
-                            matchMethod: matchResult.method,
-                            matchResult: matchResult,
-                            systemRateData: systemRateData, // Add system data for comparison
-                            systemShipmentData: matchResult.match // Store full shipment data
-                        };
+                            // Extract system rate data for comparison
+                            const systemRateData = extractSystemRateData(matchResult.match);
+
+                            return {
+                                ...invoiceShipment,
+                                matchedShipmentId: matchedSystemShipmentId,
+                                matchConfidence: matchResult.confidence,
+                                matchMethod: matchResult.method,
+                                matchResult: matchResult,
+                                systemRateData: systemRateData, // Add system data for comparison
+                                systemShipmentData: matchResult.match // Store full shipment data
+                            };
+                        } else {
+                            console.log(`⚠️ Low confidence match found for ${invoiceShipment.shipmentId} → ${matchedSystemShipmentId} (${matchResult.confidence}%) - not auto-matching`);
+                            return {
+                                ...invoiceShipment,
+                                matchConfidence: matchResult.confidence,
+                                matchMethod: matchResult.method,
+                                matchResult: matchResult,
+                                potentialMatch: matchedSystemShipmentId // Store for manual review
+                            };
+                        }
                     } else {
                         console.log(`❌ No match found for: ${invoiceShipment.shipmentId}`);
                         return invoiceShipment;
@@ -2146,40 +3484,64 @@ export default function APProcessingResults({
 
         setIsSearchingShipments(true);
         try {
-            // TODO: Implement actual shipment search
-            // This would query the shipments collection with various search criteria
             console.log('🔍 Searching shipments for:', searchTerm);
 
-            // Mock search results for now
-            const mockResults = [
-                {
-                    id: 'SHIP-001',
-                    shipmentId: 'IC-TRANSFAB-001',
-                    origin: 'Toronto, ON',
-                    destination: 'Montreal, QC',
-                    carrier: 'Sample Carrier',
-                    status: 'In Transit',
-                    totalAmount: 175.00
-                },
-                {
-                    id: 'SHIP-002',
-                    shipmentId: 'IC-TEMSPEC-002',
-                    origin: 'Vancouver, BC',
-                    destination: 'Calgary, AB',
-                    carrier: 'Sample Carrier',
-                    status: 'Delivered',
-                    totalAmount: 225.50
-                }
-            ];
+            // Use the existing fetchSystemShipments function and filter results
+            const allShipments = await fetchSystemShipments();
 
-            // Filter mock results based on search term
-            const filtered = mockResults.filter(s =>
-                s.shipmentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                s.origin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                s.destination.toLowerCase().includes(searchTerm.toLowerCase())
-            );
+            // Comprehensive search across multiple fields
+            const searchLower = searchTerm.toLowerCase();
+            const filtered = allShipments.filter(shipment => {
+                // Search in shipment IDs
+                const shipmentIdMatch = (shipment.shipmentID || shipment.shipmentId || '').toLowerCase().includes(searchLower);
 
-            setShipmentSearchResults(filtered);
+                // Search in reference numbers
+                const referenceMatch = [
+                    ...(shipment.referenceNumbers || []),
+                    ...(shipment.references || []),
+                    shipment.customerReferenceNumber,
+                    shipment.poNumber,
+                    ...(shipment.manualRates || []).map(r => r.ediNumber),
+                    ...(shipment.manualRates || []).map(r => r.invoiceNumber)
+                ].some(ref => ref && ref.toString().toLowerCase().includes(searchLower));
+
+                // Search in addresses
+                const addressMatch = [
+                    shipment.shipFrom?.company,
+                    shipment.shipFrom?.city,
+                    shipment.shipTo?.company,
+                    shipment.shipTo?.city,
+                    shipment.shipmentInfo?.origin?.company,
+                    shipment.shipmentInfo?.destination?.company
+                ].some(addr => addr && addr.toLowerCase().includes(searchLower));
+
+                // Search in carrier information
+                const carrierMatch = [
+                    shipment.carrier,
+                    shipment.selectedCarrier,
+                    shipment.selectedRate?.carrier,
+                    shipment.selectedRate?.carrierName
+                ].some(carrier => carrier && carrier.toLowerCase().includes(searchLower));
+
+                return shipmentIdMatch || referenceMatch || addressMatch || carrierMatch;
+            });
+
+            // Format results for the search dialog
+            const searchResults = filtered.slice(0, 20).map(shipment => ({
+                id: shipment.id || shipment.shipmentID || shipment.shipmentId,
+                shipmentId: shipment.shipmentID || shipment.shipmentId,
+                origin: `${shipment.shipFrom?.company || shipment.shipmentInfo?.origin?.company || 'Unknown'}, ${shipment.shipFrom?.city || shipment.shipmentInfo?.origin?.city || ''}`,
+                destination: `${shipment.shipTo?.company || shipment.shipmentInfo?.destination?.company || 'Unknown'}, ${shipment.shipTo?.city || shipment.shipmentInfo?.destination?.city || ''}`,
+                carrier: shipment.carrier || shipment.selectedCarrier || shipment.selectedRate?.carrier || 'Unknown',
+                status: shipment.status || 'Unknown',
+                totalAmount: shipment.selectedRate?.totalAmount || shipment.totalAmount || 0,
+                currency: shipment.currency || 'CAD',
+                createdAt: shipment.createdAt,
+                bookedAt: shipment.bookedAt
+            }));
+
+            console.log(`📋 Found ${searchResults.length} matching shipments out of ${allShipments.length} total`);
+            setShipmentSearchResults(searchResults);
         } catch (error) {
             console.error('❌ Error searching shipments:', error);
             setShipmentSearchResults([]);
@@ -2191,11 +3553,22 @@ export default function APProcessingResults({
     const handleSelectMatchedShipment = (shipment) => {
         console.log('✅ Selected shipment for matching:', shipment);
 
-        // Update the table data to include the matched shipment ID
+        // Update the table data to include the matched shipment ID and manual match status
         setTableData(prevTableData =>
             prevTableData.map(row =>
                 row.id === selectedRowForMatching.id
-                    ? { ...row, matchedShipmentId: shipment.shipmentId }
+                    ? {
+                        ...row,
+                        matchedShipmentId: shipment.shipmentId,
+                        matchConfidence: 100, // Manual matches get 100% confidence
+                        matchMethod: 'Manual Match',
+                        matchResult: {
+                            match: shipment,
+                            confidence: 100,
+                            method: 'Manual Match',
+                            matched: true
+                        }
+                    }
                     : row
             )
         );
@@ -2413,163 +3786,278 @@ export default function APProcessingResults({
                             variant="contained"
                             color="success"
                             size="small"
-                            onClick={() => onApprove(false)}
+                            onClick={handleBulkApprove}
+                            disabled={selectedShipments.size === 0 || isBulkApproving || isBulkExcepting}
+                            startIcon={isBulkApproving ? <CircularProgress size={14} /> : null}
                             sx={{ fontSize: '11px' }}
                         >
-                            Approve for Billing
+                            {isBulkApproving ? 'APPROVING...' : (selectedShipments.size === 0 ? 'SELECT SHIPMENTS TO APPROVE' : `APPROVE ${selectedShipments.size} FOR BILLING`)}
                         </Button>
                         <Button
                             variant="outlined"
                             size="small"
-                            onClick={() => onApprove(true)}
+                            onClick={handleBulkException}
+                            disabled={selectedShipments.size === 0 || isBulkApproving || isBulkExcepting}
+                            startIcon={isBulkExcepting ? <CircularProgress size={14} /> : null}
                             sx={{ fontSize: '11px' }}
                         >
-                            Mark as Exception
+                            {isBulkExcepting ? 'MARKING...' : (selectedShipments.size === 0 ? 'SELECT SHIPMENTS FOR EXCEPTION' : `MARK ${selectedShipments.size} AS EXCEPTION`)}
                         </Button>
                     </Box>
                 </Box>
 
-                {/* Results Table */}
-                <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
-                    <Table size="small">
-                        <TableHead>
-                            <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
-                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Matched Shipment ID</TableCell>
-                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Carrier</TableCell>
-                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Route</TableCell>
-                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '200px' }}>Charges</TableCell>
-                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
-                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Status</TableCell>
-                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {tableData.map((row) => (
-                                <TableRow key={row.id} hover sx={{ '&:hover': { backgroundColor: '#f9fafb' } }}>
-                                    <TableCell sx={{ fontSize: '11px' }}>{row.shipmentId}</TableCell>
-                                    <TableCell sx={{ fontSize: '11px' }}>
-                                        {row.matchedShipmentId ? (
-                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                                <Chip
-                                                    label={row.matchedShipmentId}
-                                                    size="small"
-                                                    color="success"
-                                                    icon={<LinkIcon sx={{ fontSize: '12px' }} />}
-                                                    sx={{ fontSize: '10px', height: '20px' }}
-                                                    onClick={() => handleViewMatchedShipment(row.matchedShipmentId)}
-                                                />
-                                                {row.matchConfidence && (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                        <Chip
-                                                            label={`${row.matchConfidence}% confidence`}
-                                                            size="small"
-                                                            color={row.matchConfidence >= 80 ? 'success' : row.matchConfidence >= 50 ? 'warning' : 'error'}
-                                                            sx={{ fontSize: '9px', height: '16px' }}
-                                                        />
-                                                        <Tooltip title={`Matched by: ${row.matchMethod}`}>
-                                                            <AssignIcon sx={{ fontSize: '12px', color: '#3b82f6' }} />
-                                                        </Tooltip>
-                                                    </Box>
-                                                )}
-                                            </Box>
-                                        ) : (
-                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                                <Button
-                                                    size="small"
-                                                    variant="outlined"
-                                                    startIcon={<SearchIcon sx={{ fontSize: '12px' }} />}
-                                                    sx={{ fontSize: '10px', height: '24px', minWidth: 'auto', px: 1 }}
-                                                    onClick={() => handleMatchShipment(row)}
-                                                >
-                                                    Manual Match
-                                                </Button>
-                                                <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
-                                                    No auto-match found
-                                                </Typography>
-                                            </Box>
-                                        )}
-                                    </TableCell>
-                                    <TableCell sx={{ fontSize: '11px' }}>{row.carrier}</TableCell>
-                                    <TableCell sx={{ fontSize: '11px' }}>
-                                        <Box>
-                                            <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
-                                                From: {row.origin}
-                                            </Typography>
-                                            <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
-                                                To: {row.destination}
-                                            </Typography>
-                                        </Box>
-                                    </TableCell>
-                                    <TableCell sx={{ fontSize: '11px', minWidth: '200px' }}>
-                                        {row.charges.length > 0 ? (
-                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                                {row.charges.map((charge, index) => (
-                                                    <Typography key={index} variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
-                                                        {charge.description || charge.name}: {formatCurrencyHelper(charge.amount, charge.currency)}
-                                                    </Typography>
-                                                ))}
-                                            </Box>
-                                        ) : (
-                                            <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                No charges
-                                            </Typography>
-                                        )}
-                                    </TableCell>
-                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#059669' }}>
-                                        {formatCurrencyHelper(row.totalAmount, row.currency)}
-                                    </TableCell>
-                                    <TableCell sx={{ fontSize: '11px' }}>
-                                        {(() => {
-                                            const statusInfo = getStatusDisplay(row);
-                                            return (
-                                                <Chip
-                                                    label={statusInfo.label}
-                                                    size="small"
-                                                    sx={{
-                                                        fontSize: '10px',
-                                                        height: '22px',
-                                                        backgroundColor: statusInfo.backgroundColor,
-                                                        color: statusInfo.color,
-                                                        fontWeight: 500
-                                                    }}
-                                                />
-                                            );
-                                        })()}
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button
-                                            size="small"
-                                            variant="outlined"
-                                            onClick={() => handleShipmentClick(row)}
-                                            sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
-                                        >
-                                            View Details
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
+                {/* Split data into matched and unmatched shipments */}
+                {(() => {
+                    const matchedShipments = tableData.filter(row => row.matchedShipmentId && row.matchConfidence >= 80);
+                    const unmatchedShipments = tableData.filter(row => !row.matchedShipmentId || row.matchConfidence < 80);
 
-                {/* Summary */}
-                <Box sx={{ mt: 2, p: 2, backgroundColor: '#f9fafb', borderRadius: 1 }}>
-                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
-                        Summary
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 4 }}>
-                        <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                            Total Shipments: <strong>{tableData.length}</strong>
-                        </Typography>
-                        <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                            Total Amount: <strong>{formatCurrencyHelper(tableData.reduce((sum, row) => sum + row.totalAmount, 0))}</strong>
-                        </Typography>
-                        <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                            Carriers: <strong>{[...new Set(tableData.map(row => row.carrier))].join(', ')}</strong>
-                        </Typography>
-                    </Box>
-                </Box>
+                    const renderTable = (data, title, showMatchColumn = true) => (
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, color: '#374151' }}>
+                                {title} ({data.length})
+                            </Typography>
+                            <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', padding: '8px' }}>
+                                                <Checkbox
+                                                    size="small"
+                                                    checked={data.length > 0 && data.every(row => selectedShipments.has(row.id))}
+                                                    onChange={(e) => {
+                                                        const allRowIds = data.map(row => row.id);
+                                                        if (e.target.checked) {
+                                                            setSelectedShipments(prev => new Set([...prev, ...allRowIds]));
+                                                        } else {
+                                                            setSelectedShipments(prev => {
+                                                                const newSet = new Set(prev);
+                                                                allRowIds.forEach(id => newSet.delete(id));
+                                                                return newSet;
+                                                            });
+                                                        }
+                                                    }}
+                                                    indeterminate={data.some(row => selectedShipments.has(row.id)) && !data.every(row => selectedShipments.has(row.id))}
+                                                />
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
+                                            {showMatchColumn && (
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Matched Shipment ID</TableCell>
+                                            )}
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Carrier</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Route</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '200px' }}>Charges</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Status</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {data.length > 0 ? data.map((row) => (
+                                            <TableRow key={row.id} hover sx={{ '&:hover': { backgroundColor: '#f9fafb' } }}>
+                                                <TableCell sx={{ fontSize: '11px', padding: '8px' }}>
+                                                    <Checkbox
+                                                        size="small"
+                                                        checked={selectedShipments.has(row.id)}
+                                                        onChange={(e) => handleSelectShipment(row.id, e.target.checked)}
+                                                    />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '11px' }}>{row.shipmentId}</TableCell>
+                                                {showMatchColumn && (
+                                                    <TableCell sx={{ fontSize: '11px' }}>
+                                                        {row.matchedShipmentId && row.matchConfidence >= 80 ? (
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                                <Chip
+                                                                    label={row.matchedShipmentId}
+                                                                    size="small"
+                                                                    icon={<LinkIcon sx={{ fontSize: '12px' }} />}
+                                                                    sx={{
+                                                                        fontSize: '10px',
+                                                                        height: '20px',
+                                                                        backgroundColor: '#d1fae5',
+                                                                        color: '#059669',
+                                                                        '&:hover': {
+                                                                            backgroundColor: '#bbf7d0'
+                                                                        }
+                                                                    }}
+                                                                    onClick={() => handleViewMatchedShipment(row.matchedShipmentId)}
+                                                                />
+                                                                {row.matchConfidence && (
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                        <Chip
+                                                                            label={`${row.matchConfidence}% confidence`}
+                                                                            size="small"
+                                                                            color="success"
+                                                                            sx={{ fontSize: '9px', height: '16px' }}
+                                                                        />
+                                                                        <Tooltip title={`Matched by: ${row.matchMethod}`}>
+                                                                            <AssignIcon sx={{ fontSize: '12px', color: '#3b82f6' }} />
+                                                                        </Tooltip>
+                                                                    </Box>
+                                                                )}
+                                                            </Box>
+                                                        ) : row.matchConfidence && row.matchConfidence < 80 ? (
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                                <Button
+                                                                    size="small"
+                                                                    variant="outlined"
+                                                                    startIcon={<SearchIcon sx={{ fontSize: '12px' }} />}
+                                                                    sx={{
+                                                                        fontSize: '10px',
+                                                                        height: '24px',
+                                                                        minWidth: 'auto',
+                                                                        px: 1,
+                                                                        borderColor: '#000',
+                                                                        color: '#000',
+                                                                        '&:hover': {
+                                                                            borderColor: '#000',
+                                                                            backgroundColor: '#f5f5f5'
+                                                                        }
+                                                                    }}
+                                                                    onClick={() => handleMatchShipment(row)}
+                                                                >
+                                                                    MATCH
+                                                                </Button>
+                                                                <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
+                                                                    Low confidence ({row.matchConfidence}%)
+                                                                </Typography>
+                                                            </Box>
+                                                        ) : isAutoMatching ? (
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'center' }}>
+                                                                <CircularProgress size={16} sx={{ color: '#3b82f6' }} />
+                                                                <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
+                                                                    Matching...
+                                                                </Typography>
+                                                            </Box>
+                                                        ) : (
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                                <Button
+                                                                    size="small"
+                                                                    variant="outlined"
+                                                                    startIcon={<SearchIcon sx={{ fontSize: '12px' }} />}
+                                                                    sx={{
+                                                                        fontSize: '10px',
+                                                                        height: '24px',
+                                                                        minWidth: 'auto',
+                                                                        px: 1,
+                                                                        borderColor: '#000',
+                                                                        color: '#000',
+                                                                        '&:hover': {
+                                                                            borderColor: '#000',
+                                                                            backgroundColor: '#f5f5f5'
+                                                                        }
+                                                                    }}
+                                                                    onClick={() => handleMatchShipment(row)}
+                                                                >
+                                                                    MATCH
+                                                                </Button>
+                                                                <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
+                                                                    No auto-match found
+                                                                </Typography>
+                                                            </Box>
+                                                        )}
+                                                    </TableCell>
+                                                )}
+                                                <TableCell sx={{ fontSize: '11px' }}>{row.carrier}</TableCell>
+                                                <TableCell sx={{ fontSize: '11px' }}>
+                                                    <Box>
+                                                        <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                                            From: {row.origin}
+                                                        </Typography>
+                                                        <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                                            To: {row.destination}
+                                                        </Typography>
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '11px', minWidth: '200px' }}>
+                                                    {row.charges.length > 0 ? (
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                            {row.charges.map((charge, index) => (
+                                                                <Typography key={index} variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                                                    {charge.description || charge.name}: {formatCurrencyHelper(charge.amount, charge.currency)}
+                                                                </Typography>
+                                                            ))}
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                            No charges
+                                                        </Typography>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#059669' }}>
+                                                    {formatCurrencyHelper(row.totalAmount, row.currency)}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '11px' }}>
+                                                    {(() => {
+                                                        const statusInfo = getStatusDisplay(row);
+                                                        return (
+                                                            <Chip
+                                                                label={statusInfo.label}
+                                                                size="small"
+                                                                sx={{
+                                                                    fontSize: '10px',
+                                                                    height: '22px',
+                                                                    backgroundColor: statusInfo.backgroundColor,
+                                                                    color: statusInfo.color,
+                                                                    fontWeight: 500
+                                                                }}
+                                                            />
+                                                        );
+                                                    })()}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button
+                                                        size="small"
+                                                        variant="outlined"
+                                                        onClick={() => handleShipmentClick(row)}
+                                                        sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                    >
+                                                        View Details
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        )) : (
+                                            <TableRow>
+                                                <TableCell colSpan={showMatchColumn ? 9 : 8} sx={{ textAlign: 'center', py: 3 }}>
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        No {title.toLowerCase()} found
+                                                    </Typography>
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Box>
+                    );
+
+                    return (
+                        <Box>
+                            {/* Summary */}
+                            <Box sx={{ mb: 3, p: 2, backgroundColor: '#f9fafb', borderRadius: 1 }}>
+                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                    Summary
+                                </Typography>
+                                <Box sx={{ display: 'flex', gap: 4 }}>
+                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        Total Shipments: <strong>{tableData.length}</strong>
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        Total Amount: <strong>{formatCurrencyHelper(tableData.reduce((sum, row) => sum + row.totalAmount, 0))}</strong>
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        Carriers: <strong>{[...new Set(tableData.map(row => row.carrier))].join(', ')}</strong>
+                                    </Typography>
+                                </Box>
+                            </Box>
+
+                            {/* Matched Shipments Table */}
+                            {renderTable(matchedShipments, "MATCHED SHIPMENTS", true)}
+
+                            {/* Unmatched Shipments Table */}
+                            {renderTable(unmatchedShipments, "UNMATCHED SHIPMENTS", true)}
+                        </Box>
+                    );
+                })()}
             </Box>
         );
     };
@@ -2710,26 +4198,74 @@ export default function APProcessingResults({
                                         </Box>
                                     )}
 
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={6}>
-                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Invoice Ref</Typography>
-                                            <Typography sx={{ fontSize: '12px' }}>{selectedShipmentDetail.references.invoiceRef || 'N/A'}</Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Manifest Ref</Typography>
-                                            <Typography sx={{ fontSize: '12px' }}>{selectedShipmentDetail.references.manifestRef || 'N/A'}</Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Customer Ref</Typography>
-                                            <Typography sx={{ fontSize: '12px' }}>{selectedShipmentDetail.references.customerRef || 'N/A'}</Typography>
-                                        </Grid>
-                                        <Grid item xs={6}>
-                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Other</Typography>
-                                            <Typography sx={{ fontSize: '12px' }}>
-                                                {selectedShipmentDetail.references.other?.join(', ') || 'N/A'}
-                                            </Typography>
-                                        </Grid>
-                                    </Grid>
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>References</Typography>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                        {(() => {
+                                            const allReferences = [];
+
+                                            // Collect all non-empty references
+                                            if (selectedShipmentDetail.references.invoiceRef && selectedShipmentDetail.references.invoiceRef !== 'N/A') {
+                                                allReferences.push({ label: 'Invoice', value: selectedShipmentDetail.references.invoiceRef });
+                                            }
+                                            if (selectedShipmentDetail.references.manifestRef && selectedShipmentDetail.references.manifestRef !== 'N/A') {
+                                                allReferences.push({ label: 'Manifest', value: selectedShipmentDetail.references.manifestRef });
+                                            }
+                                            if (selectedShipmentDetail.references.customerRef && selectedShipmentDetail.references.customerRef !== 'N/A') {
+                                                allReferences.push({ label: 'Customer', value: selectedShipmentDetail.references.customerRef });
+                                            }
+
+                                            // Add other references
+                                            if (selectedShipmentDetail.references.other && Array.isArray(selectedShipmentDetail.references.other)) {
+                                                selectedShipmentDetail.references.other.forEach(ref => {
+                                                    if (ref && ref !== 'N/A') {
+                                                        allReferences.push({ label: 'Other', value: ref });
+                                                    }
+                                                });
+                                            }
+
+                                            // Add shipment ID as a reference if available
+                                            if (selectedShipmentDetail.shipmentId && selectedShipmentDetail.shipmentId !== 'N/A') {
+                                                allReferences.push({ label: 'Shipment ID', value: selectedShipmentDetail.shipmentId });
+                                            }
+
+                                            return allReferences.length > 0 ? (
+                                                allReferences.map((ref, index) => (
+                                                    <Chip
+                                                        key={index}
+                                                        label={`${ref.label}: ${ref.value}`}
+                                                        size="small"
+                                                        sx={{
+                                                            fontSize: '11px',
+                                                            height: '24px',
+                                                            backgroundColor: '#f3f4f6',
+                                                            color: '#374151',
+                                                            border: '1px solid #d1d5db',
+                                                            '& .MuiChip-label': {
+                                                                px: 1,
+                                                                fontSize: '11px'
+                                                            }
+                                                        }}
+                                                    />
+                                                ))
+                                            ) : (
+                                                <Chip
+                                                    label="No references available"
+                                                    size="small"
+                                                    sx={{
+                                                        fontSize: '11px',
+                                                        height: '24px',
+                                                        backgroundColor: '#f9fafb',
+                                                        color: '#6b7280',
+                                                        border: '1px solid #e5e7eb',
+                                                        '& .MuiChip-label': {
+                                                            px: 1,
+                                                            fontSize: '11px'
+                                                        }
+                                                    }}
+                                                />
+                                            );
+                                        })()}
+                                    </Box>
                                 </Grid>
                             </Grid>
                         </Paper>
@@ -2740,23 +4276,31 @@ export default function APProcessingResults({
                                 <Table size="small">
                                     <TableHead>
                                         <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Code</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Charge Name</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Currency</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>QTY</TableCell>
+                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Rate</TableCell>
                                             <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Invoice Amount</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {selectedShipmentDetail.charges.map((charge, index) => (
-                                            <TableRow key={index} sx={{ backgroundColor: index % 2 === 1 ? '#f9fafb' : 'white' }}>
-                                                <TableCell sx={{ fontSize: '11px' }}>{charge.code || 'FRT'}</TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>{charge.description || charge.name || 'Charge'}</TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>{charge.currency || selectedShipmentDetail.currency}</TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>
-                                                    {formatCurrencyHelper(charge.amount, charge.currency || selectedShipmentDetail.currency)}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
+                                        {selectedShipmentDetail.charges.map((charge, index) => {
+                                            const currency = charge.currency || selectedShipmentDetail.currency || 'CAD';
+
+                                            return (
+                                                <TableRow key={index} sx={{ backgroundColor: index % 2 === 1 ? '#f9fafb' : 'white' }}>
+                                                    <TableCell sx={{ fontSize: '11px' }}>{charge.description || charge.name || 'Charge'}</TableCell>
+                                                    <TableCell sx={{ fontSize: '11px' }}>
+                                                        {charge.quantity || charge.qty || 'N/A'}
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '11px' }}>
+                                                        {charge.rate ? formatCurrencyHelper(charge.rate, currency) : 'N/A'}
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '11px' }}>
+                                                        {formatCurrencyHelper(charge.amount, currency)}
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
                                     </TableBody>
                                 </Table>
                             </TableContainer>
@@ -2764,11 +4308,75 @@ export default function APProcessingResults({
 
                         {/* Compare & Apply Section */}
                         <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 2 }}>
-                            <Typography sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>Compare & Apply</Typography>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>Compare & Apply</Typography>
+
+                                {/* Apply Charges Buttons */}
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    {(() => {
+                                        const allCharges = [...(selectedShipmentDetail.comparisonData?.matchedCharges || []), ...(selectedShipmentDetail.comparisonData?.unmatchedCharges || [])];
+                                        const autoApprovalCharges = allCharges.filter(c => c.autoApprovalRecommendation === 'approve');
+
+                                        return autoApprovalCharges.length > 0 && (
+                                            <Button
+                                                variant="contained"
+                                                size="small"
+                                                onClick={handleAutoApproveCharges}
+                                                disabled={isApplyingCharges || isUnapplyingCharges}
+                                                startIcon={isApplyingCharges ? <CircularProgress size={14} sx={{ color: 'white' }} /> : null}
+                                                sx={{
+                                                    fontSize: '11px',
+                                                    textTransform: 'none',
+                                                    backgroundColor: '#10b981',
+                                                    color: 'white',
+                                                    '&:hover': {
+                                                        backgroundColor: '#059669'
+                                                    },
+                                                    '&:disabled': {
+                                                        backgroundColor: '#9ca3af',
+                                                        color: 'white'
+                                                    }
+                                                }}
+                                            >
+                                                {isApplyingCharges ?
+                                                    'AUTO-APPLYING...' :
+                                                    `AUTO-APPROVE (${autoApprovalCharges.length})`
+                                                }
+                                            </Button>
+                                        );
+                                    })()}
+
+                                    {(selectedCharges.size === 0 || Array.from(selectedCharges).some(index => !appliedCharges.has(index))) && (
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            onClick={handleApplySelectedCharges}
+                                            disabled={selectedCharges.size === 0 || Array.from(selectedCharges).every(index => appliedCharges.has(index)) || isApplyingCharges || isUnapplyingCharges}
+                                            startIcon={isApplyingCharges ? <CircularProgress size={14} /> : null}
+                                            sx={{
+                                                fontSize: '11px',
+                                                textTransform: 'none',
+                                                '&:disabled': {
+                                                    borderColor: '#d1d5db',
+                                                    color: '#9ca3af'
+                                                }
+                                            }}
+                                        >
+                                            {isApplyingCharges ?
+                                                'APPLYING...' :
+                                                (selectedCharges.size === 0 ?
+                                                    'SELECT CHARGES TO APPLY' :
+                                                    'APPLY ACTUAL CHARGES'
+                                                )
+                                            }
+                                        </Button>
+                                    )}
+                                </Box>
+                            </Box>
                             <Table size="small">
                                 <TableHead>
                                     <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, padding: '8px' }}>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, padding: '8px', width: '40px', maxWidth: '40px', verticalAlign: 'top' }}>
                                             <Checkbox
                                                 size="small"
                                                 checked={selectAllCharges}
@@ -2779,15 +4387,15 @@ export default function APProcessingResults({
                                                 }}
                                             />
                                         </TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Code</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Charge Name</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Invoice Amount</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Quoted Cost</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Quoted Charge</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Actual Cost</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Actual Charge</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Variance</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Profit (CAD)</TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '50px', textAlign: 'left', verticalAlign: 'top' }}>Code</TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '200px', textAlign: 'left', verticalAlign: 'top' }}>Charge Name</TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Invoice Amount</TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Quoted Cost</TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Quoted Charge</TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Actual Cost</TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Actual Charge</TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '90px', textAlign: 'left', verticalAlign: 'top' }}>Variance</TableCell>
+                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Profit (CAD)</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -2797,6 +4405,10 @@ export default function APProcessingResults({
                                         selectedCharges={selectedCharges}
                                         onSelectCharge={handleSelectCharge}
                                         appliedCharges={appliedCharges}
+                                        setAppliedCharges={setAppliedCharges}
+                                        uploadData={uploadData}
+                                        fileName={fileName}
+                                        enqueueSnackbar={enqueueSnackbar}
                                     />
                                 </TableBody>
                             </Table>
@@ -2812,6 +4424,8 @@ export default function APProcessingResults({
                                             variant="outlined"
                                             size="small"
                                             onClick={handleUnapplySelectedCharges}
+                                            disabled={isUnapplyingCharges || isApplyingCharges}
+                                            startIcon={isUnapplyingCharges ? <CircularProgress size={14} /> : null}
                                             sx={{
                                                 fontSize: '11px',
                                                 textTransform: 'none',
@@ -2820,26 +4434,14 @@ export default function APProcessingResults({
                                                 '&:hover': {
                                                     borderColor: '#b91c1c',
                                                     backgroundColor: '#fee2e2'
+                                                },
+                                                '&:disabled': {
+                                                    borderColor: '#d1d5db',
+                                                    color: '#9ca3af'
                                                 }
                                             }}
                                         >
-                                            UNAPPLY CHARGES
-                                        </Button>
-                                    )}
-
-                                    {/* Show apply button only when non-applied charges are selected */}
-                                    {(selectedCharges.size === 0 || Array.from(selectedCharges).some(index => !appliedCharges.has(index))) && (
-                                        <Button
-                                            variant="outlined"
-                                            size="small"
-                                            onClick={handleApplySelectedCharges}
-                                            disabled={selectedCharges.size === 0 || Array.from(selectedCharges).every(index => appliedCharges.has(index))}
-                                            sx={{ fontSize: '11px', textTransform: 'none' }}
-                                        >
-                                            {selectedCharges.size === 0 ?
-                                                'SELECT CHARGES TO APPLY' :
-                                                'APPLY ACTUAL CHARGES'
-                                            }
+                                            {isUnapplyingCharges ? 'UNAPPLYING...' : 'UNAPPLY CHARGES'}
                                         </Button>
                                     )}
                                 </Box>
@@ -2921,20 +4523,38 @@ export default function APProcessingResults({
                 </DialogTitle>
                 <DialogContent>
                     <Box sx={{ mb: 3 }}>
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
-                            Search for the shipment that matches this invoice line item:
-                        </Typography>
+                        <Alert severity="info" sx={{ mb: 2, fontSize: '12px' }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                {selectedRowForMatching?.matchConfidence ?
+                                    `Low confidence match (${selectedRowForMatching.matchConfidence}%) detected` :
+                                    'No automatic match found'
+                                }
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px' }}>
+                                Search for the correct shipment using Shipment ID, company names, or addresses.
+                                If you can't find a match, the shipment may not exist in the system yet.
+                            </Typography>
+                        </Alert>
+
                         {selectedRowForMatching && (
-                            <Paper sx={{ p: 2, backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
-                                <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
-                                    Invoice Shipment: {selectedRowForMatching.shipmentId}
+                            <Paper sx={{ p: 2, backgroundColor: '#fef3c7', border: '1px solid #f59e0b', mb: 2 }}>
+                                <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1, color: '#92400e' }}>
+                                    🔍 Looking for: {selectedRowForMatching.shipmentId}
                                 </Typography>
-                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                    {selectedRowForMatching.origin} → {selectedRowForMatching.destination}
-                                </Typography>
-                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                    Total: {formatCurrencyHelper(selectedRowForMatching.totalAmount, selectedRowForMatching.currency)}
-                                </Typography>
+                                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, fontSize: '11px' }}>
+                                    <Box>
+                                        <Typography sx={{ fontWeight: 600, color: '#92400e' }}>Route:</Typography>
+                                        <Typography sx={{ color: '#92400e' }}>
+                                            {selectedRowForMatching.origin} → {selectedRowForMatching.destination}
+                                        </Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography sx={{ fontWeight: 600, color: '#92400e' }}>Total:</Typography>
+                                        <Typography sx={{ color: '#92400e' }}>
+                                            {formatCurrencyHelper(selectedRowForMatching.totalAmount, selectedRowForMatching.currency)}
+                                        </Typography>
+                                    </Box>
+                                </Box>
                             </Paper>
                         )}
                     </Box>
@@ -2942,7 +4562,7 @@ export default function APProcessingResults({
                     <TextField
                         fullWidth
                         size="small"
-                        placeholder="Search by Shipment ID, Origin, Destination..."
+                        placeholder="Search by Shipment ID, Reference Number, Company Name, or Address..."
                         value={shipmentSearchTerm}
                         onChange={(e) => {
                             setShipmentSearchTerm(e.target.value);
@@ -2952,6 +4572,8 @@ export default function APProcessingResults({
                             startAdornment: <SearchIcon sx={{ mr: 1, color: '#6b7280', fontSize: '18px' }} />
                         }}
                         sx={{ mb: 2 }}
+                        helperText="Type at least 2 characters to search across all shipment data"
+                        FormHelperTextProps={{ sx: { fontSize: '11px' } }}
                     />
 
                     {isSearchingShipments && (
@@ -2960,58 +4582,85 @@ export default function APProcessingResults({
                         </Box>
                     )}
 
-                    {shipmentSearchResults.length > 0 && (
-                        <Paper sx={{ maxHeight: '300px', overflow: 'auto' }}>
-                            <List dense>
-                                {shipmentSearchResults.map((shipment) => (
-                                    <ListItem
-                                        key={shipment.id}
-                                        button
-                                        onClick={() => handleSelectMatchedShipment(shipment)}
-                                        sx={{
-                                            borderBottom: '1px solid #f3f4f6',
-                                            '&:hover': { backgroundColor: '#f9fafb' }
-                                        }}
-                                    >
-                                        <ListItemIcon>
-                                            <ShipmentIcon sx={{ fontSize: '20px', color: '#3b82f6' }} />
-                                        </ListItemIcon>
-                                        <ListItemText
-                                            primary={
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                        {shipment.shipmentId}
-                                                    </Typography>
-                                                    <Chip
-                                                        label={shipment.status}
-                                                        size="small"
-                                                        sx={{ fontSize: '10px', height: '18px' }}
+                    {shipmentSearchTerm.length >= 2 && !isSearchingShipments && (
+                        <>
+                            {shipmentSearchResults.length > 0 ? (
+                                <>
+                                    <Typography sx={{ fontSize: '12px', color: '#374151', mb: 1, fontWeight: 600 }}>
+                                        Found {shipmentSearchResults.length} shipment{shipmentSearchResults.length !== 1 ? 's' : ''}:
+                                    </Typography>
+                                    <Paper sx={{ maxHeight: '350px', overflow: 'auto', border: '1px solid #e5e7eb' }}>
+                                        <List dense>
+                                            {shipmentSearchResults.map((shipment, index) => (
+                                                <ListItem
+                                                    key={shipment.id}
+                                                    button
+                                                    onClick={() => handleSelectMatchedShipment(shipment)}
+                                                    sx={{
+                                                        borderBottom: index < shipmentSearchResults.length - 1 ? '1px solid #f3f4f6' : 'none',
+                                                        '&:hover': { backgroundColor: '#f0f9ff' },
+                                                        py: 1.5
+                                                    }}
+                                                >
+                                                    <ListItemIcon>
+                                                        <ShipmentIcon sx={{ fontSize: '20px', color: '#3b82f6' }} />
+                                                    </ListItemIcon>
+                                                    <ListItemText
+                                                        primary={
+                                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                                                                <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#1f2937' }}>
+                                                                    {shipment.shipmentId}
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                    <Chip
+                                                                        label={shipment.status}
+                                                                        size="small"
+                                                                        color={shipment.status === 'Delivered' ? 'success' :
+                                                                            shipment.status === 'In Transit' ? 'info' : 'default'}
+                                                                        sx={{ fontSize: '10px', height: '20px' }}
+                                                                    />
+                                                                    <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#059669' }}>
+                                                                        {formatCurrencyHelper(shipment.totalAmount, shipment.currency)}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        }
+                                                        secondary={
+                                                            <Box>
+                                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 0.5 }}>
+                                                                    📍 {shipment.origin} → {shipment.destination}
+                                                                </Typography>
+                                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                    🚛 {shipment.carrier}
+                                                                    {shipment.createdAt && (
+                                                                        <span> • Created {new Date(shipment.createdAt.toDate?.() || shipment.createdAt).toLocaleDateString()}</span>
+                                                                    )}
+                                                                </Typography>
+                                                            </Box>
+                                                        }
                                                     />
-                                                </Box>
-                                            }
-                                            secondary={
-                                                <Box>
-                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                        {shipment.origin} → {shipment.destination}
-                                                    </Typography>
-                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                        {shipment.carrier} • {formatCurrencyHelper(shipment.totalAmount, 'CAD')}
-                                                    </Typography>
-                                                </Box>
-                                            }
-                                        />
-                                    </ListItem>
-                                ))}
-                            </List>
-                        </Paper>
-                    )}
-
-                    {shipmentSearchTerm.length >= 2 && shipmentSearchResults.length === 0 && !isSearchingShipments && (
-                        <Box sx={{ textAlign: 'center', py: 3 }}>
-                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                No shipments found matching "{shipmentSearchTerm}"
-                            </Typography>
-                        </Box>
+                                                </ListItem>
+                                            ))}
+                                        </List>
+                                    </Paper>
+                                </>
+                            ) : (
+                                <Paper sx={{ p: 3, textAlign: 'center', backgroundColor: '#fef3c7', border: '1px solid #f59e0b' }}>
+                                    <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#92400e', mb: 1 }}>
+                                        🔍 No shipments found
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#92400e', mb: 2 }}>
+                                        No shipments match "{shipmentSearchTerm}". The shipment may not exist in the system yet.
+                                    </Typography>
+                                    <Alert severity="warning" sx={{ fontSize: '11px' }}>
+                                        <strong>Suggestions:</strong>
+                                        <br />• Try searching with partial company names or addresses
+                                        <br />• Check if the shipment was entered with a different reference
+                                        <br />• Verify the shipment has been created in the system
+                                    </Alert>
+                                </Paper>
+                            )}
+                        </>
                     )}
                 </DialogContent>
                 <DialogActions>
@@ -3032,15 +4681,6 @@ export default function APProcessingResults({
             {/* Action Buttons */}
             <Box sx={{ borderTop: '1px solid #e5e7eb', p: 3 }}>
                 <Stack direction="row" spacing={2} justifyContent="flex-end">
-                    <Button
-                        variant="contained"
-                        color="success"
-                        startIcon={<ApproveIcon />}
-                        onClick={() => onApprove(false)}
-                        sx={{ fontSize: '12px', textTransform: 'none' }}
-                    >
-                        Approve for Processing
-                    </Button>
                     <Button
                         variant="outlined"
                         onClick={onClose}

@@ -286,7 +286,7 @@ exports.updateTrainingCarrier = onCall({
 
         // Create revision record
         const revision = {
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            timestamp: new Date(),
             userId: request.auth.uid,
             changes: sanitizedUpdates,
             previousValues: Object.keys(sanitizedUpdates).reduce((prev, key) => {
