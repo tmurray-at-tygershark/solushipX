@@ -554,12 +554,29 @@ async function runIntelligentAutoApproval(matchedShipmentId, extractedShipmentDa
             // USE SEPARATE AUTOMATION FUNCTION TO AVOID BREAKING MANUAL VERSION
             const { applyChargesForAutomation } = require('./applyInvoiceCharges');
             
+            // Debug: Check what invoice data is available
+            console.error('🔍 UPLOAD DATA DEBUG:', {
+                uploadDataKeys: Object.keys(uploadData),
+                invoiceNumber: uploadData.invoiceNumber,
+                extractedDataKeys: uploadData.extractedData ? Object.keys(uploadData.extractedData) : 'No extractedData',
+                nestedExtractedDataKeys: uploadData.extractedData?.extractedData ? Object.keys(uploadData.extractedData.extractedData) : 'No nested extractedData',
+                invoiceDetails: uploadData.extractedData?.extractedData?.invoiceDetails || uploadData.extractedData?.invoiceDetails,
+                carrierInformation: uploadData.extractedData?.extractedData?.carrierInformation || uploadData.extractedData?.carrierInformation
+            });
+
+            // Extract invoice number from the proper location
+            const extractedInvoiceNumber = uploadData.extractedData?.extractedData?.invoiceDetails?.invoiceNumber || 
+                                         uploadData.extractedData?.invoiceDetails?.invoiceNumber ||
+                                         uploadData.invoiceNumber;
+
             // Create the charge data in the expected format
             const invoiceDataForCharges = {
-                invoiceNumber: uploadData.invoiceNumber,
-                invoiceRef: uploadData.metadata?.invoiceRef || uploadData.invoiceNumber,
+                invoiceNumber: extractedInvoiceNumber,
+                invoiceRef: uploadData.metadata?.invoiceRef || extractedInvoiceNumber,
                 fileName: uploadData.fileName || 'Auto-processed'
             };
+
+            console.error('🔍 INVOICE DATA FOR CHARGES:', invoiceDataForCharges);
 
             const chargesToApply = perfectMatches.map(charge => ({
                 // IDENTICAL FIELD MAPPING TO MANUAL APPROVAL
@@ -568,16 +585,19 @@ async function runIntelligentAutoApproval(matchedShipmentId, extractedShipmentDa
                 actualCost: charge.systemQuotedCost || charge.systemActualCost || charge.actualCost || charge.quotedCost || 0,
                 actualCharge: charge.systemQuotedCharge || charge.systemActualCharge || charge.actualCharge || charge.quotedCharge || 0,
                 currency: charge.systemCurrency || charge.currency || 'CAD',
-                ediNumber: uploadData.invoiceNumber || uploadData.metadata?.invoiceRef
+                ediNumber: extractedInvoiceNumber || uploadData.metadata?.invoiceRef || ''
             }));
 
             // Debug: Log the charges being passed to applyChargesForAutomation
-            logger.info('🔍 CHARGES TO APPLY DEBUG:', {
+            console.error('🔍 CHARGES TO APPLY DEBUG:', {
                 shipmentId: matchedShipmentId,
                 chargesCount: chargesToApply.length,
                 charges: chargesToApply,
                 hasAppliedAtFields: chargesToApply.some(c => c.appliedAt !== undefined),
-                chargeFields: chargesToApply.map(c => Object.keys(c))
+                chargeFields: chargesToApply.map(c => Object.keys(c)),
+                ediNumbers: chargesToApply.map(c => c.ediNumber),
+                invoiceNumber: uploadData.invoiceNumber,
+                invoiceRef: uploadData.metadata?.invoiceRef
             });
 
             // Update status: Approving charges

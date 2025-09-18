@@ -665,7 +665,7 @@ const APProcessingEnterprise = () => {
                         setupAutomationStatusListener(uploadId);
 
                         // Show immediate visual feedback that automation will start automatically
-                        enqueueSnackbar('🤖 Extraction complete - automation will start automatically!', {
+                        enqueueSnackbar('PDF Extraction Complete', {
                             variant: 'info',
                             autoHideDuration: 3000
                         });

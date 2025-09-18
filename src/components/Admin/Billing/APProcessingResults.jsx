@@ -42,7 +42,8 @@ import {
     ListItemText,
     ListItemIcon,
     Skeleton,
-    Checkbox
+    Checkbox,
+    Menu
 } from '@mui/material';
 import {
     Receipt as InvoiceIcon,
@@ -65,7 +66,9 @@ import {
     Search as SearchIcon,
     Link as LinkIcon,
     PictureAsPdf as PdfIcon,
-    Assignment as AssignIcon
+    Assignment as AssignIcon,
+    MoreVert as MoreVertIcon,
+    Edit as EditIcon
 } from '@mui/icons-material';
 import { formatCurrency } from '../../../utils/currencyUtils';
 import { db } from '../../../firebase';
@@ -191,10 +194,33 @@ const ComparisonTableRows = ({
     setAppliedCharges,
     uploadData,
     fileName,
-    enqueueSnackbar
+    enqueueSnackbar,
+    isShipmentCompleteWithExtras,
+    setSelectedCharges,
+    handleUnapplySelectedCharges
 }) => {
     const [comparisonRows, setComparisonRows] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
+    const [actionMenuAnchor, setActionMenuAnchor] = React.useState(null);
+    const [selectedRowForAction, setSelectedRowForAction] = React.useState(null);
+
+    // Action menu handlers
+    const handleActionMenuClose = () => {
+        setActionMenuAnchor(null);
+        setSelectedRowForAction(null);
+    };
+
+    const handleUnapproveCharge = async () => {
+        if (selectedRowForAction) {
+            const { idx } = selectedRowForAction;
+            // Add the charge to selected charges and call unapply
+            setSelectedCharges(new Set([idx]));
+            // Call the unapply function
+            await handleUnapplySelectedCharges();
+        }
+        handleActionMenuClose();
+    };
+
     // Guard to prevent repeated auto-apply loops per shipment
     const autoAppliedShipmentsRef = React.useRef(new Set());
     const appliedChargesCheckedRef = React.useRef(new Set());
@@ -483,6 +509,82 @@ const ComparisonTableRows = ({
                 }}>
                     {charge.profit ? formatCurrency(charge.profit, 'CAD') : 'N/A'}
                 </TableCell>
+
+                {/* Actions Column */}
+                <TableCell sx={{ fontSize: '11px', width: '60px', textAlign: 'center', verticalAlign: 'top' }}>
+                    {isApplied && (
+                        <IconButton
+                            size="small"
+                            onClick={(event) => {
+                                setActionMenuAnchor(event.currentTarget);
+                                setSelectedRowForAction({ charge, idx });
+                            }}
+                            sx={{ fontSize: '10px' }}
+                        >
+                            <MoreVertIcon sx={{ fontSize: '14px' }} />
+                        </IconButton>
+                    )}
+                </TableCell>
+            </TableRow>
+        );
+    };
+
+    const renderTableHeader = (section) => {
+        const isMatchedSection = section === 'matched';
+        const matchedCharges = comparisonRows.matchedCharges || [];
+        const unmatchedCharges = comparisonRows.unmatchedCharges || [];
+
+        // Get indices for this section
+        const sectionIndices = isMatchedSection
+            ? matchedCharges.map((_, idx) => idx)
+            : unmatchedCharges.map((_, idx) => idx + matchedCharges.length);
+
+        // Check if all charges in this section are selected (only count manually selected, not applied)
+        const allSectionChargesSelected = sectionIndices.length > 0 &&
+            sectionIndices.every(idx => selectedCharges.has(idx));
+
+        // Handle select all for this section only
+        const handleSectionSelectAll = (checked) => {
+            const newSelected = new Set(selectedCharges);
+
+            if (checked) {
+                // Add ALL charges from this section (both applied and unapplied)
+                sectionIndices.forEach(idx => {
+                    newSelected.add(idx);
+                });
+            } else {
+                // Remove all charges from this section
+                sectionIndices.forEach(idx => {
+                    newSelected.delete(idx);
+                });
+            }
+
+            setSelectedCharges(newSelected);
+        };
+
+        return (
+            <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, padding: '8px', width: '40px', maxWidth: '40px', verticalAlign: 'top' }}>
+                    <Checkbox
+                        size="small"
+                        checked={allSectionChargesSelected}
+                        onChange={(e) => handleSectionSelectAll(e.target.checked)}
+                        sx={{
+                            padding: 0,
+                            '& .MuiSvgIcon-root': { fontSize: 16 }
+                        }}
+                    />
+                </TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '60px', textAlign: 'left', verticalAlign: 'top' }}>Code</TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '120px', textAlign: 'left', verticalAlign: 'top' }}>Charge Name</TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Invoice Amount</TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Quoted Cost</TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Quoted Charge</TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Actual Cost</TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Actual Charge</TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '90px', textAlign: 'left', verticalAlign: 'top' }}>Variance</TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Profit (CAD)</TableCell>
+                <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '60px', textAlign: 'center', verticalAlign: 'top' }}>Actions</TableCell>
             </TableRow>
         );
     };
@@ -492,9 +594,10 @@ const ComparisonTableRows = ({
             {/* Matched Charges Section */}
             {comparisonRows.matchedCharges && comparisonRows.matchedCharges.length > 0 && (
                 <>
+                    {/* Matched Charges Header */}
                     <TableRow>
                         <TableCell
-                            colSpan={10}
+                            colSpan={11}
                             sx={{
                                 fontSize: '13px',
                                 fontWeight: 600,
@@ -508,36 +611,77 @@ const ComparisonTableRows = ({
                             MATCHED CHARGES ({comparisonRows.matchedCharges.length})
                         </TableCell>
                     </TableRow>
+
+                    {/* Matched Charges Table Header */}
+                    {renderTableHeader('matched')}
+
+                    {/* Matched Charges Rows */}
                     {comparisonRows.matchedCharges.map((charge, idx) =>
                         renderChargeRow(charge, idx, 'matched')
                     )}
                 </>
             )}
 
+            {/* Spacing between tables */}
+            {comparisonRows.matchedCharges && comparisonRows.matchedCharges.length > 0 &&
+                comparisonRows.unmatchedCharges && comparisonRows.unmatchedCharges.length > 0 && (
+                    <TableRow>
+                        <TableCell colSpan={11} sx={{ height: '20px', border: 'none', padding: 0 }} />
+                    </TableRow>
+                )}
+
             {/* Unmatched Charges Section */}
             {comparisonRows.unmatchedCharges && comparisonRows.unmatchedCharges.length > 0 && (
                 <>
+                    {/* Unmatched Charges Header */}
                     <TableRow>
                         <TableCell
-                            colSpan={10}
+                            colSpan={11}
                             sx={{
                                 fontSize: '13px',
                                 fontWeight: 600,
-                                backgroundColor: '#fef2f2',
-                                color: '#991b1b',
+                                backgroundColor: isShipmentCompleteWithExtras(comparisonRows) ? '#f0f9ff' : '#fef2f2',
+                                color: isShipmentCompleteWithExtras(comparisonRows) ? '#1e40af' : '#991b1b',
                                 textAlign: 'center',
-                                border: '1px solid #fecaca',
+                                border: isShipmentCompleteWithExtras(comparisonRows) ? '1px solid #bfdbfe' : '1px solid #fecaca',
                                 py: 1
                             }}
                         >
-                            UNMATCHED CHARGES ({comparisonRows.unmatchedCharges.length})
+                            {isShipmentCompleteWithExtras(comparisonRows)
+                                ? `EXTRA CHARGES - SHIPMENT COMPLETE (${comparisonRows.unmatchedCharges.length})`
+                                : `UNMATCHED CHARGES (${comparisonRows.unmatchedCharges.length})`
+                            }
                         </TableCell>
                     </TableRow>
+
+                    {/* Unmatched Charges Table Header */}
+                    {renderTableHeader('unmatched')}
+
+                    {/* Unmatched Charges Rows */}
                     {comparisonRows.unmatchedCharges.map((charge, idx) =>
                         renderChargeRow(charge, idx + (comparisonRows.matchedCharges?.length || 0), 'unmatched')
                     )}
                 </>
             )}
+
+            {/* Action Menu for Charge Actions */}
+            <Menu
+                anchorEl={actionMenuAnchor}
+                open={Boolean(actionMenuAnchor)}
+                onClose={handleActionMenuClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'right',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'right',
+                }}
+            >
+                <MenuItem onClick={handleUnapproveCharge} sx={{ fontSize: '12px' }}>
+                    Unapprove Charge
+                </MenuItem>
+            </Menu>
         </>
     );
 };
@@ -558,6 +702,10 @@ export default function APProcessingResults({
     const [selectedShipmentDetail, setSelectedShipmentDetail] = useState(null);
     const [shipmentDetailDialogOpen, setShipmentDetailDialogOpen] = useState(false);
     const [compareTab, setCompareTab] = useState('extracted');
+    const [chargeConfirmationDialogOpen, setChargeConfirmationDialogOpen] = useState(false);
+    const [chargesToConfirm, setChargesToConfirm] = useState([]);
+    const [editMode, setEditMode] = useState(false);
+    const [chargeTypes, setChargeTypes] = useState([]);
 
     // Shipment Matching State
     const [matchingDialogOpen, setMatchingDialogOpen] = useState(false);
@@ -589,6 +737,28 @@ export default function APProcessingResults({
 
     // Auto-matching loading state
     const [isAutoMatching, setIsAutoMatching] = useState(false);
+
+    // Function to detect if shipment is complete with only extra charges remaining
+    const isShipmentCompleteWithExtras = (comparisonData) => {
+        if (!comparisonData) return false;
+
+        const matchedCharges = comparisonData.matchedCharges || [];
+        const unmatchedCharges = comparisonData.unmatchedCharges || [];
+
+        // Check if all matched charges are auto-approved (zero variance)
+        const allMatchedAutoApproved = matchedCharges.length > 0 &&
+            matchedCharges.every(charge =>
+                charge.autoApprovalRecommendation === 'approve' &&
+                charge.variancePercent === 0
+            );
+
+        // Check if there are unmatched charges (extras)
+        const hasUnmatchedCharges = unmatchedCharges.length > 0;
+
+        return allMatchedAutoApproved && hasUnmatchedCharges;
+    };
+
+
 
     // Initialize applied charges from persisted data when component loads
     useEffect(() => {
@@ -1739,9 +1909,46 @@ export default function APProcessingResults({
             return { label: 'Ready to Invoice', color: '#059669', backgroundColor: '#d1fae5' };
         }
 
-        // IMPORTANT: Check if this shipment has applied charges to determine if it should be "Approved"
-        if (apStatus === 'extracted' && appliedCharges.size > 0) {
-            // If we have applied charges, this should be "Approved" not "Extracted"
+        // CRITICAL: Distinguish between manual and automatic approval
+        const isMatched = row.matchedShipmentId && row.matchConfidence >= 80;
+
+        // Enhanced auto-approval detection - check multiple indicators
+        const hasAutoApprovedCharges = (
+            // Check automation result
+            (row.automationResult && row.automationResult.appliedCharges > 0 && row.automationResult.success === true) ||
+            // Check invoice status for matched shipments  
+            (row.invoiceStatus === 'ready_to_invoice' && isMatched) ||
+            // Check if shipment has applied charges in appliedCharges set (indicates processing occurred)
+            (appliedCharges.has(row.id) && isMatched) ||
+            // Check upload data for automation results
+            (uploadData?.chargeApplications && uploadData.chargeApplications[row.matchedShipmentId]) ||
+            // Check if shipment has any automation processing indicators
+            (isMatched && (row.status === 'processed' || row.status === 'auto_approved' || row.apStatus === 'processed')) ||
+            // AGGRESSIVE: For matched shipments with 100% confidence, assume auto-approved if extraction completed
+            (isMatched && row.matchConfidence === 100 && apStatus === 'extracted')
+        );
+
+        // Check if charges were manually approved (only if not auto-approved)
+        const hasManuallyApprovedCharges = appliedCharges.has(row.id) && !hasAutoApprovedCharges;
+
+        console.log('🔍 APPROVAL STATUS DEBUG:', {
+            shipmentId: row.shipmentId,
+            isMatched,
+            hasAutoApprovedCharges,
+            hasManuallyApprovedCharges,
+            automationResult: row.automationResult,
+            appliedChargesHasShipment: appliedCharges.has(row.id),
+            invoiceStatus: row.invoiceStatus,
+            apStatus
+        });
+
+        // Show "Auto-Approved" ONLY for automated approvals
+        if (apStatus === 'extracted' && isMatched && hasAutoApprovedCharges) {
+            return { label: 'Auto-Approved', color: '#059669', backgroundColor: '#d1fae5' };
+        }
+
+        // Show "Approved" for manual approvals
+        if (apStatus === 'extracted' && isMatched && hasManuallyApprovedCharges) {
             return { label: 'Approved', color: '#059669', backgroundColor: '#d1fae5' };
         }
 
@@ -2126,7 +2333,7 @@ export default function APProcessingResults({
     };
 
     // Build enhanced comparison structure with matched and unmatched charges 
-    const buildComparisonRows = async (detail) => {
+    const buildComparisonRows = React.useCallback(async (detail) => {
         if (!detail) return { matchedCharges: [], unmatchedCharges: [] };
 
         console.log('🔗 Building enhanced charge comparison for:', detail.shipmentId);
@@ -2169,8 +2376,11 @@ export default function APProcessingResults({
         const classifyChargeCode = (description) => {
             const desc = (description || '').toLowerCase();
 
-            // Fuel surcharge classification
-            if (desc.includes('fuel') || desc.includes('fsc')) return 'FSC';
+            // Fuel surcharge classification (check for "surcharge" first to be more specific)
+            if (desc.includes('fuel surcharge') || desc.includes('fsc') || (desc.includes('fuel') && desc.includes('surcharge'))) return 'FSC';
+
+            // Pure fuel classification (fuel without surcharge)
+            if (desc.includes('fuel') && !desc.includes('surcharge')) return 'FUE';
 
             // Base freight classification
             if (desc.includes('base') || desc.includes('freight') || desc.includes('shipping') || desc.includes('transport')) return 'FRT';
@@ -2438,10 +2648,167 @@ export default function APProcessingResults({
             matchedCharges: enhancedCharges.matchedCharges,
             unmatchedCharges: enhancedCharges.unmatchedCharges
         };
-    };
+    }, []); // Empty dependency array since this function doesn't depend on any state
 
     const handleTabChange = (event, newValue) => {
         setActiveTab(newValue);
+    };
+
+    const handleShowChargeConfirmation = async () => {
+        try {
+            // Get comparison rows to extract the actual charge data
+            const comparisonRows = await buildComparisonRows(selectedShipmentDetail);
+
+            // Combine matched and unmatched charges into a single array for indexing
+            const allComparisonCharges = [
+                ...(comparisonRows.matchedCharges || []),
+                ...(comparisonRows.unmatchedCharges || [])
+            ];
+
+            const selectedChargeData = Array.from(selectedCharges)
+                .map(index => allComparisonCharges[index])
+                .filter(charge => charge !== undefined);
+
+            // Prepare charge data for confirmation dialog
+            const chargesForConfirmation = selectedChargeData.map(charge => ({
+                code: charge.systemCode || charge.code || charge.chargeCode || 'MISC',
+                name: charge.systemName || charge.name || charge.chargeName || charge.description || 'Unknown Charge',
+                actualCost: charge.systemQuotedCost || charge.systemActualCost || charge.actualCost || charge.quotedCost || 0,
+                actualCharge: charge.systemQuotedCharge || charge.systemActualCharge || charge.actualCharge || charge.quotedCharge || 0,
+                currency: charge.systemCurrency || charge.currency || 'CAD',
+                ediNumber: uploadData.invoiceNumber || uploadData.metadata?.invoiceRef || '',
+                invoiceAmount: charge.invoiceAmount || 0,
+                commissionable: charge.commissionable || false,
+                description: charge.description || charge.details || '',
+                category: charge.category || 'Accessorial'
+            }));
+
+            setChargesToConfirm(chargesForConfirmation);
+            setChargeConfirmationDialogOpen(true);
+        } catch (error) {
+            console.error('Error preparing charge confirmation:', error);
+            enqueueSnackbar('Error preparing charge details. Please try again.', { variant: 'error' });
+        }
+    };
+
+    const handleConfirmAddCharges = async () => {
+        setChargeConfirmationDialogOpen(false);
+        setEditMode(false);
+
+        // Apply the charges with the confirmed/modified data
+        setIsApplyingCharges(true);
+        try {
+            const functions = getFunctions();
+            const applyInvoiceCharges = httpsCallable(functions, 'applyInvoiceCharges');
+
+            const result = await applyInvoiceCharges({
+                shipmentId: selectedShipmentDetail.matchedShipmentId,
+                invoiceData: {
+                    invoiceNumber: uploadData.invoiceNumber,
+                    invoiceRef: uploadData.metadata?.invoiceRef || uploadData.invoiceNumber,
+                    fileName: fileName
+                },
+                charges: chargesToConfirm.map(charge => ({
+                    code: charge.code,
+                    name: charge.name,
+                    actualCost: charge.actualCost,
+                    actualCharge: charge.actualCharge,
+                    currency: charge.currency,
+                    ediNumber: charge.ediNumber,
+                    commissionable: charge.commissionable
+                }))
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(`Successfully added ${chargesToConfirm.length} charge(s) to shipment ${selectedShipmentDetail.matchedShipmentId}`, { variant: 'success' });
+
+                // Mark charges as applied
+                const newAppliedCharges = new Set([...appliedCharges, ...selectedCharges]);
+                setAppliedCharges(newAppliedCharges);
+
+                // Clear selections after successful apply
+                setSelectedCharges(new Set());
+                setSelectAllCharges(false);
+
+                // Update shipment invoice status
+                try {
+                    const updateShipmentInvoiceStatus = httpsCallable(functions, 'updateShipmentInvoiceStatus');
+                    await updateShipmentInvoiceStatus({
+                        shipmentId: selectedShipmentDetail.matchedShipmentId,
+                        invoiceStatus: 'processed',
+                        invoiceData: {
+                            invoiceNumber: uploadData.invoiceNumber,
+                            totalChargesProcessed: chargesToConfirm.length,
+                            processingDate: new Date().toISOString(),
+                            autoProcessed: false
+                        }
+                    });
+                } catch (statusError) {
+                    console.warn('⚠️ Failed to update shipment invoice status:', statusError);
+                }
+
+                // Refresh the UI to show updated status
+                if (onStatusUpdate) {
+                    onStatusUpdate();
+                }
+            } else {
+                throw new Error(result.data.error || 'Failed to apply charges');
+            }
+        } catch (error) {
+            console.error('❌ Error applying charges:', error);
+            enqueueSnackbar(`Error applying charges: ${error.message}`, { variant: 'error' });
+        } finally {
+            setIsApplyingCharges(false);
+        }
+    };
+
+    const handleEditChargeDetails = () => {
+        setEditMode(true);
+        loadChargeTypes();
+    };
+
+    const loadChargeTypes = async () => {
+        try {
+            const db = getFirestore();
+            const chargeTypesSnapshot = await getDocs(collection(db, 'chargeTypes'));
+            const types = chargeTypesSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setChargeTypes(types);
+        } catch (error) {
+            console.error('Error loading charge types:', error);
+            // Provide comprehensive fallback charge types
+            setChargeTypes([
+                { id: 'FRT', code: 'FRT', name: 'Freight', displayName: 'Freight' },
+                { id: 'FSC', code: 'FSC', name: 'Fuel Surcharge', displayName: 'Fuel Surcharge' },
+                { id: 'ACC', code: 'ACC', name: 'Accessorial', displayName: 'Accessorial' },
+                { id: 'DAS', code: 'DAS', name: 'Delivery Area Surcharge', displayName: 'Delivery Area Surcharge' },
+                { id: 'RAS', code: 'RAS', name: 'Remote Area Surcharge', displayName: 'Remote Area Surcharge' },
+                { id: 'HAZ', code: 'HAZ', name: 'Hazardous Materials', displayName: 'Hazardous Materials' },
+                { id: 'SIG', code: 'SIG', name: 'Signature Required', displayName: 'Signature Required' },
+                { id: 'INS', code: 'INS', name: 'Insurance', displayName: 'Insurance' },
+                { id: 'MISC', code: 'MISC', name: 'Miscellaneous', displayName: 'Miscellaneous' },
+                { id: 'COD', code: 'COD', name: 'Cash on Delivery', displayName: 'Cash on Delivery' },
+                { id: 'CUS', code: 'CUS', name: 'Customs', displayName: 'Customs' },
+                { id: 'DUTY', code: 'DUTY', name: 'Duty', displayName: 'Duty' },
+                { id: 'DV', code: 'DV', name: 'Declared Value', displayName: 'Declared Value' },
+                { id: 'EXT', code: 'EXT', name: 'Extended Area', displayName: 'Extended Area' },
+                { id: 'FUE', code: 'FUE', name: 'Fuel', displayName: 'Fuel' },
+                { id: 'GOV', code: 'GOV', name: 'Government', displayName: 'Government' },
+                { id: 'LOG', code: 'LOG', name: 'Logistics', displayName: 'Logistics' },
+                { id: 'MSC', code: 'MSC', name: 'Miscellaneous', displayName: 'Miscellaneous' }
+            ]);
+        }
+    };
+
+    const handleChargeFieldChange = (index, field, value) => {
+        const updatedCharges = [...chargesToConfirm];
+        updatedCharges[index] = {
+            ...updatedCharges[index],
+            [field]: value
+        };
+        setChargesToConfirm(updatedCharges);
     };
 
     // Intelligent Auto-Matching Algorithm
@@ -3765,300 +4132,385 @@ export default function APProcessingResults({
         }
 
         return (
-            <Box sx={{ p: 3 }}>
-                {/* Header */}
-                <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
-                        Extracted Results ({tableData.length} shipments)
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button
-                            variant="outlined"
-                            color="primary"
-                            size="small"
-                            startIcon={<PdfIcon />}
-                            onClick={handleViewInvoicePDF}
-                            sx={{ fontSize: '11px' }}
-                        >
-                            VIEW ORIGINAL INVOICE
-                        </Button>
-                        <Button
-                            variant="contained"
-                            color="success"
-                            size="small"
-                            onClick={handleBulkApprove}
-                            disabled={selectedShipments.size === 0 || isBulkApproving || isBulkExcepting}
-                            startIcon={isBulkApproving ? <CircularProgress size={14} /> : null}
-                            sx={{ fontSize: '11px' }}
-                        >
-                            {isBulkApproving ? 'APPROVING...' : (selectedShipments.size === 0 ? 'SELECT SHIPMENTS TO APPROVE' : `APPROVE ${selectedShipments.size} FOR BILLING`)}
-                        </Button>
-                        <Button
-                            variant="outlined"
-                            size="small"
-                            onClick={handleBulkException}
-                            disabled={selectedShipments.size === 0 || isBulkApproving || isBulkExcepting}
-                            startIcon={isBulkExcepting ? <CircularProgress size={14} /> : null}
-                            sx={{ fontSize: '11px' }}
-                        >
-                            {isBulkExcepting ? 'MARKING...' : (selectedShipments.size === 0 ? 'SELECT SHIPMENTS FOR EXCEPTION' : `MARK ${selectedShipments.size} AS EXCEPTION`)}
-                        </Button>
+            <>
+                <Box sx={{ p: 3 }}>
+                    {/* Header */}
+                    <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                            Extracted Results ({tableData.length} shipments)
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button
+                                variant="outlined"
+                                color="primary"
+                                size="small"
+                                startIcon={<PdfIcon />}
+                                onClick={handleViewInvoicePDF}
+                                sx={{ fontSize: '11px' }}
+                            >
+                                VIEW INVOICE
+                            </Button>
+                            <Button
+                                variant="contained"
+                                color="success"
+                                size="small"
+                                onClick={handleBulkApprove}
+                                disabled={selectedShipments.size === 0 || isBulkApproving || isBulkExcepting}
+                                startIcon={isBulkApproving ? <CircularProgress size={14} /> : null}
+                                sx={{ fontSize: '11px' }}
+                            >
+                                {isBulkApproving ? 'APPROVING...' : (selectedShipments.size === 0 ? 'SELECT SHIPMENTS TO APPROVE' : `APPROVE ${selectedShipments.size} FOR BILLING`)}
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                onClick={handleBulkException}
+                                disabled={selectedShipments.size === 0 || isBulkApproving || isBulkExcepting}
+                                startIcon={isBulkExcepting ? <CircularProgress size={14} /> : null}
+                                sx={{ fontSize: '11px' }}
+                            >
+                                {isBulkExcepting ? 'MARKING...' : (selectedShipments.size === 0 ? 'SELECT SHIPMENTS FOR EXCEPTION' : `MARK ${selectedShipments.size} AS EXCEPTION`)}
+                            </Button>
+                        </Box>
                     </Box>
-                </Box>
 
-                {/* Split data into matched and unmatched shipments */}
-                {(() => {
-                    const matchedShipments = tableData.filter(row => row.matchedShipmentId && row.matchConfidence >= 80);
-                    const unmatchedShipments = tableData.filter(row => !row.matchedShipmentId || row.matchConfidence < 80);
+                    {/* Split data into matched and unmatched shipments */}
+                    {(() => {
+                        const matchedShipments = tableData.filter(row => row.matchedShipmentId && row.matchConfidence >= 80);
+                        const unmatchedShipments = tableData.filter(row => !row.matchedShipmentId || row.matchConfidence < 80);
 
-                    const renderTable = (data, title, showMatchColumn = true) => (
-                        <Box sx={{ mb: 3 }}>
-                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, color: '#374151' }}>
-                                {title} ({data.length})
-                            </Typography>
-                            <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
-                                <Table size="small">
-                                    <TableHead>
-                                        <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', padding: '8px' }}>
-                                                <Checkbox
-                                                    size="small"
-                                                    checked={data.length > 0 && data.every(row => selectedShipments.has(row.id))}
-                                                    onChange={(e) => {
-                                                        const allRowIds = data.map(row => row.id);
-                                                        if (e.target.checked) {
-                                                            setSelectedShipments(prev => new Set([...prev, ...allRowIds]));
-                                                        } else {
-                                                            setSelectedShipments(prev => {
-                                                                const newSet = new Set(prev);
-                                                                allRowIds.forEach(id => newSet.delete(id));
-                                                                return newSet;
-                                                            });
-                                                        }
-                                                    }}
-                                                    indeterminate={data.some(row => selectedShipments.has(row.id)) && !data.every(row => selectedShipments.has(row.id))}
-                                                />
-                                            </TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
-                                            {showMatchColumn && (
-                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Matched Shipment ID</TableCell>
-                                            )}
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Carrier</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Route</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '200px' }}>Charges</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Status</TableCell>
-                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {data.length > 0 ? data.map((row) => (
-                                            <TableRow key={row.id} hover sx={{ '&:hover': { backgroundColor: '#f9fafb' } }}>
-                                                <TableCell sx={{ fontSize: '11px', padding: '8px' }}>
+                        const renderTable = (data, title, showMatchColumn = true) => (
+                            <Box sx={{ mb: 3 }}>
+                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2, color: '#374151' }}>
+                                    {title} ({data.length})
+                                </Typography>
+                                <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                                    <Table size="small">
+                                        <TableHead>
+                                            <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', padding: '8px' }}>
                                                     <Checkbox
                                                         size="small"
-                                                        checked={selectedShipments.has(row.id)}
-                                                        onChange={(e) => handleSelectShipment(row.id, e.target.checked)}
+                                                        checked={data.length > 0 && data.every(row => selectedShipments.has(row.id))}
+                                                        onChange={(e) => {
+                                                            const allRowIds = data.map(row => row.id);
+                                                            if (e.target.checked) {
+                                                                setSelectedShipments(prev => new Set([...prev, ...allRowIds]));
+                                                            } else {
+                                                                setSelectedShipments(prev => {
+                                                                    const newSet = new Set(prev);
+                                                                    allRowIds.forEach(id => newSet.delete(id));
+                                                                    return newSet;
+                                                                });
+                                                            }
+                                                        }}
+                                                        indeterminate={data.some(row => selectedShipments.has(row.id)) && !data.every(row => selectedShipments.has(row.id))}
                                                     />
                                                 </TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>{row.shipmentId}</TableCell>
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
                                                 {showMatchColumn && (
+                                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Matched Shipment ID</TableCell>
+                                                )}
+                                                {showMatchColumn && (
+                                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Confidence</TableCell>
+                                                )}
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Carrier</TableCell>
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '180px' }}>Route</TableCell>
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '160px' }}>Charges</TableCell>
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Invoice Cost</TableCell>
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Quoted Cost</TableCell>
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Status</TableCell>
+                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {data.length > 0 ? data.map((row) => (
+                                                <TableRow key={row.id} hover sx={{ '&:hover': { backgroundColor: '#f9fafb' }, '& .MuiTableCell-root': { verticalAlign: 'top' } }}>
+                                                    <TableCell sx={{ fontSize: '11px', padding: '8px' }}>
+                                                        <Checkbox
+                                                            size="small"
+                                                            checked={selectedShipments.has(row.id)}
+                                                            onChange={(e) => handleSelectShipment(row.id, e.target.checked)}
+                                                        />
+                                                    </TableCell>
                                                     <TableCell sx={{ fontSize: '11px' }}>
-                                                        {row.matchedShipmentId && row.matchConfidence >= 80 ? (
-                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                                                <Chip
-                                                                    label={row.matchedShipmentId}
-                                                                    size="small"
-                                                                    icon={<LinkIcon sx={{ fontSize: '12px' }} />}
-                                                                    sx={{
-                                                                        fontSize: '10px',
-                                                                        height: '20px',
-                                                                        backgroundColor: '#d1fae5',
-                                                                        color: '#059669',
-                                                                        '&:hover': {
-                                                                            backgroundColor: '#bbf7d0'
-                                                                        }
-                                                                    }}
-                                                                    onClick={() => handleViewMatchedShipment(row.matchedShipmentId)}
-                                                                />
-                                                                {row.matchConfidence && (
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                        <Chip
-                                                                            label={`${row.matchConfidence}% confidence`}
-                                                                            size="small"
-                                                                            color="success"
-                                                                            sx={{ fontSize: '9px', height: '16px' }}
-                                                                        />
-                                                                        <Tooltip title={`Matched by: ${row.matchMethod}`}>
-                                                                            <AssignIcon sx={{ fontSize: '12px', color: '#3b82f6' }} />
-                                                                        </Tooltip>
-                                                                    </Box>
-                                                                )}
-                                                            </Box>
-                                                        ) : row.matchConfidence && row.matchConfidence < 80 ? (
-                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                                                <Button
-                                                                    size="small"
-                                                                    variant="outlined"
-                                                                    startIcon={<SearchIcon sx={{ fontSize: '12px' }} />}
-                                                                    sx={{
-                                                                        fontSize: '10px',
-                                                                        height: '24px',
-                                                                        minWidth: 'auto',
-                                                                        px: 1,
-                                                                        borderColor: '#000',
-                                                                        color: '#000',
-                                                                        '&:hover': {
+                                                        <Button
+                                                            variant="text"
+                                                            size="small"
+                                                            onClick={() => {
+                                                                setSelectedShipmentDetail(row);
+                                                                setShipmentDetailDialogOpen(true);
+                                                            }}
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                minWidth: 'auto',
+                                                                p: 0,
+                                                                textTransform: 'none',
+                                                                color: '#3b82f6',
+                                                                '&:hover': {
+                                                                    backgroundColor: 'transparent',
+                                                                    textDecoration: 'underline'
+                                                                }
+                                                            }}
+                                                        >
+                                                            {row.shipmentId}
+                                                        </Button>
+                                                    </TableCell>
+                                                    {showMatchColumn && (
+                                                        <TableCell sx={{ fontSize: '11px' }}>
+                                                            {row.matchedShipmentId && row.matchConfidence >= 80 ? (
+                                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                                    <Chip
+                                                                        label={row.matchedShipmentId}
+                                                                        size="small"
+                                                                        icon={<LinkIcon sx={{ fontSize: '12px' }} />}
+                                                                        sx={{
+                                                                            fontSize: '10px',
+                                                                            height: '20px',
+                                                                            backgroundColor: '#d1fae5',
+                                                                            color: '#059669',
+                                                                            '&:hover': {
+                                                                                backgroundColor: '#bbf7d0'
+                                                                            }
+                                                                        }}
+                                                                        onClick={() => handleViewMatchedShipment(row.matchedShipmentId)}
+                                                                    />
+                                                                </Box>
+                                                            ) : row.matchConfidence && row.matchConfidence < 80 ? (
+                                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                                    <Button
+                                                                        size="small"
+                                                                        variant="outlined"
+                                                                        startIcon={<SearchIcon sx={{ fontSize: '12px' }} />}
+                                                                        sx={{
+                                                                            fontSize: '10px',
+                                                                            height: '24px',
+                                                                            minWidth: 'auto',
+                                                                            px: 1,
                                                                             borderColor: '#000',
-                                                                            backgroundColor: '#f5f5f5'
-                                                                        }
+                                                                            color: '#000',
+                                                                            '&:hover': {
+                                                                                borderColor: '#000',
+                                                                                backgroundColor: '#f5f5f5'
+                                                                            }
+                                                                        }}
+                                                                        onClick={() => handleMatchShipment(row)}
+                                                                    >
+                                                                        MATCH
+                                                                    </Button>
+                                                                    <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
+                                                                        Low confidence ({row.matchConfidence}%)
+                                                                    </Typography>
+                                                                </Box>
+                                                            ) : isAutoMatching ? (
+                                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'center' }}>
+                                                                    <CircularProgress size={16} sx={{ color: '#3b82f6' }} />
+                                                                    <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
+                                                                        Matching...
+                                                                    </Typography>
+                                                                </Box>
+                                                            ) : (
+                                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                                    <Button
+                                                                        size="small"
+                                                                        variant="outlined"
+                                                                        startIcon={<SearchIcon sx={{ fontSize: '12px' }} />}
+                                                                        sx={{
+                                                                            fontSize: '10px',
+                                                                            height: '24px',
+                                                                            minWidth: 'auto',
+                                                                            px: 1,
+                                                                            borderColor: '#000',
+                                                                            color: '#000',
+                                                                            '&:hover': {
+                                                                                borderColor: '#000',
+                                                                                backgroundColor: '#f5f5f5'
+                                                                            }
+                                                                        }}
+                                                                        onClick={() => handleMatchShipment(row)}
+                                                                    >
+                                                                        MATCH
+                                                                    </Button>
+                                                                    <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
+                                                                        No auto-match found
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
+                                                        </TableCell>
+                                                    )}
+                                                    {showMatchColumn && (
+                                                        <TableCell sx={{ fontSize: '11px' }}>
+                                                            {row.matchConfidence && row.matchConfidence >= 90 ? (
+                                                                <Chip
+                                                                    label={`${row.matchConfidence}%`}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        fontSize: '9px',
+                                                                        height: '16px',
+                                                                        backgroundColor: '#10b981',
+                                                                        color: 'white',
+                                                                        fontWeight: 600
                                                                     }}
-                                                                    onClick={() => handleMatchShipment(row)}
-                                                                >
-                                                                    MATCH
-                                                                </Button>
-                                                                <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
-                                                                    Low confidence ({row.matchConfidence}%)
+                                                                />
+                                                            ) : row.matchConfidence ? (
+                                                                <Chip
+                                                                    label={`${row.matchConfidence}%`}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        fontSize: '9px',
+                                                                        height: '16px',
+                                                                        backgroundColor: '#ef4444',
+                                                                        color: 'white',
+                                                                        fontWeight: 600
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                    -
                                                                 </Typography>
-                                                            </Box>
-                                                        ) : isAutoMatching ? (
-                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'center' }}>
-                                                                <CircularProgress size={16} sx={{ color: '#3b82f6' }} />
-                                                                <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
-                                                                    Matching...
-                                                                </Typography>
+                                                            )}
+                                                        </TableCell>
+                                                    )}
+                                                    <TableCell sx={{ fontSize: '11px' }}>{row.carrier}</TableCell>
+                                                    <TableCell sx={{ fontSize: '11px' }}>
+                                                        <Box>
+                                                            <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                                                From: {row.origin}
+                                                            </Typography>
+                                                            <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                                                To: {row.destination}
+                                                            </Typography>
+                                                        </Box>
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '11px', minWidth: '200px' }}>
+                                                        {row.charges.length > 0 ? (
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                                {row.charges.map((charge, index) => (
+                                                                    <Typography key={index} variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                                                        {charge.description || charge.name}: {formatCurrencyHelper(charge.amount, charge.currency)}
+                                                                    </Typography>
+                                                                ))}
                                                             </Box>
                                                         ) : (
-                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                                                <Button
-                                                                    size="small"
-                                                                    variant="outlined"
-                                                                    startIcon={<SearchIcon sx={{ fontSize: '12px' }} />}
-                                                                    sx={{
-                                                                        fontSize: '10px',
-                                                                        height: '24px',
-                                                                        minWidth: 'auto',
-                                                                        px: 1,
-                                                                        borderColor: '#000',
-                                                                        color: '#000',
-                                                                        '&:hover': {
-                                                                            borderColor: '#000',
-                                                                            backgroundColor: '#f5f5f5'
-                                                                        }
-                                                                    }}
-                                                                    onClick={() => handleMatchShipment(row)}
-                                                                >
-                                                                    MATCH
-                                                                </Button>
-                                                                <Typography sx={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>
-                                                                    No auto-match found
-                                                                </Typography>
-                                                            </Box>
+                                                            <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                No charges
+                                                            </Typography>
                                                         )}
                                                     </TableCell>
-                                                )}
-                                                <TableCell sx={{ fontSize: '11px' }}>{row.carrier}</TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>
-                                                    <Box>
-                                                        <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
-                                                            From: {row.origin}
-                                                        </Typography>
-                                                        <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
-                                                            To: {row.destination}
-                                                        </Typography>
-                                                    </Box>
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '11px', minWidth: '200px' }}>
-                                                    {row.charges.length > 0 ? (
-                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                                            {row.charges.map((charge, index) => (
-                                                                <Typography key={index} variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
-                                                                    {charge.description || charge.name}: {formatCurrencyHelper(charge.amount, charge.currency)}
-                                                                </Typography>
-                                                            ))}
-                                                        </Box>
-                                                    ) : (
-                                                        <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                            No charges
-                                                        </Typography>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#059669' }}>
-                                                    {formatCurrencyHelper(row.totalAmount, row.currency)}
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '11px' }}>
-                                                    {(() => {
-                                                        const statusInfo = getStatusDisplay(row);
-                                                        return (
-                                                            <Chip
-                                                                label={statusInfo.label}
-                                                                size="small"
-                                                                sx={{
-                                                                    fontSize: '10px',
-                                                                    height: '22px',
-                                                                    backgroundColor: statusInfo.backgroundColor,
-                                                                    color: statusInfo.color,
-                                                                    fontWeight: 500
-                                                                }}
-                                                            />
-                                                        );
-                                                    })()}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Button
-                                                        size="small"
-                                                        variant="outlined"
-                                                        onClick={() => handleShipmentClick(row)}
-                                                        sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
-                                                    >
-                                                        View Details
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        )) : (
-                                            <TableRow>
-                                                <TableCell colSpan={showMatchColumn ? 9 : 8} sx={{ textAlign: 'center', py: 3 }}>
-                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                        No {title.toLowerCase()} found
-                                                    </Typography>
-                                                </TableCell>
-                                            </TableRow>
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                        </Box>
-                    );
+                                                    <TableCell sx={{ fontSize: '11px' }}>
+                                                        {formatCurrencyHelper(row.totalAmount, row.currency)}
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                        {(() => {
+                                                            // Calculate quoted cost from matched shipment data
+                                                            if (row.matchedShipmentId && row.systemRateData?.charges) {
+                                                                const nonTaxCharges = row.systemRateData.charges.filter(charge => {
+                                                                    const chargeName = (charge.name || '').toLowerCase();
+                                                                    const chargeCode = (charge.code || '').toLowerCase();
+                                                                    return !chargeName.includes('tax') && !chargeName.includes('hst') &&
+                                                                        !chargeName.includes('gst') && !chargeName.includes('pst') &&
+                                                                        !chargeName.includes('qst') && !chargeCode.includes('tax') &&
+                                                                        !chargeCode.includes('hst') && !chargeCode.includes('gst') &&
+                                                                        !chargeCode.includes('pst') && !chargeCode.includes('qst');
+                                                                });
+                                                                const quotedCost = nonTaxCharges.reduce((sum, charge) =>
+                                                                    sum + (parseFloat(charge.quotedCost || charge.cost || charge.quotedCharge || 0)), 0
+                                                                );
 
-                    return (
-                        <Box>
-                            {/* Summary */}
-                            <Box sx={{ mb: 3, p: 2, backgroundColor: '#f9fafb', borderRadius: 1 }}>
-                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
-                                    Summary
-                                </Typography>
-                                <Box sx={{ display: 'flex', gap: 4 }}>
-                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                        Total Shipments: <strong>{tableData.length}</strong>
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                        Total Amount: <strong>{formatCurrencyHelper(tableData.reduce((sum, row) => sum + row.totalAmount, 0))}</strong>
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                        Carriers: <strong>{[...new Set(tableData.map(row => row.carrier))].join(', ')}</strong>
-                                    </Typography>
-                                </Box>
+                                                                // Compare with invoice cost to determine color
+                                                                const invoiceCost = row.totalAmount || 0;
+                                                                const costDifference = Math.abs(invoiceCost - quotedCost);
+                                                                const isMatch = costDifference < 0.01; // Allow for small rounding differences
+
+                                                                return (
+                                                                    <Typography sx={{
+                                                                        fontSize: '11px',
+                                                                        color: isMatch ? '#059669' : '#dc2626' // Green if match, red if variance
+                                                                    }}>
+                                                                        {formatCurrencyHelper(quotedCost, row.currency)}
+                                                                    </Typography>
+                                                                );
+                                                            }
+                                                            return <Typography sx={{ fontSize: '11px', color: '#000000' }}>N/A</Typography>;
+                                                        })()}
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '11px' }}>
+                                                        {(() => {
+                                                            const statusInfo = getStatusDisplay(row);
+                                                            return (
+                                                                <Chip
+                                                                    label={statusInfo.label}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        fontSize: '10px',
+                                                                        height: '22px',
+                                                                        backgroundColor: statusInfo.backgroundColor,
+                                                                        color: statusInfo.color,
+                                                                        fontWeight: 500
+                                                                    }}
+                                                                />
+                                                            );
+                                                        })()}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => {
+                                                                setSelectedShipmentDetail(row);
+                                                                setShipmentDetailDialogOpen(true);
+                                                            }}
+                                                            sx={{ fontSize: '10px' }}
+                                                            title="View Details"
+                                                        >
+                                                            <MoreVertIcon sx={{ fontSize: '14px' }} />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )) : (
+                                                <TableRow>
+                                                    <TableCell colSpan={showMatchColumn ? 9 : 8} sx={{ textAlign: 'center', py: 3 }}>
+                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                            No {title.toLowerCase()} found
+                                                        </Typography>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
                             </Box>
+                        );
 
-                            {/* Matched Shipments Table */}
-                            {renderTable(matchedShipments, "MATCHED SHIPMENTS", true)}
+                        return (
+                            <Box>
+                                {/* Summary */}
+                                <Box sx={{ mb: 3, p: 2, backgroundColor: '#f9fafb', borderRadius: 1 }}>
+                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                        Summary
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 4 }}>
+                                        <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                            Total Shipments: <strong>{tableData.length}</strong>
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                            Total Amount: <strong>{formatCurrencyHelper(tableData.reduce((sum, row) => sum + row.totalAmount, 0))}</strong>
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                            Carriers: <strong>{[...new Set(tableData.map(row => row.carrier))].join(', ')}</strong>
+                                        </Typography>
+                                    </Box>
+                                </Box>
 
-                            {/* Unmatched Shipments Table */}
-                            {renderTable(unmatchedShipments, "UNMATCHED SHIPMENTS", true)}
-                        </Box>
-                    );
-                })()}
-            </Box>
+                                {/* Matched Shipments Table */}
+                                {renderTable(matchedShipments, "MATCHED SHIPMENTS", true)}
+
+                                {/* Unmatched Shipments Table */}
+                                {renderTable(unmatchedShipments, "UNMATCHED SHIPMENTS", true)}
+                            </Box>
+                        );
+                    })()}
+                </Box>
+            </>
         );
     };
 
@@ -4306,98 +4758,123 @@ export default function APProcessingResults({
                             </TableContainer>
                         </Paper>
 
+                        {/* Shipment Status Message for Complete Shipments */}
+                        {isShipmentCompleteWithExtras(selectedShipmentDetail.comparisonData) && (
+                            <Paper elevation={0} sx={{ border: '1px solid #bfdbfe', backgroundColor: '#eff6ff', p: 2, mb: 2 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#1e40af' }}>
+                                        ✅ Shipment Complete
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#3730a3' }}>
+                                        All shipment charges are matched and auto-approved. Extra charges below can be added if needed.
+                                    </Typography>
+                                </Box>
+                            </Paper>
+                        )}
+
                         {/* Compare & Apply Section */}
                         <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 2 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>Compare & Apply</Typography>
+                                <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                    {isShipmentCompleteWithExtras(selectedShipmentDetail.comparisonData) ? 'Add Extra Charges' : 'Compare & Apply'}
+                                </Typography>
 
                                 {/* Apply Charges Buttons */}
                                 <Box sx={{ display: 'flex', gap: 1 }}>
                                     {(() => {
-                                        const allCharges = [...(selectedShipmentDetail.comparisonData?.matchedCharges || []), ...(selectedShipmentDetail.comparisonData?.unmatchedCharges || [])];
-                                        const autoApprovalCharges = allCharges.filter(c => c.autoApprovalRecommendation === 'approve');
+                                        const matchedCharges = selectedShipmentDetail.comparisonData?.matchedCharges || [];
+                                        const unmatchedCharges = selectedShipmentDetail.comparisonData?.unmatchedCharges || [];
+                                        const autoApprovalCharges = matchedCharges.filter(c => c.autoApprovalRecommendation === 'approve');
+                                        const isComplete = isShipmentCompleteWithExtras(selectedShipmentDetail.comparisonData);
 
-                                        return autoApprovalCharges.length > 0 && (
-                                            <Button
-                                                variant="contained"
-                                                size="small"
-                                                onClick={handleAutoApproveCharges}
-                                                disabled={isApplyingCharges || isUnapplyingCharges}
-                                                startIcon={isApplyingCharges ? <CircularProgress size={14} sx={{ color: 'white' }} /> : null}
-                                                sx={{
-                                                    fontSize: '11px',
-                                                    textTransform: 'none',
-                                                    backgroundColor: '#10b981',
-                                                    color: 'white',
-                                                    '&:hover': {
-                                                        backgroundColor: '#059669'
-                                                    },
-                                                    '&:disabled': {
-                                                        backgroundColor: '#9ca3af',
-                                                        color: 'white'
-                                                    }
-                                                }}
-                                            >
-                                                {isApplyingCharges ?
-                                                    'AUTO-APPLYING...' :
-                                                    `AUTO-APPROVE (${autoApprovalCharges.length})`
-                                                }
-                                            </Button>
+                                        // Calculate selected charges by type
+                                        const selectedMatchedCharges = Array.from(selectedCharges).filter(idx =>
+                                            idx < matchedCharges.length && !appliedCharges.has(idx)
+                                        );
+                                        const selectedUnmatchedCharges = Array.from(selectedCharges).filter(idx =>
+                                            idx >= matchedCharges.length && !appliedCharges.has(idx)
+                                        );
+                                        const selectedAppliedCharges = Array.from(selectedCharges).filter(idx => appliedCharges.has(idx));
+
+                                        return (
+                                            <>
+                                                {/* Auto-Approve Button for Matched Charges */}
+                                                {autoApprovalCharges.length > 0 && !isComplete && (
+                                                    <Button
+                                                        variant="contained"
+                                                        size="small"
+                                                        onClick={handleAutoApproveCharges}
+                                                        disabled={isApplyingCharges || isUnapplyingCharges}
+                                                        startIcon={isApplyingCharges ? <CircularProgress size={14} sx={{ color: 'white' }} /> : null}
+                                                        sx={{
+                                                            fontSize: '11px',
+                                                            textTransform: 'none',
+                                                            backgroundColor: '#10b981',
+                                                            color: 'white',
+                                                            '&:hover': { backgroundColor: '#059669' },
+                                                            '&:disabled': { backgroundColor: '#9ca3af', color: 'white' }
+                                                        }}
+                                                    >
+                                                        AUTO-APPROVE MATCHED
+                                                    </Button>
+                                                )}
+
+                                                {/* Apply Selected Matched Charges */}
+                                                {selectedMatchedCharges.length > 0 && !isComplete && (
+                                                    <Button
+                                                        variant="outlined"
+                                                        size="small"
+                                                        onClick={handleApplySelectedCharges}
+                                                        disabled={isApplyingCharges || isUnapplyingCharges}
+                                                        startIcon={isApplyingCharges ? <CircularProgress size={14} /> : null}
+                                                        sx={{ fontSize: '11px', textTransform: 'none' }}
+                                                    >
+                                                        APPLY CHARGE{selectedMatchedCharges.length > 1 ? 'S' : ''}
+                                                    </Button>
+                                                )}
+
+                                                {/* Add Selected Unmatched/Extra Charges */}
+                                                {selectedUnmatchedCharges.length > 0 && (
+                                                    <Button
+                                                        variant="contained"
+                                                        size="small"
+                                                        onClick={handleShowChargeConfirmation}
+                                                        disabled={isApplyingCharges || isUnapplyingCharges}
+                                                        sx={{
+                                                            fontSize: '11px',
+                                                            textTransform: 'none',
+                                                            backgroundColor: '#3b82f6',
+                                                            color: 'white',
+                                                            '&:hover': { backgroundColor: '#2563eb' },
+                                                            '&:disabled': { backgroundColor: '#9ca3af', color: 'white' }
+                                                        }}
+                                                    >
+                                                        ADD CHARGE{selectedUnmatchedCharges.length > 1 ? 'S' : ''}
+                                                    </Button>
+                                                )}
+
+                                                {/* Unapply Selected Applied Charges */}
+                                                {selectedAppliedCharges.length > 0 && (
+                                                    <Button
+                                                        variant="outlined"
+                                                        color="error"
+                                                        size="small"
+                                                        onClick={handleUnapplySelectedCharges}
+                                                        disabled={isApplyingCharges || isUnapplyingCharges}
+                                                        startIcon={isUnapplyingCharges ? <CircularProgress size={14} /> : null}
+                                                        sx={{ fontSize: '11px', textTransform: 'none' }}
+                                                    >
+                                                        UNAPPLY CHARGE{selectedAppliedCharges.length > 1 ? 'S' : ''}
+                                                    </Button>
+                                                )}
+
+                                            </>
                                         );
                                     })()}
 
-                                    {(selectedCharges.size === 0 || Array.from(selectedCharges).some(index => !appliedCharges.has(index))) && (
-                                        <Button
-                                            variant="outlined"
-                                            size="small"
-                                            onClick={handleApplySelectedCharges}
-                                            disabled={selectedCharges.size === 0 || Array.from(selectedCharges).every(index => appliedCharges.has(index)) || isApplyingCharges || isUnapplyingCharges}
-                                            startIcon={isApplyingCharges ? <CircularProgress size={14} /> : null}
-                                            sx={{
-                                                fontSize: '11px',
-                                                textTransform: 'none',
-                                                '&:disabled': {
-                                                    borderColor: '#d1d5db',
-                                                    color: '#9ca3af'
-                                                }
-                                            }}
-                                        >
-                                            {isApplyingCharges ?
-                                                'APPLYING...' :
-                                                (selectedCharges.size === 0 ?
-                                                    'SELECT CHARGES TO APPLY' :
-                                                    'APPLY ACTUAL CHARGES'
-                                                )
-                                            }
-                                        </Button>
-                                    )}
                                 </Box>
                             </Box>
                             <Table size="small">
-                                <TableHead>
-                                    <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, padding: '8px', width: '40px', maxWidth: '40px', verticalAlign: 'top' }}>
-                                            <Checkbox
-                                                size="small"
-                                                checked={selectAllCharges}
-                                                onChange={(e) => handleSelectAllCharges(e.target.checked)}
-                                                sx={{
-                                                    padding: 0,
-                                                    '& .MuiSvgIcon-root': { fontSize: 16 }
-                                                }}
-                                            />
-                                        </TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '50px', textAlign: 'left', verticalAlign: 'top' }}>Code</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '200px', textAlign: 'left', verticalAlign: 'top' }}>Charge Name</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Invoice Amount</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Quoted Cost</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Quoted Charge</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Actual Cost</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Actual Charge</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '90px', textAlign: 'left', verticalAlign: 'top' }}>Variance</TableCell>
-                                        <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '100px', textAlign: 'left', verticalAlign: 'top' }}>Profit (CAD)</TableCell>
-                                    </TableRow>
-                                </TableHead>
                                 <TableBody>
                                     <ComparisonTableRows
                                         selectedShipmentDetail={selectedShipmentDetail}
@@ -4409,6 +4886,9 @@ export default function APProcessingResults({
                                         uploadData={uploadData}
                                         fileName={fileName}
                                         enqueueSnackbar={enqueueSnackbar}
+                                        isShipmentCompleteWithExtras={isShipmentCompleteWithExtras}
+                                        setSelectedCharges={setSelectedCharges}
+                                        handleUnapplySelectedCharges={handleUnapplySelectedCharges}
                                     />
                                 </TableBody>
                             </Table>
@@ -4690,6 +5170,269 @@ export default function APProcessingResults({
                     </Button>
                 </Stack>
             </Box>
+
+            {/* Charge Confirmation Dialog */}
+            <Dialog
+                open={chargeConfirmationDialogOpen}
+                onClose={() => setChargeConfirmationDialogOpen(false)}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    Confirm Charge Addition
+                    {!editMode && (
+                        <Button
+                            onClick={handleEditChargeDetails}
+                            size="small"
+                            startIcon={<EditIcon />}
+                            sx={{ fontSize: '11px', textTransform: 'none' }}
+                        >
+                            Edit Details
+                        </Button>
+                    )}
+                </DialogTitle>
+                <DialogContent>
+                    <Alert severity="info" sx={{ mb: 3, fontSize: '12px' }}>
+                        <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                            Review Charge Details Before Adding
+                        </Typography>
+                        <Typography sx={{ fontSize: '11px' }}>
+                            These charges will be added to shipment <strong>{selectedShipmentDetail?.matchedShipmentId}</strong> and included in the next customer invoice.
+                        </Typography>
+                    </Alert>
+
+                    <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600, width: '120px' }}>Code</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Charge Name</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Invoice Amount</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Cost</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Customer Charge</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Currency</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>EDI Number</TableCell>
+                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Commission</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {chargesToConfirm.map((charge, index) => (
+                                    <TableRow key={index} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#f9fafb' } }}>
+                                        {/* Code Field - Editable Dropdown */}
+                                        <TableCell sx={{ fontSize: '11px', p: 1 }}>
+                                            {editMode ? (
+                                                <FormControl size="small" fullWidth>
+                                                    <Select
+                                                        value={charge.code}
+                                                        onChange={(e) => handleChargeFieldChange(index, 'code', e.target.value)}
+                                                        sx={{ fontSize: '11px' }}
+                                                        size="small"
+                                                        MenuProps={{
+                                                            PaperProps: {
+                                                                style: {
+                                                                    maxHeight: 300,
+                                                                    width: 200
+                                                                }
+                                                            }
+                                                        }}
+                                                    >
+                                                        {chargeTypes.map((type) => (
+                                                            <MenuItem key={type.code} value={type.code} sx={{ fontSize: '11px' }}>
+                                                                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                                                    <Typography sx={{ fontSize: '11px', fontWeight: 600 }}>{type.code}</Typography>
+                                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                        {type.displayName || type.name || type.description || type.label || 'Charge Type'}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </MenuItem>
+                                                        ))}
+                                                    </Select>
+                                                </FormControl>
+                                            ) : (
+                                                <Typography sx={{ fontSize: '11px', fontWeight: 600 }}>{charge.code}</Typography>
+                                            )}
+                                        </TableCell>
+
+                                        {/* Charge Name Field - Editable Text */}
+                                        <TableCell sx={{ fontSize: '11px', p: 1 }}>
+                                            {editMode ? (
+                                                <TextField
+                                                    value={charge.name}
+                                                    onChange={(e) => handleChargeFieldChange(index, 'name', e.target.value)}
+                                                    size="small"
+                                                    fullWidth
+                                                    sx={{ '& .MuiInputBase-input': { fontSize: '11px' } }}
+                                                />
+                                            ) : (
+                                                <Typography sx={{ fontSize: '11px' }}>{charge.name}</Typography>
+                                            )}
+                                        </TableCell>
+
+                                        {/* Invoice Amount - Read Only */}
+                                        <TableCell sx={{ fontSize: '11px', p: 1 }}>
+                                            <Typography sx={{ fontSize: '11px' }}>
+                                                {formatCurrency(charge.invoiceAmount, charge.currency)}
+                                            </Typography>
+                                        </TableCell>
+
+                                        {/* Cost Field - Editable */}
+                                        <TableCell sx={{ fontSize: '11px', p: 1 }}>
+                                            {editMode ? (
+                                                <TextField
+                                                    value={charge.actualCost}
+                                                    onChange={(e) => handleChargeFieldChange(index, 'actualCost', parseFloat(e.target.value) || 0)}
+                                                    type="number"
+                                                    size="small"
+                                                    fullWidth
+                                                    inputProps={{ step: 0.01, min: 0 }}
+                                                    sx={{ '& .MuiInputBase-input': { fontSize: '11px', color: '#dc2626' } }}
+                                                />
+                                            ) : (
+                                                <Typography sx={{ fontSize: '11px', color: '#dc2626' }}>
+                                                    {formatCurrency(charge.actualCost, charge.currency)}
+                                                </Typography>
+                                            )}
+                                        </TableCell>
+
+                                        {/* Customer Charge Field - Editable */}
+                                        <TableCell sx={{ fontSize: '11px', p: 1 }}>
+                                            {editMode ? (
+                                                <TextField
+                                                    value={charge.actualCharge}
+                                                    onChange={(e) => handleChargeFieldChange(index, 'actualCharge', parseFloat(e.target.value) || 0)}
+                                                    type="number"
+                                                    size="small"
+                                                    fullWidth
+                                                    inputProps={{ step: 0.01, min: 0 }}
+                                                    sx={{ '& .MuiInputBase-input': { fontSize: '11px', color: '#059669' } }}
+                                                />
+                                            ) : (
+                                                <Typography sx={{ fontSize: '11px', color: '#059669' }}>
+                                                    {formatCurrency(charge.actualCharge, charge.currency)}
+                                                </Typography>
+                                            )}
+                                        </TableCell>
+
+                                        {/* Currency Field - Editable Dropdown */}
+                                        <TableCell sx={{ fontSize: '11px', p: 1 }}>
+                                            {editMode ? (
+                                                <FormControl size="small" fullWidth>
+                                                    <Select
+                                                        value={charge.currency}
+                                                        onChange={(e) => handleChargeFieldChange(index, 'currency', e.target.value)}
+                                                        sx={{ fontSize: '11px' }}
+                                                        size="small"
+                                                        MenuProps={{
+                                                            PaperProps: {
+                                                                style: {
+                                                                    maxHeight: 150,
+                                                                    width: 100
+                                                                }
+                                                            }
+                                                        }}
+                                                    >
+                                                        <MenuItem value="CAD" sx={{ fontSize: '11px' }}>CAD</MenuItem>
+                                                        <MenuItem value="USD" sx={{ fontSize: '11px' }}>USD</MenuItem>
+                                                        <MenuItem value="EUR" sx={{ fontSize: '11px' }}>EUR</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            ) : (
+                                                <Typography sx={{ fontSize: '11px' }}>{charge.currency}</Typography>
+                                            )}
+                                        </TableCell>
+
+                                        {/* EDI Number - Read Only */}
+                                        <TableCell sx={{ fontSize: '11px', p: 1 }}>
+                                            <Typography sx={{ fontSize: '11px' }}>{charge.ediNumber || '-'}</Typography>
+                                        </TableCell>
+
+                                        {/* Commission Field - Editable Checkbox */}
+                                        <TableCell sx={{ fontSize: '11px', p: 1, textAlign: 'center' }}>
+                                            {editMode ? (
+                                                <Checkbox
+                                                    checked={charge.commissionable}
+                                                    onChange={(e) => handleChargeFieldChange(index, 'commissionable', e.target.checked)}
+                                                    size="small"
+                                                    sx={{
+                                                        padding: 0,
+                                                        '& .MuiSvgIcon-root': { fontSize: 16 }
+                                                    }}
+                                                />
+                                            ) : (
+                                                <Chip
+                                                    label={charge.commissionable ? 'Yes' : 'No'}
+                                                    size="small"
+                                                    color={charge.commissionable ? 'success' : 'default'}
+                                                    sx={{ fontSize: '9px', height: '16px' }}
+                                                />
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+
+                    <Box sx={{ mt: 2, p: 2, backgroundColor: '#f8fafc', borderRadius: 1 }}>
+                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                            Impact Summary
+                        </Typography>
+                        <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 0.5 }}>
+                            • {chargesToConfirm.length} charge{chargesToConfirm.length > 1 ? 's' : ''} will be added to the shipment
+                        </Typography>
+                        <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 0.5 }}>
+                            • Shipment status will be updated to "Ready to Invoice"
+                        </Typography>
+                        <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 0.5 }}>
+                            • Charges will appear in the next customer invoice
+                        </Typography>
+                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                            • Total customer charge: {chargesToConfirm.length > 0 ? formatCurrency(
+                                chargesToConfirm.reduce((sum, charge) => sum + charge.actualCharge, 0),
+                                chargesToConfirm[0]?.currency || 'CAD'
+                            ) : '$0.00'}
+                        </Typography>
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ p: 2, gap: 1 }}>
+                    <Button
+                        onClick={() => {
+                            setChargeConfirmationDialogOpen(false);
+                            setEditMode(false);
+                        }}
+                        size="small"
+                        sx={{ fontSize: '12px', textTransform: 'none' }}
+                    >
+                        Cancel
+                    </Button>
+
+                    {editMode && (
+                        <Button
+                            onClick={() => setEditMode(false)}
+                            size="small"
+                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                        >
+                            Done Editing
+                        </Button>
+                    )}
+
+                    <Button
+                        onClick={handleConfirmAddCharges}
+                        variant="contained"
+                        size="small"
+                        disabled={isApplyingCharges}
+                        startIcon={isApplyingCharges ? <CircularProgress size={14} sx={{ color: 'white' }} /> : null}
+                        sx={{
+                            fontSize: '12px',
+                            textTransform: 'none',
+                            backgroundColor: '#3b82f6',
+                            '&:hover': { backgroundColor: '#2563eb' }
+                        }}
+                    >
+                        {isApplyingCharges ? 'Adding...' : 'Confirm & Add Charges'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 }
