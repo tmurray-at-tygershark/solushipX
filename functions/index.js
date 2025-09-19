@@ -1159,7 +1159,9 @@ const {
     expandCarrierCustomZonesToCities,
     expandCarrierCustomZoneSetsToCS,
     getCarrierCustomZoneSets,
+    getCarrierCustomZones,
     createCarrierCustomZone,
+    updateCarrierCustomZone,
     createCarrierCustomZoneSet,
     updateCarrierCustomZoneSet,
     deleteCarrierCustomZoneSet
@@ -1186,7 +1188,9 @@ exports.expandZoneSetToCities = expandZoneSetToCities;
 exports.expandCarrierCustomZonesToCities = expandCarrierCustomZonesToCities;
 exports.expandCarrierCustomZoneSetsToCS = expandCarrierCustomZoneSetsToCS;
 exports.getCarrierCustomZoneSets = getCarrierCustomZoneSets;
+exports.getCarrierCustomZones = getCarrierCustomZones;
 exports.createCarrierCustomZone = createCarrierCustomZone;
+exports.updateCarrierCustomZone = updateCarrierCustomZone;
 exports.createCarrierCustomZoneSet = createCarrierCustomZoneSet;
 exports.updateCarrierCustomZoneSet = updateCarrierCustomZoneSet;
 exports.deleteCarrierCustomZoneSet = deleteCarrierCustomZoneSet;

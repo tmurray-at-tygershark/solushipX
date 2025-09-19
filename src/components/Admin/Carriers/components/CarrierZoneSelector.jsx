@@ -33,6 +33,7 @@ import {
     Delete as DeleteIcon,
     MoreVert as MoreVertIcon
 } from '@mui/icons-material';
+import { Menu, MenuItem, ListItemIcon, ListItemText } from '@mui/material';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../../firebase';
 import { useSnackbar } from 'notistack';
@@ -62,6 +63,10 @@ const CarrierZoneSelector = ({
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(embedded ? 50 : 25);
 
+    // Actions menu state
+    const [actionAnchorEl, setActionAnchorEl] = useState(null);
+    const [actionZone, setActionZone] = useState(null);
+
     // Load carrier zones
     const loadCarrierZones = useCallback(async () => {
         if (!carrierId) {
@@ -73,14 +78,15 @@ const CarrierZoneSelector = ({
 
         setLoading(true);
         try {
-            const getCarrierZoneSets = httpsCallable(functions, 'getCarrierCustomZoneSets');
-            const result = await getCarrierZoneSets({ carrierId });
+            const [zoneSetsRes, zonesRes] = await Promise.all([
+                httpsCallable(functions, 'getCarrierCustomZoneSets')({ carrierId }),
+                httpsCallable(functions, 'getCarrierCustomZones')({ carrierId })
+            ]);
 
-            if (result.data.success) {
-                const zoneSets = result.data.zoneSets || [];
+            let allZones = [];
 
-                // Extract individual zones from zone sets
-                const allZones = [];
+            if (zoneSetsRes.data.success) {
+                const zoneSets = zoneSetsRes.data.zoneSets || [];
                 zoneSets.forEach(zoneSet => {
                     if (zoneSet.zones && Array.isArray(zoneSet.zones)) {
                         zoneSet.zones.forEach(zone => {
@@ -93,20 +99,24 @@ const CarrierZoneSelector = ({
                         });
                     }
                 });
-
-                // Client-side search filtering
-                let filteredZones = allZones;
-                if (searchTerm) {
-                    const searchLower = searchTerm.toLowerCase();
-                    filteredZones = allZones.filter(zone =>
-                        (zone.name || '').toLowerCase().includes(searchLower) ||
-                        (zone.zoneId || '').toLowerCase().includes(searchLower) ||
-                        (zone.zoneSetName || '').toLowerCase().includes(searchLower)
-                    );
-                }
-
-                setZones(filteredZones);
             }
+
+            if (zonesRes.data.success) {
+                allZones = [...allZones, ...(zonesRes.data.zones || [])];
+            }
+
+            // Client-side search filtering
+            let filteredZones = allZones;
+            if (searchTerm) {
+                const searchLower = searchTerm.toLowerCase();
+                filteredZones = allZones.filter(zone =>
+                    (zone.name || '').toLowerCase().includes(searchLower) ||
+                    (zone.zoneId || '').toLowerCase().includes(searchLower) ||
+                    (zone.zoneSetName || '').toLowerCase().includes(searchLower)
+                );
+            }
+
+            setZones(filteredZones);
         } catch (error) {
             console.error('Error loading carrier zones:', error);
             enqueueSnackbar('Failed to load carrier zones', { variant: 'error' });
@@ -316,10 +326,10 @@ const CarrierZoneSelector = ({
                                             </TableCell>
                                         )}
                                         <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                            {zone.name}
+                                            {zone.name || zone.zoneName || zone.zoneCode}
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                            {zone.zoneSetName}
+                                            {zone.zoneSetName || '—'}
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px' }}>
                                             <Chip
@@ -342,7 +352,8 @@ const CarrierZoneSelector = ({
                                                     size="small"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        // TODO: Implement zone actions
+                                                        setActionAnchorEl(e.currentTarget);
+                                                        setActionZone(zone);
                                                     }}
                                                 >
                                                     <MoreVertIcon fontSize="small" />
@@ -356,6 +367,52 @@ const CarrierZoneSelector = ({
                     </TableBody>
                 </Table>
             </TableContainer>
+
+            {/* Actions Menu */}
+            <Menu
+                anchorEl={actionAnchorEl}
+                open={Boolean(actionAnchorEl)}
+                onClose={() => {
+                    setActionAnchorEl(null);
+                    setActionZone(null);
+                }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            >
+                <MenuItem
+                    onClick={() => {
+                        if (actionZone) {
+                            handleZoneToggle(actionZone);
+                        }
+                        setActionAnchorEl(null);
+                        setActionZone(null);
+                    }}
+                    sx={{ fontSize: '12px' }}
+                >
+                    <ListItemIcon>
+                        <AddIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primaryTypographyProps={{ fontSize: '12px' }}>
+                        {selectedZones.some(z => z.zoneId === actionZone?.zoneId) ? 'Deselect' : 'Select'}
+                    </ListItemText>
+                </MenuItem>
+                {onCreateZone && (
+                    <MenuItem
+                        onClick={() => {
+                            // pass control up to open create/edit dialog; for edit supply current zone
+                            onCreateZone(actionZone || null);
+                            setActionAnchorEl(null);
+                            setActionZone(null);
+                        }}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        <ListItemIcon>
+                            <EditIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText primaryTypographyProps={{ fontSize: '12px' }}>Edit</ListItemText>
+                    </MenuItem>
+                )}
+            </Menu>
 
             {/* Pagination */}
             {!embedded && zones.length > rowsPerPage && (
@@ -384,7 +441,7 @@ const CarrierZoneSelector = ({
                     <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
                         Selected Custom Zones ({selectedZones.length}):
                     </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {selectedZones.map(zone => (
                             <Chip
                                 key={zone.zoneId}

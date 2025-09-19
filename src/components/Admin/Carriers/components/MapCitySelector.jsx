@@ -126,6 +126,7 @@ const MapCitySelector = ({
     const [showSystemZones, setShowSystemZones] = useState(true);
     const [showCustomZones, setShowCustomZones] = useState(true);
     const [customCarrierZones, setCustomCarrierZones] = useState([]);
+    const [customZonesFlat, setCustomZonesFlat] = useState([]);
 
     // Accordion section states - only zone creation expanded by default
     const [expandedSections, setExpandedSections] = useState({
@@ -149,25 +150,34 @@ const MapCitySelector = ({
 
         try {
             console.log('🔄 Loading custom zones for carrier:', carrierId);
+            // Load zone boundaries (polygon shapes)
             const loadZoneBoundariesFn = httpsCallable(functions, 'loadZoneBoundaries');
-            const result = await loadZoneBoundariesFn({
-                carrierId: carrierId,
-                zoneCategory: zoneCategory || 'pickupZones'
-            });
+            const [boundariesRes, customZonesRes] = await Promise.all([
+                loadZoneBoundariesFn({ carrierId, zoneCategory: zoneCategory || 'pickupZones' }),
+                httpsCallable(functions, 'getCarrierCustomZones')({ carrierId })
+            ]);
 
-            if (result.data.success && result.data.boundaries) {
-                console.log('✅ Loaded custom carrier zones:', result.data.boundaries.length, 'zones');
-                setCustomCarrierZones(result.data.boundaries);
+            if (boundariesRes.data.success && boundariesRes.data.boundaries) {
+                console.log('✅ Loaded custom zone boundaries:', boundariesRes.data.boundaries.length);
+                setCustomCarrierZones(boundariesRes.data.boundaries);
 
-                // Render existing zone boundaries on the map
-                result.data.boundaries.forEach(zone => {
+                boundariesRes.data.boundaries.forEach(zone => {
                     if (zone.boundary && zone.boundary.coordinates && googleMapRef.current) {
                         renderCustomZoneBoundary(zone);
                     }
                 });
             } else {
-                console.log('📭 No custom zones found for carrier:', carrierId);
                 setCustomCarrierZones([]);
+            }
+
+            if (customZonesRes.data.success) {
+                const zones = (customZonesRes.data.zones || []).map((z, idx) => ({
+                    ...z,
+                    color: z.color || ZONE_COLORS[idx % ZONE_COLORS.length]
+                }));
+                setCustomZonesFlat(zones);
+            } else {
+                setCustomZonesFlat([]);
             }
         } catch (error) {
             console.error('❌ Error loading custom carrier zones:', error);
@@ -219,9 +229,11 @@ const MapCitySelector = ({
             window.currentZoneInfoWindow = null;
         }
 
-        console.log('🗺️ Rendering zone overlays:', zonesWithColors.length, 'zones');
+        // Combine provided zonesWithColors with flat custom zones (city-based)
+        const allZones = [...zonesWithColors, ...customZonesFlat];
+        console.log('🗺️ Rendering zone overlays:', allZones.length, 'zones');
 
-        zonesWithColors.forEach((zone, index) => {
+        allZones.forEach((zone, index) => {
             console.log(`🏷️ Processing zone ${index + 1}:`, zone.zoneName || zone.name, `(${zone.cities?.length || 0} cities)`);
 
             if (zone.cities && zone.cities.length > 0) {

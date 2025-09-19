@@ -8,9 +8,9 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense, laz
 import {
     Box, Paper, Typography, Button, Grid, Tabs, Tab,
     TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-    TablePagination, Checkbox, Chip, CircularProgress,
+    TablePagination, Checkbox, Chip, CircularProgress, Skeleton,
     FormControl, InputLabel, Select, MenuItem, IconButton, Menu, MenuItem as MenuItemComponent,
-    Dialog, DialogTitle, DialogContent, DialogActions, Autocomplete, TableSortLabel
+    Dialog, DialogTitle, DialogContent, DialogActions, Autocomplete, TableSortLabel, Tooltip
 } from '@mui/material';
 import {
     Search as SearchIcon, Add as AddIcon, MoreVert as MoreVertIcon,
@@ -20,6 +20,8 @@ import {
 import useGeographicData from '../../../../hooks/useGeographicData';
 import { useSnackbar } from 'notistack';
 import EnhancedAddCityDialog from './EnhancedAddCityDialog';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../../../firebase';
 
 // Lazy load MapCitySelector to prevent any map initialization until needed
 const MapCitySelector = lazy(() => import('./MapCitySelector'));
@@ -47,6 +49,7 @@ const SmartCitySelector = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [countryFilter, setCountryFilter] = useState('');
     const [provinceStateFilter, setProvinceStateFilter] = useState('');
+    const [zoneFilter, setZoneFilter] = useState('');
     const [sortBy, setSortBy] = useState('city');
     const [sortDirection, setSortDirection] = useState('asc');
     const [page, setPage] = useState(0);
@@ -63,6 +66,37 @@ const SmartCitySelector = ({
     const [actionMenuCity, setActionMenuCity] = useState(null);
     const [cityMapDialogOpen, setCityMapDialogOpen] = useState(false);
     const [selectedCityForMap, setSelectedCityForMap] = useState(null);
+
+    // Zone membership mapping (city -> [zone names])
+    const [zoneMembershipMap, setZoneMembershipMap] = useState(new Map());
+    const [zoneMembershipLoading, setZoneMembershipLoading] = useState(false);
+
+    // Helpers for zone labels (moved above usages to avoid TDZ errors)
+    const getCityKey = useCallback((c) => {
+        if (!c) return '';
+        const city = String(c.city || '').trim().toLowerCase();
+        const prov = String(c.provinceState || '').trim().toUpperCase();
+        const country = String(c.country || '').trim().toUpperCase();
+        if (!city || !prov || !country) return String(c.searchKey || c.id || '').trim();
+        return `${city}|${prov}|${country}`;
+    }, []);
+
+    const getCityZoneLabels = useCallback((city) => {
+        const labels = new Set();
+        const add = (v) => {
+            if (typeof v === 'string') {
+                const t = v.trim();
+                if (t) labels.add(t);
+            }
+        };
+        if (Array.isArray(city.zoneNames)) city.zoneNames.forEach(add);
+        add(city.zoneName);
+        // Merge with computed membership map
+        const key = getCityKey(city);
+        const fromMap = key ? zoneMembershipMap.get(key) : null;
+        if (Array.isArray(fromMap)) fromMap.forEach(add);
+        return Array.from(labels);
+    }, [zoneMembershipMap, getCityKey]);
 
     // Load activated cities from props
     const loadActivatedCities = useCallback(() => {
@@ -133,6 +167,15 @@ const SmartCitySelector = ({
         // Apply province/state filter
         if (provinceStateFilter) {
             filtered = filtered.filter(city => city.provinceState === provinceStateFilter);
+        }
+
+        // Apply zone filter (matches either inline metadata or membership map)
+        if (zoneFilter) {
+            const lower = zoneFilter.toLowerCase();
+            filtered = filtered.filter(city => {
+                const labels = getCityZoneLabels(city);
+                return labels.some(l => String(l).toLowerCase() === lower);
+            });
         }
 
         // Apply sorting
@@ -216,6 +259,16 @@ const SmartCitySelector = ({
             name: code // Fallback to code if no name mapping available
         }));
     }, [countryFilter, activatedCities]);
+
+    const availableZones = useMemo(() => {
+        // Unique list of all zone labels present across activated cities & membership map
+        const labels = new Set();
+        activatedCities.forEach(c => {
+            const arr = getCityZoneLabels(c);
+            arr.forEach(l => labels.add(l));
+        });
+        return Array.from(labels).sort((a, b) => a.localeCompare(b));
+    }, [activatedCities, getCityZoneLabels]);
 
     // Handle city status toggle
     const handleCityStatusToggle = useCallback((city) => {
@@ -344,6 +397,59 @@ const SmartCitySelector = ({
         setActiveTab(0); // Switch back to manage cities tab
     }, [activatedCities, onSelectionComplete, enqueueSnackbar]);
 
+    // Helpers declared above (getCityKey, getCityZoneLabels)
+
+    // Load zone membership map from carrier custom zones
+    useEffect(() => {
+        let isCancelled = false;
+        const loadMembership = async () => {
+            if (!carrierId) return;
+            try {
+                setZoneMembershipLoading(true);
+                const call = httpsCallable(functions, 'getCarrierCustomZones');
+                const res = await call({ carrierId });
+                const zones = (res && res.data && Array.isArray(res.data.zones)) ? res.data.zones : [];
+                const map = new Map();
+                const addToMap = (city, zoneName) => {
+                    if (!zoneName) return;
+                    const key = getCityKey(city);
+                    if (!key) return;
+                    const existing = map.get(key) || [];
+                    if (!existing.includes(zoneName)) existing.push(zoneName);
+                    map.set(key, existing);
+                };
+                zones.forEach(z => {
+                    const zName = z.name || z.zoneName || z.zoneCode;
+                    if (Array.isArray(z.cities)) {
+                        z.cities.forEach(c => addToMap(c, zName));
+                    }
+                });
+                // Also incorporate inline metadata from current selection
+                (selectedCities || []).forEach(c => {
+                    const names = [
+                        ...(Array.isArray(c.zoneNames) ? c.zoneNames : []),
+                        c.zoneName
+                    ].filter(Boolean);
+                    if (names.length > 0) {
+                        const key = getCityKey(c);
+                        if (key) {
+                            const existing = map.get(key) || [];
+                            names.forEach(n => { if (!existing.includes(n)) existing.push(n); });
+                            map.set(key, existing);
+                        }
+                    }
+                });
+                if (!isCancelled) setZoneMembershipMap(map);
+            } catch (e) {
+                console.warn('Failed to load zone memberships', e);
+            } finally {
+                if (!isCancelled) setZoneMembershipLoading(false);
+            }
+        };
+        loadMembership();
+        return () => { isCancelled = true; };
+    }, [carrierId, selectedCities, getCityKey]);
+
     // Pagination
     const paginatedCities = useMemo(() => {
         const startIndex = page * rowsPerPage;
@@ -355,8 +461,8 @@ const SmartCitySelector = ({
 
     // Render filters section
     const renderFilters = () => (
-        <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item xs={12} md={4}>
+        <Grid container spacing={1.5} sx={{ mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Grid item xs={12} md={3} lg={3} xl={3}>
                 <TextField
                     fullWidth
                     size="small"
@@ -379,7 +485,7 @@ const SmartCitySelector = ({
                     }}
                 />
             </Grid>
-            <Grid item xs={6} md={3}>
+            <Grid item xs={6} md={2.5} lg={2.5} xl={2.5}>
                 <FormControl fullWidth size="small">
                     <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
                     <Select
@@ -400,7 +506,7 @@ const SmartCitySelector = ({
                     </Select>
                 </FormControl>
             </Grid>
-            <Grid item xs={6} md={3}>
+            <Grid item xs={6} md={2.5} lg={2.5} xl={2.5}>
                 <FormControl fullWidth size="small">
                     <InputLabel sx={{ fontSize: '12px' }}>Province/State</InputLabel>
                     <Select
@@ -422,7 +528,27 @@ const SmartCitySelector = ({
                     </Select>
                 </FormControl>
             </Grid>
-            <Grid item xs={12} md={2}>
+            <Grid item xs={6} md={2.5} lg={2.5} xl={2.5}>
+                {zoneMembershipLoading ? (
+                    <Skeleton variant="rounded" height={40} />
+                ) : (
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Zone</InputLabel>
+                        <Select
+                            value={zoneFilter}
+                            onChange={(e) => setZoneFilter(e.target.value)}
+                            label="Zone"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }}>All Zones</MenuItem>
+                            {availableZones.map(z => (
+                                <MenuItem key={z} value={z} sx={{ fontSize: '12px' }}>{z}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                )}
+            </Grid>
+            <Grid item xs={12} md={1.5} lg={1.5} xl={1.5}>
                 <Button
                     fullWidth
                     variant="contained"
@@ -431,7 +557,7 @@ const SmartCitySelector = ({
                     onClick={() => setAddCityDialogOpen(true)}
                     sx={{ fontSize: '12px', height: '40px' }}
                 >
-                    Add City
+                    Add
                 </Button>
             </Grid>
         </Grid>
@@ -547,6 +673,9 @@ const SmartCitySelector = ({
                                 </TableSortLabel>
                             </TableCell>
                             <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                Zone(s)
+                            </TableCell>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
                                 Status
                             </TableCell>
                             <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
@@ -593,6 +722,28 @@ const SmartCitySelector = ({
                                 <TableCell sx={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b7280' }}>
                                     {city.longitude ? city.longitude.toFixed(5) : 'N/A'}
                                 </TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>
+                                    {(() => {
+                                        const labels = getCityZoneLabels(city);
+                                        if (!labels || labels.length === 0) {
+                                            return <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>—</Typography>;
+                                        }
+                                        const visible = labels.slice(0, 2);
+                                        const hiddenCount = labels.length - visible.length;
+                                        return (
+                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                {visible.map(label => (
+                                                    <Chip key={label} label={label} size="small" variant="outlined" color="primary" sx={{ fontSize: '11px' }} />
+                                                ))}
+                                                {hiddenCount > 0 && (
+                                                    <Tooltip title={labels.join(', ')}>
+                                                        <Chip label={`+${hiddenCount}`} size="small" sx={{ fontSize: '11px' }} />
+                                                    </Tooltip>
+                                                )}
+                                            </Box>
+                                        );
+                                    })()}
+                                </TableCell>
                                 <TableCell>
                                     <Chip
                                         label={city.status || 'enabled'}
@@ -616,7 +767,7 @@ const SmartCitySelector = ({
                         ))}
                         {paginatedCities.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={8} sx={{ textAlign: 'center', py: 4 }}>
+                                <TableCell colSpan={9} sx={{ textAlign: 'center', py: 4 }}>
                                     <Typography sx={{ fontSize: '14px', color: '#6b7280' }}>
                                         {searchTerm || countryFilter || provinceStateFilter
                                             ? 'No cities match your filters'
@@ -660,7 +811,15 @@ const SmartCitySelector = ({
                     <Typography sx={{ ml: 2, fontSize: '12px' }}>Loading cities...</Typography>
                 </Box>
             ) : (
-                renderActivatedCitiesTable()
+                <>
+                    {/* When zone membership is loading, show a thin skeleton above the table to indicate lookup */}
+                    {zoneMembershipLoading && (
+                        <Box sx={{ mb: 1 }}>
+                            <Skeleton variant="rounded" height={8} />
+                        </Box>
+                    )}
+                    {renderActivatedCitiesTable()}
+                </>
             )}
         </Box>
     );
@@ -772,18 +931,35 @@ const SmartCitySelector = ({
                         id: city.searchKey || city.id
                     }));
 
-                    // DUPLICATE PREVENTION: Combine and remove duplicates
+                    // Merge duplicates by aggregating zone names to preserve multi-zone membership
                     const allCities = [...activatedCities, ...citiesWithStatus];
-                    const seenIds = new Set();
-                    const deduplicatedCities = allCities.filter(city => {
+                    const cityMap = new Map();
+                    for (const city of allCities) {
                         const cityId = city.searchKey || city.id;
-                        if (seenIds.has(cityId)) {
-                            console.warn(`🚨 [SmartCitySelector] Duplicate city filtered: ${city.city} (${cityId})`);
-                            return false;
+                        if (!cityId) continue;
+                        if (!cityMap.has(cityId)) {
+                            const base = { ...city };
+                            if (city.zoneName && !Array.isArray(city.zoneNames)) {
+                                base.zoneNames = [city.zoneName];
+                            }
+                            cityMap.set(cityId, base);
+                        } else {
+                            const existing = cityMap.get(cityId);
+                            const names = new Set([
+                                ...(Array.isArray(existing.zoneNames) ? existing.zoneNames : []),
+                                existing.zoneName,
+                                ...(Array.isArray(city.zoneNames) ? city.zoneNames : []),
+                                city.zoneName
+                            ].filter(Boolean).map(s => String(s).trim()).filter(Boolean));
+                            const merged = { ...existing, ...city };
+                            merged.zoneNames = Array.from(names);
+                            if (!merged.zoneName && merged.zoneNames.length > 0) {
+                                merged.zoneName = merged.zoneNames[0];
+                            }
+                            cityMap.set(cityId, merged);
                         }
-                        seenIds.add(cityId);
-                        return true;
-                    });
+                    }
+                    const deduplicatedCities = Array.from(cityMap.values());
 
                     console.log('🏙️ [SmartCitySelector] Updated cities count:', deduplicatedCities.length);
 
@@ -1061,7 +1237,7 @@ const AddCityDialog = ({ open, onClose, onCityAdd, zoneCategory, existingCityIds
                         <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
                             Selected Cities ({selectedCities.length}):
                         </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                             {selectedCities.map(city => (
                                 <Chip
                                     key={city.searchKey || city.id}

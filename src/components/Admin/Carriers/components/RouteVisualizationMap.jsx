@@ -34,7 +34,8 @@ const RouteVisualizationMap = ({
     deliveryCities = [],
     selectedRoutes = [],
     onRouteClick,
-    height = 400
+    height = 400,
+    minimalMode = false
 }) => {
     // Map state
     const mapRef = useRef(null);
@@ -277,6 +278,8 @@ const RouteVisualizationMap = ({
             ? routes.filter(route => selectedRoutes.includes(route.id))
             : routes;
 
+        const directionsService = new window.google.maps.DirectionsService();
+
         routesToShow.forEach((route, index) => {
             const origin = route.origin;
             const destination = route.destination;
@@ -289,56 +292,55 @@ const RouteVisualizationMap = ({
             const isSelected = selectedRoutes.includes(route.id);
             const lineColor = isSelected ? colorSchemes.selected : colorSchemes.route;
 
-            const polyline = new window.google.maps.Polyline({
-                path: [
-                    { lat: origin.latitude, lng: origin.longitude },
-                    { lat: destination.latitude, lng: destination.longitude }
-                ],
-                geodesic: true,
-                strokeColor: lineColor,
-                strokeOpacity: routeOpacity,
-                strokeWeight: isSelected ? 3 : 2,
-                map: googleMapRef.current,
-                zIndex: isSelected ? 50 : 10
-            });
-
-            // Add click listener
-            polyline.addListener('click', () => {
-                if (onRouteClick) {
-                    onRouteClick(route);
-                }
-
-                // Show route info
-                const infoWindow = new window.google.maps.InfoWindow({
-                    content: `
-                        <div style="font-size: 12px; padding: 8px;">
-                            <strong>🛣️ ${route.routeName}</strong><br>
-                            <div style="margin: 4px 0;">
-                                📍 <strong>From:</strong> ${origin.city}, ${origin.provinceState}<br>
-                                🎯 <strong>To:</strong> ${destination.city}, ${destination.provinceState}
-                            </div>
-                            ${route.distance ? `
-                                <div style="margin: 4px 0; padding: 4px; background: #f8fafc; border-radius: 4px;">
-                                    📏 <strong>Distance:</strong> ${route.distance.km} km (${route.distance.miles} miles)<br>
-                                    ⏱️ <strong>Duration:</strong> ${route.duration?.text || 'N/A'}
-                                </div>
-                            ` : `
-                                <div style="margin: 4px 0; padding: 4px; background: #fef3f2; border-radius: 4px; color: #dc2626;">
-                                    ⚠️ Distance calculation unavailable
-                                </div>
-                            `}
-                        </div>
-                    `,
-                    position: {
-                        lat: (origin.latitude + destination.latitude) / 2,
-                        lng: (origin.longitude + destination.longitude) / 2
+            if (minimalMode) {
+                directionsService.route({
+                    origin: new window.google.maps.LatLng(origin.latitude, origin.longitude),
+                    destination: new window.google.maps.LatLng(destination.latitude, destination.longitude),
+                    travelMode: window.google.maps.TravelMode.DRIVING
+                }, (result, status) => {
+                    if (status === 'OK' && result?.routes?.length) {
+                        const path = result.routes[0].overview_path;
+                        const polyline = new window.google.maps.Polyline({
+                            path,
+                            geodesic: true,
+                            strokeColor: lineColor,
+                            strokeOpacity: routeOpacity,
+                            strokeWeight: isSelected ? 3 : 2,
+                            map: googleMapRef.current,
+                            zIndex: isSelected ? 50 : 10
+                        });
+                        polylinesRef.current.push(polyline);
+                    } else {
+                        const polyline = new window.google.maps.Polyline({
+                            path: [
+                                { lat: origin.latitude, lng: origin.longitude },
+                                { lat: destination.latitude, lng: destination.longitude }
+                            ],
+                            geodesic: true,
+                            strokeColor: lineColor,
+                            strokeOpacity: routeOpacity,
+                            strokeWeight: isSelected ? 3 : 2,
+                            map: googleMapRef.current,
+                            zIndex: isSelected ? 50 : 10
+                        });
+                        polylinesRef.current.push(polyline);
                     }
                 });
-
-                infoWindow.open(googleMapRef.current);
-            });
-
-            polylinesRef.current.push(polyline);
+            } else {
+                const polyline = new window.google.maps.Polyline({
+                    path: [
+                        { lat: origin.latitude, lng: origin.longitude },
+                        { lat: destination.latitude, lng: destination.longitude }
+                    ],
+                    geodesic: true,
+                    strokeColor: lineColor,
+                    strokeOpacity: routeOpacity,
+                    strokeWeight: isSelected ? 3 : 2,
+                    map: googleMapRef.current,
+                    zIndex: isSelected ? 50 : 10
+                });
+                polylinesRef.current.push(polyline);
+            }
         });
 
         console.log(`✅ Created ${polylinesRef.current.length} route polylines`);
@@ -397,155 +399,147 @@ const RouteVisualizationMap = ({
 
     return (
         <Paper sx={{ border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-            {/* Map Controls Header */}
-            <Box sx={{
-                p: 2,
-                borderBottom: '1px solid #e5e7eb',
-                backgroundColor: '#f8fafc',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-            }}>
-                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                    🗺️ Route Visualization Map
-                </Typography>
+            {!minimalMode && (
+                <Box sx={{
+                    p: 2,
+                    borderBottom: '1px solid #e5e7eb',
+                    backgroundColor: '#f8fafc',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                }}>
+                    <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                        🗺️ Route Visualization Map
+                    </Typography>
 
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                    <IconButton
-                        size="small"
-                        onClick={centerMapOnRoutes}
-                        disabled={routes.length === 0}
-                        title="Center on all routes"
-                    >
-                        <CenterIcon fontSize="small" />
-                    </IconButton>
-
-                    <IconButton
-                        size="small"
-                        onClick={updateMapOverlays}
-                        title="Refresh map"
-                    >
-                        <RefreshIcon fontSize="small" />
-                    </IconButton>
-                </Box>
-            </Box>
-
-            {/* Map Controls */}
-            <Box sx={{ p: 2, borderBottom: '1px solid #e5e7eb', backgroundColor: '#ffffff' }}>
-                <Grid container spacing={2} alignItems="center">
-                    <Grid item xs={12} sm={6} md={3}>
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    checked={showPickupMarkers}
-                                    onChange={(e) => setShowPickupMarkers(e.target.checked)}
-                                    size="small"
-                                />
-                            }
-                            label={
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box sx={{
-                                        width: 12,
-                                        height: 12,
-                                        borderRadius: '50%',
-                                        backgroundColor: colorSchemes.pickup
-                                    }} />
-                                    <Typography sx={{ fontSize: '11px' }}>
-                                        Pickup ({stats.pickupCities})
-                                    </Typography>
-                                </Box>
-                            }
-                        />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6} md={3}>
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    checked={showDeliveryMarkers}
-                                    onChange={(e) => setShowDeliveryMarkers(e.target.checked)}
-                                    size="small"
-                                />
-                            }
-                            label={
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box sx={{
-                                        width: 12,
-                                        height: 12,
-                                        borderRadius: '50%',
-                                        backgroundColor: colorSchemes.delivery
-                                    }} />
-                                    <Typography sx={{ fontSize: '11px' }}>
-                                        Delivery ({stats.deliveryCities})
-                                    </Typography>
-                                </Box>
-                            }
-                        />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6} md={3}>
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    checked={showRouteLines}
-                                    onChange={(e) => setShowRouteLines(e.target.checked)}
-                                    size="small"
-                                />
-                            }
-                            label={
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box sx={{
-                                        width: 12,
-                                        height: 2,
-                                        backgroundColor: colorSchemes.route
-                                    }} />
-                                    <Typography sx={{ fontSize: '11px' }}>
-                                        Routes ({stats.totalRoutes})
-                                    </Typography>
-                                </Box>
-                            }
-                        />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6} md={3}>
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    checked={showSelectedOnly}
-                                    onChange={(e) => setShowSelectedOnly(e.target.checked)}
-                                    size="small"
-                                    disabled={stats.selectedRoutes === 0}
-                                />
-                            }
-                            label={
-                                <Typography sx={{ fontSize: '11px' }}>
-                                    Selected Only ({stats.selectedRoutes})
-                                </Typography>
-                            }
-                        />
-                    </Grid>
-                </Grid>
-
-                {/* Route Opacity Slider */}
-                {showRouteLines && (
-                    <Box sx={{ mt: 2 }}>
-                        <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
-                            Route Line Opacity
-                        </Typography>
-                        <Slider
-                            value={routeOpacity}
-                            onChange={(e, value) => setRouteOpacity(value)}
-                            min={0.1}
-                            max={1}
-                            step={0.1}
-                            size="small"
-                            sx={{ width: 120 }}
-                            valueLabelDisplay="auto"
-                            valueLabelFormat={(value) => `${Math.round(value * 100)}%`}
-                        />
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <IconButton size="small" onClick={centerMapOnRoutes} disabled={routes.length === 0} title="Center on all routes">
+                            <CenterIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton size="small" onClick={updateMapOverlays} title="Refresh map">
+                            <RefreshIcon fontSize="small" />
+                        </IconButton>
                     </Box>
-                )}
-            </Box>
+                </Box>
+            )}
+
+            {!minimalMode && (
+                <Box sx={{ p: 2, borderBottom: '1px solid #e5e7eb', backgroundColor: '#ffffff' }}>
+                    <Grid container spacing={2} alignItems="center">
+                        <Grid item xs={12} sm={6} md={3}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={showPickupMarkers}
+                                        onChange={(e) => setShowPickupMarkers(e.target.checked)}
+                                        size="small"
+                                    />
+                                }
+                                label={
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{
+                                            width: 12,
+                                            height: 12,
+                                            borderRadius: '50%',
+                                            backgroundColor: colorSchemes.pickup
+                                        }} />
+                                        <Typography sx={{ fontSize: '11px' }}>
+                                            Pickup ({stats.pickupCities})
+                                        </Typography>
+                                    </Box>
+                                }
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6} md={3}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={showDeliveryMarkers}
+                                        onChange={(e) => setShowDeliveryMarkers(e.target.checked)}
+                                        size="small"
+                                    />
+                                }
+                                label={
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{
+                                            width: 12,
+                                            height: 12,
+                                            borderRadius: '50%',
+                                            backgroundColor: colorSchemes.delivery
+                                        }} />
+                                        <Typography sx={{ fontSize: '11px' }}>
+                                            Delivery ({stats.deliveryCities})
+                                        </Typography>
+                                    </Box>
+                                }
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6} md={3}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={showRouteLines}
+                                        onChange={(e) => setShowRouteLines(e.target.checked)}
+                                        size="small"
+                                    />
+                                }
+                                label={
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{
+                                            width: 12,
+                                            height: 2,
+                                            backgroundColor: colorSchemes.route
+                                        }} />
+                                        <Typography sx={{ fontSize: '11px' }}>
+                                            Routes ({stats.totalRoutes})
+                                        </Typography>
+                                    </Box>
+                                }
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} sm={6} md={3}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={showSelectedOnly}
+                                        onChange={(e) => setShowSelectedOnly(e.target.checked)}
+                                        size="small"
+                                        disabled={stats.selectedRoutes === 0}
+                                    />
+                                }
+                                label={
+                                    <Typography sx={{ fontSize: '11px' }}>
+                                        Selected Only ({stats.selectedRoutes})
+                                    </Typography>
+                                }
+                            />
+                        </Grid>
+                    </Grid>
+
+                    {/* Route Opacity Slider */}
+                    {showRouteLines && (
+                        <Box sx={{ mt: 2 }}>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
+                                Route Line Opacity
+                            </Typography>
+                            <Slider
+                                value={routeOpacity}
+                                onChange={(e, value) => setRouteOpacity(value)}
+                                min={0.1}
+                                max={1}
+                                step={0.1}
+                                size="small"
+                                sx={{ width: 120 }}
+                                valueLabelDisplay="auto"
+                                valueLabelFormat={(value) => `${Math.round(value * 100)}%`}
+                            />
+                        </Box>
+                    )}
+                </Box>
+            )}
 
             {/* Map Container */}
             <Box sx={{ position: 'relative' }}>
@@ -581,7 +575,7 @@ const RouteVisualizationMap = ({
                 )}
 
                 {/* Map Statistics Overlay */}
-                {mapLoaded && !loading && (
+                {(!minimalMode && mapLoaded && !loading) && (
                     <Box sx={{
                         position: 'absolute',
                         top: 16,
@@ -616,74 +610,75 @@ const RouteVisualizationMap = ({
                 )}
             </Box>
 
-            {/* Map Legend */}
-            <Box sx={{ p: 2, borderTop: '1px solid #e5e7eb', backgroundColor: '#f8fafc' }}>
-                <Typography sx={{ fontSize: '11px', fontWeight: 500, color: '#374151', mb: 1 }}>
-                    Map Legend
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{
-                            width: 12,
-                            height: 12,
-                            borderRadius: '50%',
-                            backgroundColor: colorSchemes.pickup,
-                            border: '2px solid white'
-                        }} />
-                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                            Pickup Only
-                        </Typography>
-                    </Box>
+            {!minimalMode && (
+                <Box sx={{ p: 2, borderTop: '1px solid #e5e7eb', backgroundColor: '#f8fafc' }}>
+                    <Typography sx={{ fontSize: '11px', fontWeight: 500, color: '#374151', mb: 1 }}>
+                        Map Legend
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{
+                                width: 12,
+                                height: 12,
+                                borderRadius: '50%',
+                                backgroundColor: colorSchemes.pickup,
+                                border: '2px solid white'
+                            }} />
+                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                Pickup Only
+                            </Typography>
+                        </Box>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{
-                            width: 12,
-                            height: 12,
-                            borderRadius: '50%',
-                            backgroundColor: colorSchemes.delivery,
-                            border: '2px solid white'
-                        }} />
-                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                            Delivery Only
-                        </Typography>
-                    </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{
+                                width: 12,
+                                height: 12,
+                                borderRadius: '50%',
+                                backgroundColor: colorSchemes.delivery,
+                                border: '2px solid white'
+                            }} />
+                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                Delivery Only
+                            </Typography>
+                        </Box>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{
-                            width: 14,
-                            height: 14,
-                            borderRadius: '50%',
-                            backgroundColor: colorSchemes.dual,
-                            border: '3px solid white'
-                        }} />
-                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                            Pickup + Delivery
-                        </Typography>
-                    </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: '50%',
+                                backgroundColor: colorSchemes.dual,
+                                border: '3px solid white'
+                            }} />
+                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                Pickup + Delivery
+                            </Typography>
+                        </Box>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{
-                            width: 16,
-                            height: 2,
-                            backgroundColor: colorSchemes.route
-                        }} />
-                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                            Route Lines
-                        </Typography>
-                    </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{
+                                width: 16,
+                                height: 2,
+                                backgroundColor: colorSchemes.route
+                            }} />
+                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                Route Lines
+                            </Typography>
+                        </Box>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{
-                            width: 16,
-                            height: 3,
-                            backgroundColor: colorSchemes.selected
-                        }} />
-                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                            Selected Routes
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{
+                                width: 16,
+                                height: 3,
+                                backgroundColor: colorSchemes.selected
+                            }} />
+                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                Selected Routes
+                            </Typography>
+                        </Box>
                     </Box>
                 </Box>
-            </Box>
+            )}
         </Paper>
     );
 };

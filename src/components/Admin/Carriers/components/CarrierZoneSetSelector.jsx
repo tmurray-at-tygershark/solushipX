@@ -376,7 +376,7 @@ const CarrierZoneSetSelector = ({
                     <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
                         Selected Custom Zone Sets ({selectedZoneSets.length}):
                     </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {selectedZoneSets.map(zoneSet => (
                             <Chip
                                 key={zoneSet.id}

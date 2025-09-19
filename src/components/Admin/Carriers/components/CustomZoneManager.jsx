@@ -407,7 +407,7 @@ const CustomZoneManager = ({
                                                 <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
                                                     Cities in this zone ({currentZone.cities.length}):
                                                 </Typography>
-                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                                                     {currentZone.cities.map((city) => (
                                                         <Chip
                                                             key={city.searchKey || city.id}

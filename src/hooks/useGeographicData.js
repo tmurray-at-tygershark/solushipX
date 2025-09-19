@@ -28,8 +28,11 @@ export const useGeographicData = () => {
             let citiesQuery;
             
             if (searchTerm && searchTerm.length >= 2) {
-                // Capitalize first letter for proper case matching
-                const capitalizedSearch = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase();
+                // Properly capitalize each word for title case matching (e.g., "king city" -> "King City")
+                const capitalizedSearch = searchTerm
+                    .split(' ')
+                    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                    .join(' ');
                 const searchEnd = capitalizedSearch.replace(/.$/, c => String.fromCharCode(c.charCodeAt(0) + 1));
                 
                 // console.log('🔍 Search range:', capitalizedSearch, 'to', searchEnd);

@@ -59,6 +59,9 @@ const CarrierZoneDialog = ({
         enabled: true
     });
 
+    // Loading state for save operation
+    const [saving, setSaving] = useState(false);
+
     // Zone coverage search
     const [zoneCoverageSearch, setZoneCoverageSearch] = useState('');
     const [zoneCoverageSuggestions, setZoneCoverageSuggestions] = useState([]);
@@ -250,11 +253,40 @@ const CarrierZoneDialog = ({
             return;
         }
 
+        setSaving(true);
         try {
             // For carrier zones, we use the custom zone set creation/update functions
             if (editingZone) {
-                // Update existing zone (TODO: Implement update logic)
-                enqueueSnackbar('Zone update functionality coming soon', { variant: 'info' });
+                // Update existing zone
+                const updateCustomZone = httpsCallable(functions, 'updateCarrierCustomZone');
+                const result = await updateCustomZone({
+                    carrierId,
+                    carrierName,
+                    zoneId: editingZone.zoneId,
+                    zoneCode: zoneForm.zoneCode,
+                    zoneName: zoneForm.zoneName,
+                    description: zoneForm.description,
+                    cities: zoneForm.cities
+                });
+
+                if (result.data.success) {
+                    enqueueSnackbar('Custom zone updated successfully', { variant: 'success' });
+                    // Pass complete updated zone information to callback
+                    const updatedZoneInfo = {
+                        zoneId: editingZone.zoneId,
+                        zoneCode: zoneForm.zoneCode,
+                        zoneName: zoneForm.zoneName,
+                        description: zoneForm.description,
+                        cities: zoneForm.cities,
+                        enabled: editingZone.enabled,
+                        createdAt: editingZone.createdAt,
+                        updatedAt: new Date()
+                    };
+                    onZoneCreated && onZoneCreated(updatedZoneInfo);
+                    onClose();
+                } else {
+                    enqueueSnackbar('Failed to update zone', { variant: 'error' });
+                }
             } else {
                 // Create new individual zone
                 const createCustomZone = httpsCallable(functions, 'createCarrierCustomZone');
@@ -269,7 +301,17 @@ const CarrierZoneDialog = ({
 
                 if (result.data.success) {
                     enqueueSnackbar('Custom zone created successfully', { variant: 'success' });
-                    onZoneCreated && onZoneCreated(result.data.zoneId);
+                    // Pass complete zone information to callback
+                    const zoneInfo = {
+                        zoneId: result.data.zoneId,
+                        zoneCode: zoneForm.zoneCode,
+                        zoneName: zoneForm.zoneName,
+                        description: zoneForm.description,
+                        cities: zoneForm.cities,
+                        enabled: true,
+                        createdAt: new Date()
+                    };
+                    onZoneCreated && onZoneCreated(zoneInfo);
                     onClose();
                 } else {
                     enqueueSnackbar('Failed to create zone', { variant: 'error' });
@@ -278,6 +320,8 @@ const CarrierZoneDialog = ({
         } catch (error) {
             console.error('Error saving zone:', error);
             enqueueSnackbar(error.message || 'Failed to save zone', { variant: 'error' });
+        } finally {
+            setSaving(false);
         }
     }, [zoneForm, carrierId, carrierName, editingZone, onZoneCreated, onClose, enqueueSnackbar]);
 
@@ -507,7 +551,7 @@ const CarrierZoneDialog = ({
                             <Box sx={{
                                 display: 'flex',
                                 flexWrap: 'wrap',
-                                gap: 1,
+                                gap: 0.5,
                                 minHeight: '120px', // Ensure minimum height even when empty
                                 maxHeight: '150px',
                                 overflowY: 'auto',
@@ -562,9 +606,10 @@ const CarrierZoneDialog = ({
                     variant="contained"
                     size="small"
                     sx={{ fontSize: '12px' }}
-                    disabled={!zoneForm.zoneCode.trim() || !zoneForm.zoneName.trim() || zoneForm.cities.length === 0}
+                    disabled={!zoneForm.zoneCode.trim() || !zoneForm.zoneName.trim() || zoneForm.cities.length === 0 || saving}
+                    startIcon={saving ? <CircularProgress size={16} /> : null}
                 >
-                    {editingZone ? 'Update' : 'Create'} Zone
+                    {saving ? 'Saving...' : `${editingZone ? 'Update' : 'Create'} Zone`}
                 </Button>
             </DialogActions>
         </Dialog>

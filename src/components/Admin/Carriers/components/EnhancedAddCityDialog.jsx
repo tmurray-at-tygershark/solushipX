@@ -181,27 +181,18 @@ const EnhancedAddCityDialog = ({
 
         setCustomZoneLoading(true);
         try {
-            const getCarrierZoneSets = httpsCallable(functions, 'getCarrierCustomZoneSets');
-            const result = await getCarrierZoneSets({ carrierId });
+            const [zoneSetsRes, zonesRes] = await Promise.all([
+                httpsCallable(functions, 'getCarrierCustomZoneSets')({ carrierId }),
+                httpsCallable(functions, 'getCarrierCustomZones')({ carrierId })
+            ]);
 
-            if (result.data.success) {
-                const zoneSets = result.data.zoneSets || [];
+            if (zoneSetsRes.data.success) {
+                const zoneSets = zoneSetsRes.data.zoneSets || [];
                 setCustomZoneSets(zoneSets);
+            }
 
-                // Extract individual zones from zone sets
-                const allZones = [];
-                zoneSets.forEach(zoneSet => {
-                    if (zoneSet.zones && Array.isArray(zoneSet.zones)) {
-                        zoneSet.zones.forEach(zone => {
-                            allZones.push({
-                                ...zone,
-                                zoneSetId: zoneSet.id,
-                                zoneSetName: zoneSet.name
-                            });
-                        });
-                    }
-                });
-                setCustomZones(allZones);
+            if (zonesRes.data.success) {
+                setCustomZones(zonesRes.data.zones || []);
             }
         } catch (error) {
             console.error('Error loading custom zones:', error);
@@ -488,6 +479,7 @@ const EnhancedAddCityDialog = ({
 
     // Handle adding selected cities
     const handleAddSelectedCities = useCallback(async () => {
+        setExpandingZones(true);
         try {
             let result = null;
 
@@ -586,6 +578,8 @@ const EnhancedAddCityDialog = ({
         } catch (error) {
             console.error('Error adding cities:', error);
             enqueueSnackbar(error.message || 'Failed to add cities', { variant: 'error' });
+        } finally {
+            setExpandingZones(false);
         }
     }, [
         selectedTab, systemSubTab, selectedCities, selectedSystemZones, selectedSystemZoneSets,
@@ -1088,8 +1082,8 @@ const EnhancedAddCityDialog = ({
                                     selectedZoneIds={selectedCustomZones.map(z => z.zoneId)}
                                     embedded={true}
                                     showActions={true}
-                                    onCreateZone={() => {
-                                        setEditingCarrierZone(null);
+                                    onCreateZone={(zone) => {
+                                        setEditingCarrierZone(zone || null);
                                         setShowCarrierZoneDialog(true);
                                     }}
                                 />

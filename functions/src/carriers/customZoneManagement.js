@@ -5,6 +5,10 @@
 
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
+const { getFirestore } = require('firebase-admin/firestore');
+// v2 https callable (for proper CORS handling)
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const v2Logger = require('firebase-functions/logger');
 
 /**
  * Helper function to fetch coordinates for cities from geoLocations collection
@@ -728,6 +732,94 @@ exports.createCarrierCustomZone = functions
     });
 
 /**
+ * Update a custom carrier zone (individual zone)
+ * v2 onCall with explicit CORS to satisfy browser preflight
+ */
+exports.updateCarrierCustomZone = onCall(
+    {
+        region: 'us-central1',
+        cors: true,
+        timeoutSeconds: 60,
+        memory: '256MiB'
+    },
+    async (request) => {
+        try {
+            const { auth, data } = request;
+
+            if (!auth) {
+                throw new HttpsError('unauthenticated', 'User must be authenticated');
+            }
+
+            const { carrierId, carrierName, zoneId, zoneCode, zoneName, description, cities } = data || {};
+
+            if (!carrierId || !zoneId || !zoneCode || !zoneName) {
+                throw new HttpsError('invalid-argument', 'Carrier ID, zone ID, zone code, and zone name are required');
+            }
+
+            const db = admin.firestore();
+            const currentTime = new Date();
+
+            // Find the carrier custom zones document
+            const carrierZonesQuery = await db.collection('carrierCustomZones')
+                .where('carrierId', '==', carrierId)
+                .limit(1)
+                .get();
+
+            if (carrierZonesQuery.empty) {
+                throw new HttpsError('not-found', 'Carrier custom zones document not found');
+            }
+
+            const docRef = carrierZonesQuery.docs[0].ref;
+            const existingData = carrierZonesQuery.docs[0].data();
+
+            // Update the specific zone in the zones array
+            const updatedZones = (existingData.zones || []).map(zone => {
+                if (zone.zoneId === zoneId) {
+                    return {
+                        ...zone,
+                        zoneCode,
+                        zoneName: String(zoneName).trim(),
+                        description: (description ? String(description) : '').trim(),
+                        cities: Array.isArray(cities) ? cities : [],
+                        totalCities: Array.isArray(cities) ? cities.length : 0,
+                        updatedAt: currentTime,
+                        updatedBy: auth.uid
+                    };
+                }
+                return zone;
+            });
+
+            // Check if zone was found and updated
+            const zoneFound = updatedZones.some(zone => zone.zoneId === zoneId);
+            if (!zoneFound) {
+                throw new HttpsError('not-found', 'Zone not found in carrier custom zones');
+            }
+
+            await docRef.update({
+                zones: updatedZones,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            v2Logger.info('✅ Custom zone updated', { carrierId, zoneId, zoneCode });
+
+            return {
+                success: true,
+                zoneId,
+                message: 'Custom zone updated successfully'
+            };
+
+        } catch (error) {
+            const message = error && typeof error.message === 'string' ? error.message : String(error);
+            v2Logger.error('❌ Failed to update custom zone', { error: message });
+            if (error instanceof HttpsError) {
+                throw error;
+            }
+            throw new HttpsError('internal', 'Failed to update custom zone: ' + message);
+        }
+    }
+);
+
+/**
  * Get carrier custom zone sets
  */
 exports.getCarrierCustomZoneSets = functions
@@ -805,6 +897,53 @@ exports.getCarrierCustomZoneSets = functions
                 'Failed to load custom zone sets',
                 error.message
             );
+        }
+    });
+
+/**
+ * Get individual custom carrier zones (flat list)
+ */
+exports.getCarrierCustomZones = functions
+    .region('us-central1')
+    .runWith({
+        timeoutSeconds: 30,
+        memory: '256MB'
+    })
+    .https.onCall(async (data, context) => {
+        const logger = functions.logger;
+        try {
+            if (!context.auth) {
+                throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+            }
+
+            const { carrierId } = data || {};
+            if (!carrierId) {
+                throw new functions.https.HttpsError('invalid-argument', 'Carrier ID is required');
+            }
+
+            logger.info('🔄 Loading individual custom zones for carrier', { carrierId });
+
+            const db = admin.firestore();
+            const snap = await db.collection('carrierCustomZones')
+                .where('carrierId', '==', carrierId)
+                .get();
+
+            const zones = [];
+            snap.forEach(doc => {
+                const data = doc.data();
+                const list = Array.isArray(data.zones) ? data.zones : [];
+                list.forEach(z => zones.push({ ...z, docId: doc.id }));
+            });
+
+            logger.info('✅ Custom zones loaded', { carrierId, count: zones.length });
+
+            return { success: true, zones };
+        } catch (error) {
+            logger.error('❌ Error loading custom zones', { error: error.message });
+            if (error instanceof functions.https.HttpsError) {
+                throw error;
+            }
+            throw new functions.https.HttpsError('internal', 'Failed to load custom zones', error.message);
         }
     });
 

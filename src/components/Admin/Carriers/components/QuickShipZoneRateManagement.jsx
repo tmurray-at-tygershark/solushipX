@@ -10,7 +10,7 @@
  * - Rate cards will be created for each route combination
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Box, Paper, Typography, Button, Grid, Tabs, Tab,
     FormControlLabel, Checkbox, Chip, Dialog, DialogTitle,
@@ -19,7 +19,7 @@ import {
     Menu, MenuItem,
     Autocomplete, TextField, List, ListItem, ListItemText,
     ListItemSecondaryAction, Table, TableBody, TableCell,
-    TableContainer, TableHead, TableRow
+    TableContainer, TableHead, TableRow, TableSortLabel, FormControl, InputLabel, Select, TablePagination
 } from '@mui/material';
 import {
     Map as MapIcon,
@@ -36,7 +36,7 @@ import {
     MoreVert as MoreVertIcon,
     Remove as RemoveIcon
 } from '@mui/icons-material';
-import { collection, doc, setDoc, getDoc, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, addDoc, serverTimestamp, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../../../firebase';
 import { useSnackbar } from 'notistack';
@@ -46,6 +46,7 @@ import SystemZoneSelector from './SystemZoneSelector';
 import SystemZoneSetSelector from './SystemZoneSetSelector';
 import CarrierZoneDialog from './CarrierZoneDialog';
 import CarrierZoneSetDialog from './CarrierZoneSetDialog';
+import RouteVisualizationMap from './RouteVisualizationMap';
 
 // Geographic data from our imported database
 const canadianProvinces = [
@@ -94,7 +95,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
     const [smartSelectorZoneForDialog, setSmartSelectorZoneForDialog] = useState('pickupZones');
 
     // Zone management tab states
-    const [zoneManagementTab, setZoneManagementTab] = useState(0); // 0 = System Zones, 1 = Custom Zones
+    const [zoneManagementTab, setZoneManagementTab] = useState(0); // 0 = Custom Zones, 1 = System Zones
     const [systemZoneSubTab, setSystemZoneSubTab] = useState(0); // 0 = Individual, 1 = Zone Sets
     const [customZoneSubTab, setCustomZoneSubTab] = useState(0); // 0 = Individual, 1 = Zone Sets
 
@@ -111,7 +112,9 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
     const [contextMenuAnchor, setContextMenuAnchor] = useState(null);
     const [selectedZoneForAction, setSelectedZoneForAction] = useState(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [customZoneDeleteConfirmOpen, setCustomZoneDeleteConfirmOpen] = useState(false);
     const [zoneToDelete, setZoneToDelete] = useState(null);
+    const [deletingZone, setDeletingZone] = useState(false);
 
     // Zone codes state
     const [zoneCodesLoaded, setZoneCodesLoaded] = useState(false);
@@ -175,6 +178,17 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
         routeMappings: []
     });
 
+    // Routes table UI state
+    const [routesSearchTerm, setRoutesSearchTerm] = useState('');
+    const [routesStateFilter, setRoutesStateFilter] = useState('');
+    const [routesCountryFilter, setRoutesCountryFilter] = useState('');
+    const routesSortRefGlobal = useRef(['pickupCity', 'asc']);
+    const [routesRefreshTick, forceRoutesRefresh] = useState(0);
+    const [routesPage, setRoutesPage] = useState(0);
+    const [routesRowsPerPage, setRoutesRowsPerPage] = useState(100);
+    const [routeDialogOpen, setRouteDialogOpen] = useState(false);
+    const [routeDialogRow, setRouteDialogRow] = useState(null);
+
     // Handle smart city selector - defined early to avoid TDZ issues
     const handleOpenSmartCitySelector = useCallback((zoneCategory) => {
         setSmartCitySelectorZone(zoneCategory);
@@ -234,6 +248,9 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
 
         // Update local state
         setZoneConfig(updatedConfig);
+
+        // Auto-regenerate or clear routes based on availability
+        await autoGenerateAndPersistRoutes(updatedConfig);
 
         // Auto-save to database with enhanced feedback
         setSavingCities(true);
@@ -431,24 +448,51 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
         console.log('📥 LOADING - Starting load for carrier:', carrierId);
         setLoading(true);
         try {
+            // Load main zone configuration
             const docRef = doc(db, 'carrierZoneConfigs', carrierId);
             const docSnap = await getDoc(docRef);
+
+            let loadedConfig = zoneConfig;
 
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 console.log('📥 LOADING - Raw data from database:', data);
-                console.log('📥 LOADING - Zone config structure:', data.zoneConfig);
-                console.log('📥 LOADING - Zone references:', data.zoneConfig?.zoneReferences);
-                console.log('📥 LOADING - Pickup cities found:', data.zoneConfig?.pickupZones?.selectedCities?.length || 0);
-                console.log('📥 LOADING - Delivery cities found:', data.zoneConfig?.deliveryZones?.selectedCities?.length || 0);
-
-                const loadedConfig = data.zoneConfig || zoneConfig;
-                console.log('📥 LOADING - Final loaded config:', loadedConfig);
-                setZoneConfig(loadedConfig);
-                console.log('📥 LOADING - State updated with loaded data');
+                loadedConfig = data.zoneConfig || zoneConfig;
             } else {
                 console.log('📥 LOADING - No existing configuration found');
             }
+
+            // Load custom zones from carrierCustomZones collection
+            try {
+                const customZonesQuery = query(
+                    collection(db, 'carrierCustomZones'),
+                    where('carrierId', '==', carrierId)
+                );
+                const customZonesSnap = await getDocs(customZonesQuery);
+
+                let customZones = [];
+                if (!customZonesSnap.empty) {
+                    const customZoneData = customZonesSnap.docs[0].data();
+                    customZones = customZoneData.zones || [];
+                    console.log('📥 LOADING - Custom zones from carrierCustomZones:', customZones.length);
+                }
+
+                // Merge custom zones into zoneReferences
+                if (!loadedConfig.zoneReferences) {
+                    loadedConfig.zoneReferences = {};
+                }
+                loadedConfig.zoneReferences.custom_zones = customZones;
+
+                console.log('📥 LOADING - Final config with custom zones:', loadedConfig);
+                console.log('📥 LOADING - Custom zones found:', customZones.length);
+                console.log('📥 LOADING - Pickup cities found:', loadedConfig.pickupZones?.selectedCities?.length || 0);
+                console.log('📥 LOADING - Delivery cities found:', loadedConfig.deliveryZones?.selectedCities?.length || 0);
+            } catch (customZoneError) {
+                console.warn('📥 LOADING - Error loading custom zones:', customZoneError);
+            }
+
+            setZoneConfig(loadedConfig);
+            console.log('📥 LOADING - State updated with loaded data');
         } catch (error) {
             console.error('❌ Error loading zone configuration:', error);
             enqueueSnackbar('Failed to load zone configuration', { variant: 'error' });
@@ -478,15 +522,17 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         ...zoneConfig.deliveryZones,
                         selectedCities: zoneConfig.deliveryZones?.selectedCities || []
                     },
-                    routeMappings: zoneConfig.routeMappings || []
+                    routeMappings: zoneConfig.routeMappings || [],
+                    zoneReferences: zoneConfig.zoneReferences || {}
                 },
                 lastUpdated: new Date(),
                 version: '2.0'
             };
 
-            // console.log('💾 SAVING - Data being saved:', configToSave);
+            console.log('💾 SAVING - Data being saved:', configToSave);
+            console.log('💾 SAVING - Custom zones being saved:', configToSave.zoneConfig.zoneReferences?.custom_zones?.length || 0);
             await setDoc(docRef, configToSave, { merge: true });
-            // console.log('💾 SAVING - Save completed successfully');
+            console.log('💾 SAVING - Save completed successfully');
 
             enqueueSnackbar('Zone configuration saved successfully!', { variant: 'success' });
 
@@ -522,6 +568,18 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             const removedDeliveryCount = deliveryCities.length - updatedDeliveryCities.length;
             const totalRemovedCities = removedPickupCount + removedDeliveryCount;
 
+            // Remove from zoneReferences list as well (detaches zone from carrier)
+            const updatedReferences = { ...(zoneConfig.zoneReferences || {}) };
+            if (zoneType === 'system_zones') {
+                updatedReferences.system_zones = (updatedReferences.system_zones || []).filter(z => z.id !== zoneId);
+            } else if (zoneType === 'system_zone_sets') {
+                updatedReferences.system_zone_sets = (updatedReferences.system_zone_sets || []).filter(zs => zs.id !== zoneId);
+            } else if (zoneType === 'custom_zones') {
+                updatedReferences.custom_zones = (updatedReferences.custom_zones || []).filter(z => (z.zoneId || z.id) !== zoneId);
+            } else if (zoneType === 'custom_zone_sets') {
+                updatedReferences.custom_zone_sets = (updatedReferences.custom_zone_sets || []).filter(zs => (zs.id || zs.zoneSetId) !== zoneId);
+            }
+
             // Update zone config
             const updatedConfig = {
                 ...zoneConfig,
@@ -532,7 +590,8 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                 deliveryZones: {
                     ...zoneConfig.deliveryZones,
                     selectedCities: updatedDeliveryCities
-                }
+                },
+                zoneReferences: updatedReferences
             };
 
             // Save to database
@@ -546,6 +605,9 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             }, { merge: true });
 
             setZoneConfig(updatedConfig);
+
+            // Auto-regenerate or clear routes based on availability
+            await autoGenerateAndPersistRoutes(updatedConfig);
 
             enqueueSnackbar(`Zone removed successfully (${totalRemovedCities} cities removed)`, { variant: 'success' });
         } catch (error) {
@@ -609,6 +671,83 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
         setSelectedZoneForAction(null);
     }, []);
 
+    // Handle custom zone delete confirmation
+    const handleCustomZoneDeleteConfirm = useCallback(() => {
+        if (selectedZoneForAction?.type === 'custom_zones' && selectedZoneForAction.data) {
+            setZoneToDelete(selectedZoneForAction.data);
+            setCustomZoneDeleteConfirmOpen(true);
+        }
+        // Inline close (avoid TDZ on handleContextMenuClose)
+        setContextMenuAnchor(null);
+        setSelectedZoneForAction(null);
+        setContextMenuLoading(false);
+    }, [selectedZoneForAction]);
+
+    // Handle custom zone delete execution
+    const handleCustomZoneDelete = useCallback(async () => {
+        if (!zoneToDelete) return;
+
+        setDeletingZone(true);
+        try {
+            console.log('🗑️ Deleting custom zone:', zoneToDelete.zoneId);
+
+            // Remove zone from carrierCustomZones collection
+            const customZonesQuery = query(
+                collection(db, 'carrierCustomZones'),
+                where('carrierId', '==', carrierId)
+            );
+            const customZonesSnap = await getDocs(customZonesQuery);
+
+            if (!customZonesSnap.empty) {
+                const docRef = customZonesSnap.docs[0].ref;
+                const existingData = customZonesSnap.docs[0].data();
+
+                const updatedZones = (existingData.zones || []).filter(
+                    zone => zone.zoneId !== zoneToDelete.zoneId
+                );
+
+                await updateDoc(docRef, {
+                    zones: updatedZones,
+                    updatedAt: serverTimestamp()
+                });
+            }
+
+            // Remove zone from local state
+            const updatedReferences = { ...zoneConfig.zoneReferences };
+            if (updatedReferences.custom_zones) {
+                updatedReferences.custom_zones = updatedReferences.custom_zones.filter(
+                    zone => (zone.zoneId || zone.id) !== (zoneToDelete.zoneId || zoneToDelete.id)
+                );
+            }
+
+            const updatedConfig = {
+                ...zoneConfig,
+                zoneReferences: updatedReferences
+            };
+
+            // Save updated config to database
+            const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
+            await setDoc(carrierConfigRef, updatedConfig, { merge: true });
+
+            setZoneConfig(updatedConfig);
+            setCustomZoneDeleteConfirmOpen(false);
+            setZoneToDelete(null);
+
+            enqueueSnackbar('Custom zone deleted successfully', { variant: 'success' });
+        } catch (error) {
+            console.error('Error deleting custom zone:', error);
+            enqueueSnackbar('Failed to delete custom zone', { variant: 'error' });
+        } finally {
+            setDeletingZone(false);
+        }
+    }, [zoneToDelete, zoneConfig, carrierId, enqueueSnackbar]);
+
+    // Handle custom zone delete cancel
+    const handleCustomZoneDeleteCancel = useCallback(() => {
+        setCustomZoneDeleteConfirmOpen(false);
+        setZoneToDelete(null);
+    }, []);
+
     // Handle context menu open
     const handleContextMenuOpen = useCallback((event, zoneType, zone) => {
         event.stopPropagation();
@@ -628,8 +767,11 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
         if (selectedZoneForAction) {
             handleViewZone(selectedZoneForAction.type, selectedZoneForAction.data);
         }
-        handleContextMenuClose();
-    }, [selectedZoneForAction, handleViewZone, handleContextMenuClose]);
+        // Inline close (avoid TDZ on handleContextMenuClose during render init)
+        setContextMenuAnchor(null);
+        setSelectedZoneForAction(null);
+        setContextMenuLoading(false);
+    }, [selectedZoneForAction, handleViewZone]);
 
     // Handle delete zone from context menu
     const handleDeleteZoneFromMenu = useCallback(() => {
@@ -637,17 +779,27 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             setZoneToDelete(selectedZoneForAction);
             setDeleteConfirmOpen(true);
         }
-        handleContextMenuClose();
-    }, [selectedZoneForAction, handleContextMenuClose]);
+        // Inline close (avoid TDZ on handleContextMenuClose during render init)
+        setContextMenuAnchor(null);
+        setSelectedZoneForAction(null);
+        setContextMenuLoading(false);
+    }, [selectedZoneForAction]);
 
     // Handle confirmed zone deletion
     const handleConfirmedZoneDeletion = useCallback(async () => {
         if (zoneToDelete) {
-            await handleRemoveZone(zoneToDelete.type, zoneToDelete.data.id);
+            const targetZoneId = zoneToDelete.data?.id || zoneToDelete.data?.zoneId;
+
+            if (!targetZoneId) {
+                enqueueSnackbar('Unable to determine zone identifier for removal', { variant: 'error' });
+                return;
+            }
+
+            await handleRemoveZone(zoneToDelete.type, targetZoneId);
             setDeleteConfirmOpen(false);
             setZoneToDelete(null);
         }
-    }, [zoneToDelete, handleRemoveZone]);
+    }, [zoneToDelete, handleRemoveZone, enqueueSnackbar]);
 
     // Handle adding zone to pickup or delivery locations
     const handleAddZoneToLocation = useCallback(async (locationType) => {
@@ -689,6 +841,75 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         zoneCode: city.zoneCode || 'N/A'
                     }));
                 }
+            } else if (zoneType === 'custom_zones') {
+                const zoneId = zone.zoneId || zone.id;
+                const zoneName = zone.zoneName || zone.name;
+                const zoneCode = zone.zoneCode || zoneId || 'CUSTOM';
+                const baseCities = Array.isArray(zone.cities) ? zone.cities : [];
+
+                citiesToAdd = baseCities.map(city => {
+                    const normalizedSearchKey = city.searchKey || [
+                        (city.city || '').toLowerCase(),
+                        city.provinceState || city.province || '',
+                        city.country || city.countryCode || ''
+                    ].join('-');
+
+                    return {
+                        ...city,
+                        searchKey: normalizedSearchKey,
+                        zoneId,
+                        zoneName,
+                        zoneCode
+                    };
+                });
+            } else if (zoneType === 'custom_zone_sets') {
+                const zoneSetId = zone.id || zone.zoneSetId;
+                const zoneSetName = zone.name || zone.zoneSetName;
+                const aggregatedCities = [];
+
+                if (Array.isArray(zone.zones)) {
+                    zone.zones.forEach(customZone => {
+                        const zoneId = customZone.zoneId || customZone.id;
+                        const zoneName = customZone.zoneName || customZone.name;
+                        const zoneCode = customZone.zoneCode || zoneId || 'CUSTOM';
+
+                        (customZone.cities || []).forEach(city => {
+                            const normalizedSearchKey = city.searchKey || [
+                                (city.city || '').toLowerCase(),
+                                city.provinceState || city.province || '',
+                                city.country || city.countryCode || ''
+                            ].join('-');
+
+                            aggregatedCities.push({
+                                ...city,
+                                searchKey: normalizedSearchKey,
+                                zoneId,
+                                zoneName,
+                                zoneCode,
+                                zoneSetId,
+                                zoneSetName
+                            });
+                        });
+                    });
+                }
+
+                citiesToAdd = aggregatedCities;
+            }
+
+            if (citiesToAdd.length > 1) {
+                const uniqueCityMap = new Map();
+                citiesToAdd.forEach(city => {
+                    const dedupeKey = city.searchKey || city.id;
+                    if (dedupeKey && !uniqueCityMap.has(dedupeKey)) {
+                        uniqueCityMap.set(dedupeKey, city);
+                    } else if (!dedupeKey) {
+                        const fallbackKey = `${city.city || 'city'}-${city.provinceState || city.province || 'region'}-${city.country || city.countryCode || 'country'}-${uniqueCityMap.size}`;
+                        if (!uniqueCityMap.has(fallbackKey)) {
+                            uniqueCityMap.set(fallbackKey, city);
+                        }
+                    }
+                });
+                citiesToAdd = Array.from(uniqueCityMap.values());
             }
 
             if (citiesToAdd.length === 0) {
@@ -773,6 +994,12 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                 filteredCities = existingCities.filter(city => city.zoneId !== zone.id);
             } else if (zoneType === 'system_zone_sets') {
                 filteredCities = existingCities.filter(city => city.zoneSetId !== zone.id);
+            } else if (zoneType === 'custom_zones') {
+                const targetZoneId = zone.zoneId || zone.id;
+                filteredCities = existingCities.filter(city => city.zoneId !== targetZoneId);
+            } else if (zoneType === 'custom_zone_sets') {
+                const targetZoneSetId = zone.id || zone.zoneSetId;
+                filteredCities = existingCities.filter(city => city.zoneSetId !== targetZoneSetId);
             } else {
                 filteredCities = existingCities;
             }
@@ -817,6 +1044,9 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             }, { merge: true });
 
             setZoneConfig(updatedConfig);
+
+            // Auto-update routes after removal
+            await autoGenerateAndPersistRoutes(updatedConfig);
             setContextMenuAnchor(null);
 
             enqueueSnackbar(`Removed ${removedCount} cities from ${locationType} locations`, { variant: 'success' });
@@ -839,6 +1069,12 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             return cities.some(city => city.zoneId === zone.id);
         } else if (zoneType === 'system_zone_sets') {
             return cities.some(city => city.zoneSetId === zone.id);
+        } else if (zoneType === 'custom_zones') {
+            const targetZoneId = zone?.zoneId || zone?.id;
+            return targetZoneId ? cities.some(city => city.zoneId === targetZoneId) : false;
+        } else if (zoneType === 'custom_zone_sets') {
+            const targetZoneSetId = zone?.id || zone?.zoneSetId;
+            return targetZoneSetId ? cities.some(city => city.zoneSetId === targetZoneSetId) : false;
         }
         return false;
     }, [zoneConfig]);
@@ -972,7 +1208,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                     `Canada to US - Any Province to ${zoneConfig.deliveryZones.selectedStates.map(s => s.code).join(', ')}`
                 ));
             }
-            if (zoneConfig.deliveryZones.cityToCity && zoneConfig.deliveryZones.selectedCities?.length > 0) {
+            if (zoneConfig.deliveryZones.selectedCities?.length > 0) {
                 mappings.push(createRouteMapping(
                     'domesticCanada', 'All CA',
                     'specificCities', zoneConfig.deliveryZones.selectedCities,
@@ -1011,7 +1247,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                     `US Domestic - Any State to ${zoneConfig.deliveryZones.selectedStates.map(s => s.code).join(', ')}`
                 ));
             }
-            if (zoneConfig.deliveryZones.cityToCity && zoneConfig.deliveryZones.selectedCities?.length > 0) {
+            if (zoneConfig.deliveryZones.selectedCities?.length > 0) {
                 mappings.push(createRouteMapping(
                     'domesticUS', 'All US',
                     'specificCities', zoneConfig.deliveryZones.selectedCities,
@@ -1052,7 +1288,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                     `${pickupProvinces.map(p => p.code).join(', ')} to ${zoneConfig.deliveryZones.selectedStates.map(s => s.code).join(', ')}`
                 ));
             }
-            if (zoneConfig.deliveryZones.cityToCity && zoneConfig.deliveryZones.selectedCities?.length > 0) {
+            if (zoneConfig.deliveryZones.selectedCities?.length > 0) {
                 mappings.push(createRouteMapping(
                     'specificProvinces', pickupProvinces,
                     'specificCities', zoneConfig.deliveryZones.selectedCities,
@@ -1093,7 +1329,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                     `${pickupStates.map(s => s.code).join(', ')} to ${zoneConfig.deliveryZones.selectedStates.map(s => s.code).join(', ')}`
                 ));
             }
-            if (zoneConfig.deliveryZones.cityToCity && zoneConfig.deliveryZones.selectedCities?.length > 0) {
+            if (zoneConfig.deliveryZones.selectedCities?.length > 0) {
                 mappings.push(createRouteMapping(
                     'specificStates', pickupStates,
                     'specificCities', zoneConfig.deliveryZones.selectedCities,
@@ -1102,8 +1338,8 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             }
         }
 
-        // 5. Specific City Pickup Combinations
-        if (zoneConfig.pickupZones.cityToCity && zoneConfig.pickupZones.selectedCities?.length > 0) {
+        // 5. Specific City Pickup Combinations (generate whenever cities exist, independent of toggle)
+        if (zoneConfig.pickupZones.selectedCities?.length > 0) {
             const pickupCities = zoneConfig.pickupZones.selectedCities;
 
             if (zoneConfig.deliveryZones.domesticCanada) {
@@ -1134,7 +1370,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                     `${pickupCities.map(c => c.city).join(', ')} to ${zoneConfig.deliveryZones.selectedStates.map(s => s.code).join(', ')}`
                 ));
             }
-            if (zoneConfig.deliveryZones.cityToCity && zoneConfig.deliveryZones.selectedCities?.length > 0) {
+            if (zoneConfig.deliveryZones.selectedCities?.length > 0) {
                 mappings.push(createRouteMapping(
                     'specificCities', pickupCities,
                     'specificCities', zoneConfig.deliveryZones.selectedCities,
@@ -1148,6 +1384,22 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             ...prev,
             routeMappings: mappings
         }));
+
+        // Persist in DB immediately (fire-and-forget)
+        (async () => {
+            try {
+                const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
+                await setDoc(carrierConfigRef, {
+                    carrierId,
+                    carrierName,
+                    zoneConfig: { ...zoneConfig, routeMappings: mappings },
+                    lastUpdated: new Date(),
+                    version: '2.0'
+                }, { merge: true });
+            } catch (e) {
+                console.warn('Failed to save generated routes', e);
+            }
+        })();
 
         enqueueSnackbar(`Generated ${mappings.length} route mapping${mappings.length !== 1 ? 's' : ''}`, {
             variant: mappings.length > 0 ? 'success' : 'warning'
@@ -1210,6 +1462,58 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             </Box>
         );
     };
+
+    // Auto-generate routes helper
+    const autoGenerateAndPersistRoutes = useCallback(async (configForRoutes) => {
+        const hasPickup = (configForRoutes.pickupZones?.selectedCities || []).length > 0;
+        const hasDelivery = (configForRoutes.deliveryZones?.selectedCities || []).length > 0;
+        if (hasPickup && hasDelivery) {
+            const pickupCities = configForRoutes.pickupZones.selectedCities || [];
+            const deliveryCities = configForRoutes.deliveryZones.selectedCities || [];
+            const mappings = [];
+            mappings.push({
+                id: `specificCities_to_specificCities_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                pickup: { type: 'specificCities', data: pickupCities },
+                delivery: { type: 'specificCities', data: deliveryCities },
+                description: `${pickupCities.length} pickup cities × ${deliveryCities.length} delivery cities`,
+                createdAt: new Date()
+            });
+            setZoneConfig(prev => ({ ...prev, routeMappings: mappings }));
+            const ref = doc(db, 'carrierZoneConfigs', carrierId);
+            await setDoc(ref, {
+                carrierId,
+                carrierName,
+                zoneConfig: { ...configForRoutes, routeMappings: mappings },
+                lastUpdated: new Date(),
+                version: '2.0'
+            }, { merge: true });
+        } else {
+            setZoneConfig(prev => ({ ...prev, routeMappings: [] }));
+            const ref = doc(db, 'carrierZoneConfigs', carrierId);
+            await setDoc(ref, {
+                carrierId,
+                carrierName,
+                zoneConfig: { ...configForRoutes, routeMappings: [] },
+                lastUpdated: new Date(),
+                version: '2.0'
+            }, { merge: true });
+        }
+    }, [carrierId, carrierName]);
+
+    // Auto-generate routes on initial load and whenever city selections change
+    useEffect(() => {
+        const pickupLen = zoneConfig.pickupZones?.selectedCities?.length || 0;
+        const deliveryLen = zoneConfig.deliveryZones?.selectedCities?.length || 0;
+        // Only run when there is a meaningful state (avoid empty initial state)
+        if (pickupLen > 0 || deliveryLen > 0) {
+            // Fire and forget; internal method persists and updates UI
+            autoGenerateAndPersistRoutes(zoneConfig);
+        } else {
+            // Ensure routes are cleared when both lists are empty
+            setZoneConfig(prev => (prev.routeMappings?.length ? { ...prev, routeMappings: [] } : prev));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [zoneConfig.pickupZones?.selectedCities, zoneConfig.deliveryZones?.selectedCities, autoGenerateAndPersistRoutes]);
 
     // Render delivery locations tab
     const renderDeliveryLocations = () => {
@@ -1623,49 +1927,20 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         }}
                     >
                         <Tab
-                            icon={<RegionIcon />}
-                            label="System Zones"
+                            icon={<MapIcon />}
+                            label="Custom Zones"
                             iconPosition="start"
                         />
                         <Tab
-                            icon={<MapIcon />}
-                            label="Custom Zones"
+                            icon={<RegionIcon />}
+                            label="System Zones"
                             iconPosition="start"
                         />
                     </Tabs>
                 </Box>
 
-                {/* System Zones Tab */}
-                {zoneManagementTab === 0 && (
-                    <Box sx={{ flex: 1, overflow: 'auto', px: 3 }}>
-                        {/* Sub-tabs for Individual Zones vs Zone Sets */}
-                        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-                            <Tabs
-                                value={systemZoneSubTab}
-                                onChange={(e, newValue) => setSystemZoneSubTab(newValue)}
-                                sx={{
-                                    '& .MuiTab-root': {
-                                        fontSize: '11px',
-                                        textTransform: 'none',
-                                        minHeight: 36
-                                    }
-                                }}
-                            >
-                                <Tab label="Individual Zones" />
-                                <Tab label="Zone Sets" />
-                            </Tabs>
-                        </Box>
-
-                        {/* Individual System Zones */}
-                        {systemZoneSubTab === 0 && renderSystemZonesList()}
-
-                        {/* System Zone Sets */}
-                        {systemZoneSubTab === 1 && renderSystemZoneSetsList()}
-                    </Box>
-                )}
-
                 {/* Custom Zones Tab */}
-                {zoneManagementTab === 1 && (
+                {zoneManagementTab === 0 && (
                     <Box sx={{ flex: 1, overflow: 'auto', px: 3 }}>
                         {/* Sub-tabs for Individual Zones vs Zone Sets */}
                         <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
@@ -1690,6 +1965,35 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
 
                         {/* Custom Zone Sets */}
                         {customZoneSubTab === 1 && renderCustomZoneSetsList()}
+                    </Box>
+                )}
+
+                {/* System Zones Tab */}
+                {zoneManagementTab === 1 && (
+                    <Box sx={{ flex: 1, overflow: 'auto', px: 3 }}>
+                        {/* Sub-tabs for Individual Zones vs Zone Sets */}
+                        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+                            <Tabs
+                                value={systemZoneSubTab}
+                                onChange={(e, newValue) => setSystemZoneSubTab(newValue)}
+                                sx={{
+                                    '& .MuiTab-root': {
+                                        fontSize: '11px',
+                                        textTransform: 'none',
+                                        minHeight: 36
+                                    }
+                                }}
+                            >
+                                <Tab label="Individual Zones" />
+                                <Tab label="Zone Sets" />
+                            </Tabs>
+                        </Box>
+
+                        {/* Individual System Zones */}
+                        {systemZoneSubTab === 0 && renderSystemZonesList()}
+
+                        {/* System Zone Sets */}
+                        {systemZoneSubTab === 1 && renderSystemZoneSetsList()}
                     </Box>
                 )}
             </Box>
@@ -1912,8 +2216,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
 
     // Render custom zones list  
     const renderCustomZonesList = () => {
-        // For now, show empty since custom zones aren't implemented yet
-        const customZones = [];
+        const customZones = zoneConfig.zoneReferences?.custom_zones || [];
 
         return (
             <Box>
@@ -1938,6 +2241,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                             <TableHead>
                                 <TableRow sx={{ backgroundColor: '#f8fafc' }}>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zone Name</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zone Code</TableCell>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Cities</TableCell>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Created</TableCell>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
@@ -1945,8 +2249,13 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                             </TableHead>
                             <TableBody>
                                 {customZones.map((zone, index) => (
-                                    <TableRow key={zone.id || index}>
-                                        <TableCell sx={{ fontSize: '12px' }}>{zone.name}</TableCell>
+                                    <TableRow key={zone.zoneId || zone.id || index}>
+                                        <TableCell sx={{ fontSize: '12px' }}>{zone.zoneName || zone.name}</TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Typography sx={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b7280' }}>
+                                                {zone.zoneCode || zone.zoneId}
+                                            </Typography>
+                                        </TableCell>
                                         <TableCell sx={{ fontSize: '12px' }}>
                                             <Chip
                                                 label={zone.cities?.length || 0}
@@ -1956,29 +2265,37 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                                             />
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px' }}>
-                                            {zone.createdAt ? new Date(zone.createdAt).toLocaleDateString() : 'N/A'}
+                                            {zone.createdAt ? (() => {
+                                                try {
+                                                    // Handle different date formats
+                                                    let date = zone.createdAt;
+                                                    if (date.seconds) {
+                                                        // Firestore timestamp format
+                                                        date = new Date(date.seconds * 1000);
+                                                    } else if (typeof date === 'string') {
+                                                        // ISO string format
+                                                        date = new Date(date);
+                                                    } else if (date instanceof Date) {
+                                                        // Already a Date object
+                                                        date = date;
+                                                    } else {
+                                                        // Try to convert to Date
+                                                        date = new Date(date);
+                                                    }
+
+                                                    return isNaN(date.getTime()) ? 'Invalid Date' : date.toLocaleDateString();
+                                                } catch (error) {
+                                                    return 'Invalid Date';
+                                                }
+                                            })() : 'N/A'}
                                         </TableCell>
                                         <TableCell>
                                             <IconButton
                                                 size="small"
-                                                onClick={() => handleViewZone('custom_zones', zone)}
-                                                sx={{ color: '#6b7280', mr: 1 }}
+                                                onClick={(event) => handleContextMenuOpen(event, 'custom_zones', zone)}
+                                                sx={{ color: '#6b7280' }}
                                             >
-                                                <ViewIcon fontSize="small" />
-                                            </IconButton>
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => handleEditZoneAction('custom_zones', zone)}
-                                                sx={{ color: '#3b82f6', mr: 1 }}
-                                            >
-                                                <EditIcon fontSize="small" />
-                                            </IconButton>
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => handleRemoveZone('custom_zones', zone.id)}
-                                                sx={{ color: '#ef4444' }}
-                                            >
-                                                <DeleteIcon fontSize="small" />
+                                                <MoreVertIcon fontSize="small" />
                                             </IconButton>
                                         </TableCell>
                                     </TableRow>
@@ -2114,131 +2431,301 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                     <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                         Zone-to-Zone Route Mappings
                     </Typography>
-                    <Button
-                        variant="contained"
-                        startIcon={<RouteIcon />}
-                        onClick={generateRouteMappings}
-                        size="small"
-                        sx={{ fontSize: '12px' }}
-                    >
-                        Generate Routes
-                    </Button>
                 </Box>
 
-                <Alert severity="info" sx={{ mb: 3 }}>
-                    <Typography sx={{ fontSize: '12px' }}>
-                        Route mappings combine your pickup and delivery zones to create specific route combinations.
-                        These routes will be used to assign rates in the next phase.
-                    </Typography>
-                </Alert>
+                {(Array.isArray(zoneConfig.routeMappings) && zoneConfig.routeMappings.length > 0) ? (
+                    (() => {
+                        // Use component-level state for filters/dialog
+                        const searchTerm = routesSearchTerm;
+                        const stateFilter = routesStateFilter;
+                        const countryFilter = routesCountryFilter;
 
-                {zoneConfig.routeMappings && zoneConfig.routeMappings.length > 0 ? (
-                    <Grid container spacing={2}>
-                        {zoneConfig.routeMappings.map((route, index) => (
-                            <Grid item xs={12} sm={6} md={6} key={route.id}>
-                                <Card sx={{
-                                    border: '1px solid #e5e7eb',
-                                    borderRadius: 2,
-                                    '&:hover': { borderColor: '#3b82f6', boxShadow: 2 }
-                                }}>
-                                    <CardContent sx={{ p: 3 }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                <RouteIcon sx={{ fontSize: 18, color: '#3b82f6', mr: 1 }} />
-                                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                                                    Route {index + 1}
-                                                </Typography>
-                                            </Box>
-                                            <IconButton
-                                                size="small"
-                                                sx={{ color: '#6b7280' }}
-                                                onClick={() => {
-                                                    // Remove route mapping
-                                                    setZoneConfig(prev => ({
-                                                        ...prev,
-                                                        routeMappings: prev.routeMappings.filter(r => r.id !== route.id)
-                                                    }));
-                                                }}
-                                            >
-                                                <DeleteIcon sx={{ fontSize: 16 }} />
-                                            </IconButton>
-                                        </Box>
+                        const toMi = (km) => km == null ? null : Math.round(km * 0.621371);
+                        const rows = [];
+                        const pushRow = (p, d) => {
+                            const lat1 = p.latitude || p.lat; const lng1 = p.longitude || p.lng;
+                            const lat2 = d.latitude || d.lat; const lng2 = d.longitude || d.lng;
+                            const hav = () => {
+                                if (!lat1 || !lng1 || !lat2 || !lng2) return null;
+                                const R = 6371; const toRad = (x) => (x * Math.PI) / 180;
+                                const dLat = toRad(lat2 - lat1); const dLon = toRad(lng2 - lng1);
+                                const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+                                return Math.round(R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
+                            };
+                            const km = hav();
+                            rows.push({
+                                pickupCity: p.city, pickupState: p.provinceState, pickupCountry: p.country,
+                                deliveryCity: d.city, deliveryState: d.provinceState, deliveryCountry: d.country,
+                                km, mi: toMi(km),
+                                pickup: p, delivery: d
+                            });
+                        };
 
-                                        {/* Route Description */}
-                                        <Typography sx={{
-                                            fontSize: '12px',
-                                            color: '#374151',
-                                            fontWeight: 500,
-                                            mb: 2,
-                                            lineHeight: 1.4
-                                        }}>
-                                            {route.description}
-                                        </Typography>
+                        for (const route of zoneConfig.routeMappings) {
+                            if (route?.pickup?.type === 'specificCities' && route?.delivery?.type === 'specificCities' && Array.isArray(route.pickup.data) && Array.isArray(route.delivery.data)) {
+                                for (const p of route.pickup.data) {
+                                    for (const d of route.delivery.data) pushRow(p, d);
+                                }
+                            }
+                        }
 
-                                        {/* Route Details */}
-                                        <Box sx={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            p: 1.5,
-                                            bgcolor: '#f8fafc',
-                                            borderRadius: 1,
-                                            border: '1px solid #f1f5f9'
-                                        }}>
-                                            <Box sx={{ textAlign: 'center', flex: 1 }}>
-                                                <Typography sx={{ fontSize: '10px', color: '#6b7280', mb: 0.5 }}>
-                                                    PICKUP FROM
-                                                </Typography>
-                                                <Typography sx={{ fontSize: '11px', fontWeight: 500, color: '#374151' }}>
-                                                    {Array.isArray(route.pickup.data) ?
-                                                        route.pickup.data.map(p => p.code || p).join(', ') :
-                                                        route.pickup.data}
-                                                </Typography>
-                                            </Box>
+                        // Options from data
+                        const allProvincesByCountry = {
+                            CA: [
+                                { code: 'AB', name: 'Alberta' }, { code: 'BC', name: 'British Columbia' }, { code: 'MB', name: 'Manitoba' },
+                                { code: 'NB', name: 'New Brunswick' }, { code: 'NL', name: 'Newfoundland and Labrador' }, { code: 'NS', name: 'Nova Scotia' },
+                                { code: 'NT', name: 'Northwest Territories' }, { code: 'NU', name: 'Nunavut' }, { code: 'ON', name: 'Ontario' },
+                                { code: 'PE', name: 'Prince Edward Island' }, { code: 'QC', name: 'Quebec' }, { code: 'SK', name: 'Saskatchewan' }, { code: 'YT', name: 'Yukon' }
+                            ],
+                            US: [
+                                { code: 'AL', name: 'Alabama' }, { code: 'AK', name: 'Alaska' }, { code: 'AZ', name: 'Arizona' }, { code: 'AR', name: 'Arkansas' }, { code: 'CA', name: 'California' },
+                                { code: 'CO', name: 'Colorado' }, { code: 'CT', name: 'Connecticut' }, { code: 'DE', name: 'Delaware' }, { code: 'FL', name: 'Florida' }, { code: 'GA', name: 'Georgia' },
+                                { code: 'HI', name: 'Hawaii' }, { code: 'ID', name: 'Idaho' }, { code: 'IL', name: 'Illinois' }, { code: 'IN', name: 'Indiana' }, { code: 'IA', name: 'Iowa' },
+                                { code: 'KS', name: 'Kansas' }, { code: 'KY', name: 'Kentucky' }, { code: 'LA', name: 'Louisiana' }, { code: 'ME', name: 'Maine' }, { code: 'MD', name: 'Maryland' },
+                                { code: 'MA', name: 'Massachusetts' }, { code: 'MI', name: 'Michigan' }, { code: 'MN', name: 'Minnesota' }, { code: 'MS', name: 'Mississippi' }, { code: 'MO', name: 'Missouri' },
+                                { code: 'MT', name: 'Montana' }, { code: 'NE', name: 'Nebraska' }, { code: 'NV', name: 'Nevada' }, { code: 'NH', name: 'New Hampshire' }, { code: 'NJ', name: 'New Jersey' },
+                                { code: 'NM', name: 'New Mexico' }, { code: 'NY', name: 'New York' }, { code: 'NC', name: 'North Carolina' }, { code: 'ND', name: 'North Dakota' }, { code: 'OH', name: 'Ohio' },
+                                { code: 'OK', name: 'Oklahoma' }, { code: 'OR', name: 'Oregon' }, { code: 'PA', name: 'Pennsylvania' }, { code: 'RI', name: 'Rhode Island' }, { code: 'SC', name: 'South Carolina' },
+                                { code: 'SD', name: 'South Dakota' }, { code: 'TN', name: 'Tennessee' }, { code: 'TX', name: 'Texas' }, { code: 'UT', name: 'Utah' }, { code: 'VT', name: 'Vermont' },
+                                { code: 'VA', name: 'Virginia' }, { code: 'WA', name: 'Washington' }, { code: 'WV', name: 'West Virginia' }, { code: 'WI', name: 'Wisconsin' }, { code: 'WY', name: 'Wyoming' }
+                            ]
+                        };
 
-                                            <Box sx={{ mx: 2, color: '#6b7280' }}>
-                                                <Typography sx={{ fontSize: '16px', fontWeight: 600 }}>→</Typography>
-                                            </Box>
+                        const countries = ['CA', 'US'];
+                        const provincesForCountry = (cc) => (cc ? allProvincesByCountry[cc] || [] : []);
 
-                                            <Box sx={{ textAlign: 'center', flex: 1 }}>
-                                                <Typography sx={{ fontSize: '10px', color: '#6b7280', mb: 0.5 }}>
-                                                    DELIVER TO
-                                                </Typography>
-                                                <Typography sx={{ fontSize: '11px', fontWeight: 500, color: '#374151' }}>
-                                                    {Array.isArray(route.delivery.data) ?
-                                                        route.delivery.data.map(d => d.code || d).join(', ') :
-                                                        route.delivery.data}
-                                                </Typography>
-                                            </Box>
-                                        </Box>
+                        // Filter
+                        let filtered = rows;
+                        if (searchTerm) {
+                            const t = searchTerm.trim().toLowerCase();
+                            filtered = filtered.filter(r =>
+                                [r.pickupCity, r.deliveryCity, r.pickupState, r.deliveryState].some(v => v && v.toLowerCase().includes(t))
+                            );
+                        }
+                        if (stateFilter) {
+                            filtered = filtered.filter(r => r.pickupState === stateFilter || r.deliveryState === stateFilter);
+                        }
+                        if (countryFilter) {
+                            filtered = filtered.filter(r => r.pickupCountry === countryFilter || r.deliveryCountry === countryFilter);
+                        }
 
-                                        {/* Status Indicator */}
-                                        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <Chip
-                                                label="Ready for Rate Assignment"
-                                                size="small"
-                                                color="success"
-                                                variant="outlined"
-                                                sx={{ fontSize: '10px' }}
+                        // Sorting
+                        const routesSortRef = routesSortRefGlobal;
+                        const [sortBy, sortDir] = routesSortRef.current || ['pickupCity', 'asc'];
+                        filtered.sort((a, b) => {
+                            const valA = a[sortBy];
+                            const valB = b[sortBy];
+                            const cmp = (valA ?? '').toString().localeCompare((valB ?? '').toString(), undefined, { numeric: true });
+                            return sortDir === 'asc' ? cmp : -cmp;
+                        });
+
+                        const setSearchTerm = setRoutesSearchTerm;
+                        const setStateFilter = setRoutesStateFilter;
+                        const setCountryFilter = setRoutesCountryFilter;
+
+                        // Sorting helpers (mirror city tables)
+                        const isSorted = (key) => (routesSortRef.current && routesSortRef.current[0] === key);
+                        const getSortDir = (key) => (isSorted(key) ? routesSortRef.current[1] : 'asc');
+                        const toggleSort = (key) => {
+                            const [curKey, curDir] = routesSortRef.current || [];
+                            const next = curKey === key && curDir === 'asc' ? 'desc' : 'asc';
+                            routesSortRef.current = [key, next];
+                            forceRoutesRefresh((n) => n + 1);
+                        };
+
+                        // Pagination helpers
+                        const paginated = (arr) => {
+                            if (routesRowsPerPage === -1) return arr;
+                            return arr.slice(routesPage * routesRowsPerPage, routesPage * routesRowsPerPage + routesRowsPerPage);
+                        };
+
+                        return (
+                            <Card sx={{ border: '1px solid #e5e7eb' }}>
+                                <CardContent sx={{ p: 2 }}>
+                                    {/* Filters */}
+                                    <Grid container spacing={1.5} sx={{ mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <Grid item xs={12} md={3} lg={3}>
+                                            <TextField
+                                                fullWidth size="small"
+                                                placeholder="Search routes (city, state)"
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
+                                                sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
                                             />
-                                            <Typography sx={{ fontSize: '9px', color: '#9ca3af' }}>
-                                                {route.createdAt && new Date(route.createdAt.seconds ? route.createdAt.seconds * 1000 : route.createdAt).toLocaleDateString()}
-                                            </Typography>
-                                        </Box>
-                                    </CardContent>
-                                </Card>
-                            </Grid>
-                        ))}
-                    </Grid>
+                                        </Grid>
+                                        <Grid item xs={6} md={2.5} lg={2.5}>
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
+                                                <Select
+                                                    value={countryFilter}
+                                                    onChange={(e) => { setCountryFilter(e.target.value); setStateFilter(''); }}
+                                                    label="Country"
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    <MenuItem value="" sx={{ fontSize: '12px' }}>All Countries</MenuItem>
+                                                    {countries.map(cc => (
+                                                        <MenuItem key={cc} value={cc} sx={{ fontSize: '12px' }}>
+                                                            {cc === 'CA' ? '🇨🇦 Canada' : cc === 'US' ? '🇺🇸 United States' : cc}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+                                        <Grid item xs={6} md={2.5} lg={2.5}>
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel sx={{ fontSize: '12px' }}>Province/State</InputLabel>
+                                                <Select
+                                                    value={countryFilter ? stateFilter : ''}
+                                                    onChange={(e) => setStateFilter(e.target.value)}
+                                                    label="Province/State"
+                                                    disabled={!countryFilter}
+                                                    sx={{ fontSize: '12px', opacity: !countryFilter ? 0.6 : 1 }}
+                                                >
+                                                    <MenuItem value="" sx={{ fontSize: '12px' }}>All Provinces/States</MenuItem>
+                                                    {provincesForCountry(countryFilter).map(p => (
+                                                        <MenuItem key={p.code} value={p.code} sx={{ fontSize: '12px' }}>
+                                                            {p.name} - {p.code}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+
+                                    </Grid>
+
+                                    {/* Table */}
+                                    <Table size="small" stickyHeader>
+                                        <TableHead>
+                                            <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                                <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }} colSpan={3}>Pickup From</TableCell>
+                                                <TableCell sx={{ width: 12, p: 0, borderRight: '1px solid #e5e7eb', borderLeft: '1px solid #e5e7eb' }} />
+                                                <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }} colSpan={3}>Deliver To</TableCell>
+                                                <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Distance</TableCell>
+                                                <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }} align="right">Route View</TableCell>
+                                            </TableRow>
+                                            <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                                <TableCell sx={{ fontSize: '12px', color: '#374151' }}>
+                                                    <TableSortLabel active={isSorted('pickupCity')} direction={getSortDir('pickupCity')} onClick={() => toggleSort('pickupCity')} sx={{ fontSize: '12px' }}>City</TableSortLabel>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', color: '#374151' }}>
+                                                    <TableSortLabel active={isSorted('pickupState')} direction={getSortDir('pickupState')} onClick={() => toggleSort('pickupState')} sx={{ fontSize: '12px' }}>State/Prov</TableSortLabel>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', color: '#374151' }}>
+                                                    <TableSortLabel active={isSorted('pickupCountry')} direction={getSortDir('pickupCountry')} onClick={() => toggleSort('pickupCountry')} sx={{ fontSize: '12px' }}>Country</TableSortLabel>
+                                                </TableCell>
+                                                <TableCell sx={{ width: 12, p: 0, borderRight: '1px solid #e5e7eb', borderLeft: '1px solid #e5e7eb' }} />
+                                                <TableCell sx={{ fontSize: '12px', color: '#374151' }}>
+                                                    <TableSortLabel active={isSorted('deliveryCity')} direction={getSortDir('deliveryCity')} onClick={() => toggleSort('deliveryCity')} sx={{ fontSize: '12px' }}>City</TableSortLabel>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', color: '#374151' }}>
+                                                    <TableSortLabel active={isSorted('deliveryState')} direction={getSortDir('deliveryState')} onClick={() => toggleSort('deliveryState')} sx={{ fontSize: '12px' }}>State/Prov</TableSortLabel>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', color: '#374151' }}>
+                                                    <TableSortLabel active={isSorted('deliveryCountry')} direction={getSortDir('deliveryCountry')} onClick={() => toggleSort('deliveryCountry')} sx={{ fontSize: '12px' }}>Country</TableSortLabel>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', color: '#374151' }}>mi / km</TableCell>
+                                                <TableCell />
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {paginated(filtered).map((r, i) => (
+                                                <TableRow key={i}>
+                                                    <TableCell sx={{ fontSize: '12px' }}>{r.pickupCity}</TableCell>
+                                                    <TableCell sx={{ fontSize: '12px' }}>{r.pickupState}</TableCell>
+                                                    <TableCell sx={{ fontSize: '12px' }}>{r.pickupCountry}</TableCell>
+                                                    <TableCell sx={{ width: 12, p: 0, borderRight: '1px solid #e5e7eb', borderLeft: '1px solid #e5e7eb' }} />
+                                                    <TableCell sx={{ fontSize: '12px' }}>{r.deliveryCity}</TableCell>
+                                                    <TableCell sx={{ fontSize: '12px' }}>{r.deliveryState}</TableCell>
+                                                    <TableCell sx={{ fontSize: '12px' }}>{r.deliveryCountry}</TableCell>
+                                                    <TableCell sx={{ fontSize: '12px' }}>{r.mi == null ? '—' : `${r.mi.toLocaleString()} mi / ${r.km.toLocaleString()} km`}</TableCell>
+                                                    <TableCell align="right">
+                                                        <Button
+                                                            variant="outlined"
+                                                            size="small"
+                                                            sx={{ fontSize: '12px' }}
+                                                            onClick={() => { setRouteDialogRow(r); setRouteDialogOpen(true); }}
+                                                        >
+                                                            View Route
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                                        <TablePagination
+                                            component="div"
+                                            count={filtered.length}
+                                            page={routesPage}
+                                            onPageChange={(_, p) => setRoutesPage(p)}
+                                            rowsPerPage={routesRowsPerPage}
+                                            onRowsPerPageChange={(e) => { const v = parseInt(e.target.value, 10); setRoutesRowsPerPage(v); setRoutesPage(0); }}
+                                            rowsPerPageOptions={[25, 50, 100, { label: 'All', value: -1 }]}
+                                            labelRowsPerPage="Rows"
+                                        />
+                                    </Box>
+
+                                    {/* Route Dialog */}
+                                    <Dialog open={routeDialogOpen} onClose={() => setRouteDialogOpen(false)} maxWidth="md" fullWidth>
+                                        <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                            Route: {routeDialogRow ? `${routeDialogRow.pickupCity}, ${routeDialogRow.pickupState} → ${routeDialogRow.deliveryCity}, ${routeDialogRow.deliveryState}` : ''}
+                                        </DialogTitle>
+                                        <DialogContent>
+                                            {routeDialogRow && (
+                                                <RouteVisualizationMap
+                                                    routes={[{
+                                                        id: 'preview',
+                                                        origin: {
+                                                            city: routeDialogRow.pickupCity,
+                                                            provinceState: routeDialogRow.pickupState,
+                                                            country: routeDialogRow.pickupCountry,
+                                                            latitude: routeDialogRow.pickup.latitude || routeDialogRow.pickup.lat,
+                                                            longitude: routeDialogRow.pickup.longitude || routeDialogRow.pickup.lng
+                                                        },
+                                                        destination: {
+                                                            city: routeDialogRow.deliveryCity,
+                                                            provinceState: routeDialogRow.deliveryState,
+                                                            country: routeDialogRow.deliveryCountry,
+                                                            latitude: routeDialogRow.delivery.latitude || routeDialogRow.delivery.lat,
+                                                            longitude: routeDialogRow.delivery.longitude || routeDialogRow.delivery.lng
+                                                        },
+                                                        distance: routeDialogRow.km != null ? { km: routeDialogRow.km, miles: routeDialogRow.mi } : null,
+                                                        routeName: `${routeDialogRow.pickupCity} → ${routeDialogRow.deliveryCity}`
+                                                    }]}
+                                                    pickupCities={[routeDialogRow.pickup]}
+                                                    deliveryCities={[routeDialogRow.delivery]}
+                                                    selectedRoutes={["preview"]}
+                                                    height={380}
+                                                    minimalMode
+                                                />
+                                            )}
+                                        </DialogContent>
+                                        <DialogActions>
+                                            <Button onClick={() => setRouteDialogOpen(false)} size="small" sx={{ fontSize: '12px' }}>Close</Button>
+                                        </DialogActions>
+                                    </Dialog>
+                                </CardContent>
+                            </Card>
+                        );
+                    })()
                 ) : (
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                        <RouteIcon sx={{ fontSize: 48, color: '#d1d5db', mb: 2 }} />
-                        <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
-                            No route mappings generated yet
-                        </Typography>
-                        <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
-                            Configure pickup and delivery zones, then click "Generate Routes"
-                        </Typography>
+                    <Box sx={{ py: 3 }}>
+                        <Box sx={{
+                            border: '1px dashed #e5e7eb',
+                            borderRadius: 2,
+                            p: 3,
+                            textAlign: 'center',
+                            bgcolor: '#f9fafb'
+                        }}>
+                            <RouteIcon sx={{ fontSize: 40, color: '#cbd5e1', mb: 1 }} />
+                            <Typography sx={{ fontSize: '15px', fontWeight: 600, color: '#374151', mb: 0.5 }}>
+                                No routes yet
+                            </Typography>
+                            <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                                Generate zone-to-zone routes from your pickup and delivery selections.
+                            </Typography>
+
+                        </Box>
                     </Box>
                 )}
             </Box>
@@ -2850,21 +3337,42 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                 carrierId={carrierId}
                 carrierName={carrierName}
                 editingZone={editingZone?.type === 'custom_zones' ? editingZone.data : null}
-                onZoneCreated={async (newZone) => {
+                onZoneCreated={async (zoneData) => {
                     try {
-                        // Add new custom zone to references
+                        // zoneData contains complete zone information from CarrierZoneDialog
+                        console.log('📝 Zone save result:', zoneData);
+
+                        if (!zoneData || !zoneData.zoneId) {
+                            throw new Error('Invalid zone save result');
+                        }
+
+                        // Update or add custom zone to references
                         const updatedReferences = { ...zoneConfig.zoneReferences };
                         if (!updatedReferences.custom_zones) {
                             updatedReferences.custom_zones = [];
                         }
-                        updatedReferences.custom_zones.push(newZone);
+
+                        // Check if this is an update (zone already exists)
+                        const existingZoneIndex = updatedReferences.custom_zones.findIndex(
+                            zone => zone.zoneId === zoneData.zoneId
+                        );
+
+                        if (existingZoneIndex !== -1) {
+                            // Update existing zone
+                            updatedReferences.custom_zones[existingZoneIndex] = zoneData;
+                            console.log('📝 Updated existing zone in local state');
+                        } else {
+                            // Add new zone
+                            updatedReferences.custom_zones.push(zoneData);
+                            console.log('📝 Added new zone to local state');
+                        }
 
                         const updatedConfig = {
                             ...zoneConfig,
                             zoneReferences: updatedReferences
                         };
 
-                        // Save to database
+                        // Save to both databases for consistency
                         const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
                         await setDoc(carrierConfigRef, updatedConfig, { merge: true });
 
@@ -2872,7 +3380,10 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         setCustomZoneDialogOpen(false);
                         setEditingZone(null);
 
-                        enqueueSnackbar('Custom zone created successfully', { variant: 'success' });
+                        enqueueSnackbar(
+                            existingZoneIndex !== -1 ? 'Custom zone updated successfully' : 'Custom zone created successfully',
+                            { variant: 'success' }
+                        );
                     } catch (error) {
                         console.error('Error saving custom zone:', error);
                         enqueueSnackbar('Failed to save custom zone', { variant: 'error' });
@@ -2995,10 +3506,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         </Typography>
                     </Box>
                 )}
-                <MenuItem onClick={handleViewZoneFromMenu}>
-                    <ViewIcon sx={{ fontSize: '16px', mr: 1, color: '#6b7280' }} />
-                    View Details
-                </MenuItem>
+                {/* View Details removed per request */}
                 {selectedZoneForAction?.type?.includes('custom') && (
                     <MenuItem onClick={() => handleEditZoneAction(selectedZoneForAction.type, selectedZoneForAction.data)}>
                         <EditIcon sx={{ fontSize: '16px', mr: 1, color: '#3b82f6' }} />
@@ -3066,6 +3574,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                     <DeleteIcon sx={{ fontSize: '16px', mr: 1, color: '#ef4444' }} />
                     Remove Zone
                 </MenuItem>
+                {/* Delete Custom Zone removed per request */}
             </Menu>
 
             {/* Zone Deletion Confirmation Dialog */}
@@ -3091,13 +3600,13 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                     {zoneToDelete && (
                         <Box>
                             <Typography variant="body2" sx={{ fontSize: '12px', mb: 1 }}>
-                                <strong>Zone:</strong> {zoneToDelete.data.zoneName || zoneToDelete.data.name}
+                                <strong>Zone:</strong> {zoneToDelete.data?.zoneName || zoneToDelete.data?.name || zoneToDelete.zoneName || zoneToDelete.name || 'Unknown Zone'}
                             </Typography>
                             <Typography variant="body2" sx={{ fontSize: '12px', mb: 1 }}>
-                                <strong>Type:</strong> {zoneToDelete.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                <strong>Type:</strong> {zoneToDelete.type ? zoneToDelete.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Unknown Type'}
                             </Typography>
                             <Typography variant="body2" sx={{ fontSize: '12px', color: '#ef4444' }}>
-                                <strong>Cities to be removed:</strong> {zoneToDelete.data.cityCount || 'Unknown count'}
+                                <strong>Cities to be removed:</strong> {zoneToDelete.data?.cityCount || zoneToDelete.cities?.length || 'Unknown count'}
                             </Typography>
                         </Box>
                     )}
@@ -3121,6 +3630,59 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         startIcon={<DeleteIcon />}
                     >
                         Remove Zone
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            {/* Custom Zone Delete Confirmation Dialog */}
+            <Dialog
+                open={customZoneDeleteConfirmOpen}
+                onClose={handleCustomZoneDeleteCancel}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Delete Custom Zone
+                </DialogTitle>
+                <DialogContent>
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                            This action will permanently delete this custom zone. This cannot be undone.
+                        </Typography>
+                    </Alert>
+
+                    {zoneToDelete && (
+                        <Box>
+                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 1 }}>
+                                <strong>Zone Name:</strong> {zoneToDelete.zoneName || zoneToDelete.name}
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 1 }}>
+                                <strong>Zone Code:</strong> {zoneToDelete.zoneCode || zoneToDelete.zoneId}
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#ef4444' }}>
+                                <strong>Cities:</strong> {zoneToDelete.cities?.length || 0} cities will be removed
+                            </Typography>
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={handleCustomZoneDeleteCancel}
+                        variant="outlined"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleCustomZoneDelete}
+                        variant="contained"
+                        color="error"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                        disabled={deletingZone}
+                        startIcon={deletingZone ? <CircularProgress size={16} /> : <DeleteIcon />}
+                    >
+                        {deletingZone ? 'Deleting...' : 'Delete Zone'}
                     </Button>
                 </DialogActions>
             </Dialog>

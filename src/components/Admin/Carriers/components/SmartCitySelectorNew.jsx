@@ -961,7 +961,7 @@ const AddCityDialog = ({ open, onClose, onCityAdd, zoneCategory, existingCityIds
                         <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
                             Selected Cities ({selectedCities.length}):
                         </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                             {selectedCities.map(city => (
                                 <Chip
                                     key={city.searchKey || city.id}

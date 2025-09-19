@@ -318,15 +318,17 @@ const saveZoneReferences = async (carrierId, carrierName, items, locationType, r
 
         // Get existing references to prevent duplicates
         const existingRefs = currentRefs[locationType][referenceType] || [];
-        const existingIds = new Set(existingRefs.map(ref => ref.id));
+        const existingIds = new Set(existingRefs.map(ref => ref.id).filter(Boolean));
 
-        // Add new references
-        const newRefs = items.filter(item => !existingIds.has(item.id)).map(item => ({
-            id: item.id,
-            name: item.name || item.zoneName || item.zoneCode,
-            type: referenceType,
-            addedAt: new Date().toISOString()
-        }));
+        // Normalize and add new references (avoid undefined fields)
+        const newRefs = items
+            .map(item => ({
+                id: item?.id || item?.zoneId || item?.zoneCode || null,
+                name: item?.name || item?.zoneName || item?.zoneCode || 'Unnamed Zone',
+                type: referenceType,
+                addedAt: new Date()
+            }))
+            .filter(ref => ref.id && !existingIds.has(ref.id));
 
         currentRefs[locationType][referenceType] = [...existingRefs, ...newRefs];
         currentRefs.lastUpdated = new Date();

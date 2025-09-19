@@ -533,7 +533,7 @@ const SystemZoneSelector = ({
                             </Button>
                         )}
                     </Box>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {selectedZones.map(zone => (
                             <Chip
                                 key={zone.id}
