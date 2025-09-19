@@ -678,11 +678,27 @@ exports.createCarrierCustomZone = functions
                 // Update existing document
                 const docRef = carrierZonesQuery.docs[0].ref;
                 const existingData = carrierZonesQuery.docs[0].data();
-                
-                const updatedZones = [...(existingData.zones || []), newZone];
-                
+
+                const zones = [...(existingData.zones || [])];
+                const targetId = String(newZone.zoneId).toUpperCase();
+                const existingIndex = zones.findIndex(z => String(z.zoneId || z.zoneCode || z.id || '').toUpperCase() === targetId);
+
+                if (existingIndex !== -1) {
+                    // Replace existing zone (enforce uniqueness)
+                    const prev = zones[existingIndex] || {};
+                    zones[existingIndex] = {
+                        ...prev,
+                        ...newZone,
+                        createdAt: prev.createdAt || currentTime,
+                        updatedAt: currentTime
+                    };
+                } else {
+                    // Append as new
+                    zones.push(newZone);
+                }
+
                 await docRef.update({
-                    zones: updatedZones,
+                    zones,
                     updatedAt: timestamp
                 });
                 
@@ -774,7 +790,9 @@ exports.updateCarrierCustomZone = onCall(
 
             // Update the specific zone in the zones array
             const updatedZones = (existingData.zones || []).map(zone => {
-                if (zone.zoneId === zoneId) {
+                const zid = String(zone.zoneId || zone.zoneCode || zone.id || '').toUpperCase();
+                const targetId = String(zoneId).toUpperCase();
+                if (zid === targetId) {
                     return {
                         ...zone,
                         zoneCode,
@@ -790,7 +808,7 @@ exports.updateCarrierCustomZone = onCall(
             });
 
             // Check if zone was found and updated
-            const zoneFound = updatedZones.some(zone => zone.zoneId === zoneId);
+            const zoneFound = updatedZones.some(zone => String(zone.zoneId || zone.zoneCode || zone.id || '').toUpperCase() === String(zoneId).toUpperCase());
             if (!zoneFound) {
                 throw new HttpsError('not-found', 'Zone not found in carrier custom zones');
             }

@@ -1254,6 +1254,143 @@ const EnterpriseZoneManagement = () => {
         }
     };
 
+    // City dialog – Google Places autocomplete (predictions)
+    const [cityNameSuggestions, setCityNameSuggestions] = useState([]);
+    const [showCityNameSuggestions, setShowCityNameSuggestions] = useState(false);
+    const cityAutocompleteSvcRef = useRef(null);
+    const [savingCity, setSavingCity] = useState(false);
+
+    const ensureCityAutocompleteService = useCallback(async () => {
+        if (!window.google?.maps?.places) {
+            try {
+                const { loadGoogleMaps } = await import('../../../utils/googleMapsLoader');
+                await loadGoogleMaps();
+            } catch (e) {
+                console.warn('⚠️ Failed to load Google Maps before Autocomplete init', e);
+            }
+        }
+        if (!cityAutocompleteSvcRef.current && window.google?.maps?.places) {
+            cityAutocompleteSvcRef.current = new window.google.maps.places.AutocompleteService();
+        }
+    }, []);
+
+    useEffect(() => {
+        let timer;
+        const fetchPredictions = async () => {
+            if (!cityDialogOpen) return;
+            const input = (cityForm.city || '').trim();
+            if (input.length < 2) {
+                setCityNameSuggestions([]);
+                setShowCityNameSuggestions(false);
+                return;
+            }
+            await ensureCityAutocompleteService();
+            const svc = cityAutocompleteSvcRef.current;
+            if (!svc) return;
+            const request = {
+                input,
+                types: ['(cities)'],
+            };
+            if (cityForm.country) {
+                request.componentRestrictions = { country: cityForm.country };
+            }
+            try {
+                svc.getPlacePredictions(request, (predictions, status) => {
+                    if (status === window.google.maps.places.PlacesServiceStatus.OK && Array.isArray(predictions)) {
+                        setCityNameSuggestions(predictions);
+                        setShowCityNameSuggestions(predictions.length > 0);
+                    } else {
+                        setCityNameSuggestions([]);
+                        setShowCityNameSuggestions(false);
+                    }
+                });
+            } catch (e) {
+                console.warn('⚠️ Autocomplete predictions error', e);
+            }
+        };
+        timer = setTimeout(fetchPredictions, 200);
+        return () => clearTimeout(timer);
+    }, [cityForm.city, cityForm.country, cityDialogOpen, ensureCityAutocompleteService]);
+
+    useEffect(() => {
+        const handler = (e) => {
+            if (showCityNameSuggestions && !e.target.closest('[data-city-autocomplete]')) {
+                setShowCityNameSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showCityNameSuggestions]);
+
+    const handleCityPredictionSelect = useCallback(async (prediction) => {
+        try {
+            await ensureCityAutocompleteService();
+            const geocoder = new window.google.maps.Geocoder();
+            geocoder.geocode({ placeId: prediction.place_id }, (results, status) => {
+                if (status === 'OK' && results && results[0]) {
+                    const result = results[0];
+                    const loc = result.geometry?.location;
+                    let provinceState = '';
+                    let provinceStateName = '';
+                    let country = '';
+                    let countryName = '';
+                    result.address_components.forEach((c) => {
+                        if (c.types.includes('administrative_area_level_1')) {
+                            provinceState = c.short_name;
+                            provinceStateName = c.long_name;
+                        }
+                        if (c.types.includes('country')) {
+                            country = c.short_name;
+                            countryName = c.long_name;
+                        }
+                    });
+
+                    setCityForm(prev => ({
+                        ...prev,
+                        city: prediction.structured_formatting?.main_text || prev.city,
+                        provinceState,
+                        provinceStateName,
+                        country: country || prev.country,
+                        countryName: countryName || prev.countryName,
+                        isCanada: (country || prev.country) === 'CA',
+                        isUS: (country || prev.country) === 'US',
+                        latitude: loc ? loc.lat().toString() : prev.latitude,
+                        longitude: loc ? loc.lng().toString() : prev.longitude
+                    }));
+
+                    // Populate postal/zip codes from our geoLocations database
+                    (async () => {
+                        try {
+                            const { collection, getDocs, query, where, limit: firestoreLimit } = await import('firebase/firestore');
+                            const { db } = await import('../../../firebase');
+                            const cityName = prediction.structured_formatting?.main_text || '';
+                            const q = query(
+                                collection(db, 'geoLocations'),
+                                where('city', '==', cityName),
+                                where('provinceState', '==', provinceState),
+                                where('country', '==', country),
+                                firestoreLimit(200)
+                            );
+                            const snap = await getDocs(q);
+                            const codesSet = new Set();
+                            snap.forEach(doc => {
+                                const d = doc.data();
+                                if (d.postalZipCode) codesSet.add(String(d.postalZipCode).toUpperCase());
+                            });
+                            const codes = Array.from(codesSet).slice(0, 50);
+                            setCityForm(prev => ({ ...prev, postalZipCodes: codes }));
+                        } catch (e) {
+                            console.warn('⚠️ Failed to fetch postal codes for selection', e);
+                        }
+                    })();
+                    setShowCityNameSuggestions(false);
+                }
+            });
+        } catch (e) {
+            console.warn('⚠️ Failed to resolve prediction', e);
+        }
+    }, [ensureCityAutocompleteService, setCityForm]);
+
     // Google Places lookup for auto-filling coordinates and postal codes
     const handleGooglePlacesLookup = async () => {
         if (!cityForm.city || !cityForm.country) {
@@ -3382,7 +3519,7 @@ const EnterpriseZoneManagement = () => {
                 <DialogContent>
                     <Grid container spacing={2} sx={{ mt: 1 }}>
                         <Grid item xs={12} md={6}>
-                            <Box sx={{ position: 'relative', width: '100%' }}>
+                            <Box sx={{ position: 'relative', width: '100%' }} data-city-autocomplete>
                                 <TextField
                                     fullWidth
                                     size="small"
@@ -3413,6 +3550,32 @@ const EnterpriseZoneManagement = () => {
                                     FormHelperTextProps={{ sx: { fontSize: '11px' } }}
                                     required
                                 />
+                                {showCityNameSuggestions && cityNameSuggestions.length > 0 && (
+                                    <Paper
+                                        sx={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            left: 0,
+                                            right: 0,
+                                            zIndex: 1300,
+                                            maxHeight: 280,
+                                            overflowY: 'auto',
+                                            border: '1px solid #e5e7eb',
+                                            borderTop: 'none',
+                                        }}
+                                    >
+                                        <List dense>
+                                            {cityNameSuggestions.map((p) => (
+                                                <ListItem key={p.place_id} button onClick={() => handleCityPredictionSelect(p)} sx={{ py: 0.5 }}>
+                                                    <ListItemText
+                                                        primary={<Typography sx={{ fontSize: '12px' }}>{p.structured_formatting?.main_text}</Typography>}
+                                                        secondary={<Typography sx={{ fontSize: '11px', color: '#6b7280' }}>{p.structured_formatting?.secondary_text}</Typography>}
+                                                    />
+                                                </ListItem>
+                                            ))}
+                                        </List>
+                                    </Paper>
+                                )}
                             </Box>
                         </Grid>
                         <Grid item xs={6} md={3}>
@@ -3560,8 +3723,69 @@ const EnterpriseZoneManagement = () => {
                     <Button onClick={() => setCityDialogOpen(false)} size="small" sx={{ fontSize: '12px' }}>
                         Cancel
                     </Button>
-                    <Button variant="contained" size="small" sx={{ fontSize: '12px' }}>
-                        {editingCity ? 'Update' : 'Create'} City
+                    <Button
+                        variant="contained"
+                        size="small"
+                        onClick={async () => {
+                            if (!cityForm.city || !cityForm.provinceState || !cityForm.country) {
+                                enqueueSnackbar('City, Province/State, and Country are required.', { variant: 'warning' });
+                                return;
+                            }
+                            try {
+                                setSavingCity(true);
+                                const payload = {
+                                    city: cityForm.city.trim(),
+                                    provinceState: cityForm.provinceState,
+                                    provinceStateName: cityForm.provinceStateName || '',
+                                    country: cityForm.country,
+                                    countryName: cityForm.countryName || (cityForm.country === 'CA' ? 'Canada' : cityForm.country === 'US' ? 'United States' : ''),
+                                    postalZipCodes: Array.isArray(cityForm.postalZipCodes) ? cityForm.postalZipCodes : [],
+                                    latitude: cityForm.latitude ? Number(cityForm.latitude) : null,
+                                    longitude: cityForm.longitude ? Number(cityForm.longitude) : null,
+                                    enabled: !!cityForm.enabled,
+                                    createdAt: new Date(),
+                                    updatedAt: new Date()
+                                };
+                                const { collection, addDoc } = await import('firebase/firestore');
+                                const { db } = await import('../../../firebase');
+                                // Save master city record
+                                await addDoc(collection(db, 'geoCities'), payload);
+                                // Also save one-or-more location records so the Cities grid (which reads geoLocations) can show it immediately
+                                const locColl = collection(db, 'geoLocations');
+                                const codes = payload.postalZipCodes && payload.postalZipCodes.length > 0
+                                    ? payload.postalZipCodes
+                                    : [''];
+                                await Promise.all(
+                                    codes.map(code => addDoc(locColl, {
+                                        city: payload.city,
+                                        provinceState: payload.provinceState,
+                                        provinceStateName: payload.provinceStateName,
+                                        country: payload.country,
+                                        countryName: payload.countryName,
+                                        postalZipCode: code,
+                                        latitude: payload.latitude,
+                                        longitude: payload.longitude,
+                                        regionKey: `${payload.country}-${payload.provinceState}`,
+                                        cityRegionKey: `${payload.city}-${payload.provinceState}-${payload.country}`,
+                                        createdAt: new Date(),
+                                        updatedAt: new Date()
+                                    }))
+                                );
+                                enqueueSnackbar('City created successfully', { variant: 'success' });
+                                setCityDialogOpen(false);
+                                loadCities(0, cityRowsPerPage, citySearchTerm, cityCountryFilter, cityProvinceFilter, citySortBy, citySortDirection);
+                            } catch (e) {
+                                console.error('❌ Error creating city:', e);
+                                enqueueSnackbar('Failed to create city', { variant: 'error' });
+                            } finally {
+                                setSavingCity(false);
+                            }
+                        }}
+                        disabled={savingCity}
+                        startIcon={savingCity ? <CircularProgress size={16} /> : null}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {savingCity ? 'Saving…' : (editingCity ? 'Update' : 'Create')} City
                     </Button>
                 </DialogActions>
             </Dialog>

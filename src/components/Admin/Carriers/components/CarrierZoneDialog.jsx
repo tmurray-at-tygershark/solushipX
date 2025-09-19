@@ -127,8 +127,10 @@ const CarrierZoneDialog = ({
             const baseCode = zoneName
                 .trim()
                 .toUpperCase()
-                .replace(/[^A-Z0-9\s]/g, '') // Remove special characters
+                .replace(/\//g, '_') // Convert slashes to underscores
+                .replace(/[^A-Z0-9_\s]/g, '') // Remove other special characters but keep underscores
                 .replace(/\s+/g, '_') // Replace spaces with underscores
+                .replace(/_+/g, '_') // Collapse multiple underscores
                 .substring(0, 20); // Limit length
 
             // Find unique code
@@ -147,8 +149,10 @@ const CarrierZoneDialog = ({
             return zoneName
                 .trim()
                 .toUpperCase()
-                .replace(/[^A-Z0-9\s]/g, '')
+                .replace(/\//g, '_')
+                .replace(/[^A-Z0-9_\s]/g, '')
                 .replace(/\s+/g, '_')
+                .replace(/_+/g, '_')
                 .substring(0, 20);
         }
     }, [carrierId]);

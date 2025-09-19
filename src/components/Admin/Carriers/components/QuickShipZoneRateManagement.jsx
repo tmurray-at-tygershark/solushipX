@@ -575,7 +575,11 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
             } else if (zoneType === 'system_zone_sets') {
                 updatedReferences.system_zone_sets = (updatedReferences.system_zone_sets || []).filter(zs => zs.id !== zoneId);
             } else if (zoneType === 'custom_zones') {
-                updatedReferences.custom_zones = (updatedReferences.custom_zones || []).filter(z => (z.zoneId || z.id) !== zoneId);
+                const zoneIdUpper = String(zoneId).toUpperCase();
+                updatedReferences.custom_zones = (updatedReferences.custom_zones || []).filter(z => {
+                    const candidate = String(z.zoneId || z.id || z.zoneCode || z.code || '').toUpperCase();
+                    return candidate !== zoneIdUpper;
+                });
             } else if (zoneType === 'custom_zone_sets') {
                 updatedReferences.custom_zone_sets = (updatedReferences.custom_zone_sets || []).filter(zs => (zs.id || zs.zoneSetId) !== zoneId);
             }
@@ -593,6 +597,30 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                 },
                 zoneReferences: updatedReferences
             };
+
+            // If removing a custom zone, also remove it from carrierCustomZones collection
+            if (zoneType === 'custom_zones') {
+                try {
+                    const customZonesQuery = query(
+                        collection(db, 'carrierCustomZones'),
+                        where('carrierId', '==', carrierId)
+                    );
+                    const customZonesSnap = await getDocs(customZonesQuery);
+                    if (!customZonesSnap.empty) {
+                        const zoneIdUpper = String(zoneId).toUpperCase();
+                        for (const docSnap of customZonesSnap.docs) {
+                            const existingData = docSnap.data();
+                            const updatedZones = (existingData.zones || []).filter((z) => {
+                                const candidate = String(z.zoneId || z.id || z.zoneCode || z.code || '').toUpperCase();
+                                return candidate !== zoneIdUpper;
+                            });
+                            await updateDoc(docSnap.ref, { zones: updatedZones, updatedAt: serverTimestamp() });
+                        }
+                    }
+                } catch (czErr) {
+                    console.warn('⚠️ Failed to detach custom zone from carrierCustomZones:', czErr);
+                }
+            }
 
             // Save to database
             const carrierConfigRef = doc(db, 'carrierZoneConfigs', carrierId);
