@@ -46,7 +46,7 @@ const CarrierZoneDialog = ({
     onZoneCreated
 }) => {
     const { enqueueSnackbar } = useSnackbar();
-    const { searchCities, getCityByPostalCode } = useGeographicData();
+    const { searchCities, getCityByPostalCode, getLocationsByCity } = useGeographicData();
 
     // Form state
     const [zoneForm, setZoneForm] = useState({
@@ -70,6 +70,8 @@ const CarrierZoneDialog = ({
 
     // Zone code generation
     const [generatingCode, setGeneratingCode] = useState(false);
+    const [bulkPostalInput, setBulkPostalInput] = useState('');
+    const [processingBulk, setProcessingBulk] = useState(false);
 
     // Reset form when dialog opens/closes
     useEffect(() => {
@@ -158,11 +160,18 @@ const CarrierZoneDialog = ({
     }, [carrierId]);
 
     // Handle zone name change and auto-generate code
-    const handleZoneNameChange = useCallback(async (name) => {
+    // Debounced zone code generation (2s) to avoid running on every keystroke
+    const codeGenTimerRef = useRef(null);
+    const handleZoneNameChange = useCallback((name) => {
         setZoneForm(prev => ({ ...prev, zoneName: name }));
 
-        // Auto-generate zone code if not editing existing zone
-        if (!editingZone && name.trim()) {
+        if (codeGenTimerRef.current) {
+            clearTimeout(codeGenTimerRef.current);
+            codeGenTimerRef.current = null;
+        }
+        if (editingZone || !name.trim()) return;
+
+        codeGenTimerRef.current = setTimeout(async () => {
             setGeneratingCode(true);
             try {
                 const generatedCode = await generateZoneCode(name);
@@ -172,36 +181,74 @@ const CarrierZoneDialog = ({
             } finally {
                 setGeneratingCode(false);
             }
-        }
+        }, 2000);
     }, [editingZone, generateZoneCode]);
 
     // Handle zone coverage search
     const handleZoneCoverageSearch = useCallback(async (searchTerm = zoneCoverageSearch) => {
-        if (!searchTerm || searchTerm.length < 2) {
+        if (!searchTerm || searchTerm.trim().length < 2) {
             setZoneCoverageSuggestions([]);
             return;
         }
 
         setCoverageSearchLoading(true);
         try {
-            const isPostalCode = /^[A-Za-z]\d[A-Za-z]|^\d{5}/.test(searchTerm.trim());
+            // Allow 3-character Canadian FSA (e.g., M5V) and 5-digit US ZIP
+            const isPostalCode = /^[A-Za-z]\d[A-Za-z]$/.test(searchTerm.trim().slice(0, 3)) || /^\d{5}$/.test(searchTerm.trim());
             let results = [];
 
             if (isPostalCode) {
                 const postalResults = await getCityByPostalCode(searchTerm.trim());
-                results = postalResults || [];
+                if (postalResults) {
+                    // For FSA, prefer showing the city; attach postalCodes array so user can add all codes
+                    if (postalResults.fsa) {
+                        const allInFsa = await getLocationsByCity(postalResults.city, postalResults.provinceState, postalResults.country);
+                        const codes = Array.from(new Set(allInFsa.map(r => r.postalZipCode).filter(Boolean)));
+                        results = [{
+                            id: `${postalResults.city}-${postalResults.provinceState}-${postalResults.country}`.toLowerCase(),
+                            city: postalResults.city,
+                            provinceState: postalResults.provinceState,
+                            country: postalResults.country,
+                            postalCodes: codes
+                        }];
+                    } else {
+                        // Exact ZIP: still return the city to keep city UX, but attach the single code
+                        results = [{
+                            id: `${postalResults.city}-${postalResults.provinceState}-${postalResults.country}`.toLowerCase(),
+                            city: postalResults.city,
+                            provinceState: postalResults.provinceState,
+                            country: postalResults.country,
+                            postalCodes: postalResults.postalZipCode ? [postalResults.postalZipCode] : []
+                        }];
+                    }
+                } else {
+                    results = [];
+                }
             } else {
                 results = await searchCities(searchTerm.trim());
             }
 
             // Format suggestions
-            const suggestions = results.slice(0, 10).map(item => ({
-                type: 'city',
-                id: item.searchKey || item.id,
-                displayText: `${item.city}, ${item.provinceState}`,
-                location: item.country === 'CA' ? '🇨🇦 Canada' : item.country === 'US' ? '🇺🇸 United States' : item.country,
-                data: item
-            }));
+            const suggestions = results.slice(0, 10).map(item => {
+                const isCityLike = item.city && item.provinceState; // prefer city display when city data present
+                if (isCityLike) {
+                    return {
+                        type: 'city',
+                        id: item.searchKey || item.id,
+                        displayText: `${item.city}, ${item.provinceState}`,
+                        location: item.country === 'CA' ? '🇨🇦 Canada' : item.country === 'US' ? '🇺🇸 United States' : item.country,
+                        data: item
+                    };
+                }
+                const code = item.postalZipCode || item.postalCode || item.fsa || item.id;
+                return {
+                    type: 'postal',
+                    id: code,
+                    displayText: code,
+                    location: item.country === 'CA' ? '🇨🇦 Canada' : item.country === 'US' ? '🇺🇸 United States' : item.country,
+                    data: item
+                };
+            });
 
             setZoneCoverageSuggestions(suggestions);
         } catch (error) {
@@ -212,26 +259,134 @@ const CarrierZoneDialog = ({
     }, [zoneCoverageSearch, searchCities, getCityByPostalCode]);
 
     // Handle adding zone coverage
-    const handleAddZoneCoverage = useCallback((suggestion) => {
+    const handleAddZoneCoverage = useCallback(async (suggestion) => {
         if (suggestion.type === 'city') {
             const cityExists = zoneForm.cities.some(city =>
                 city.searchKey === suggestion.data.searchKey || city.id === suggestion.data.id
             );
 
             if (!cityExists) {
-                setZoneForm(prev => ({
-                    ...prev,
-                    cities: [...prev.cities, suggestion.data]
-                }));
+                // If city has postalCodes array, use it; otherwise fetch all codes for that city
+                let postalCodes = Array.isArray(suggestion.data.postalCodes) ? suggestion.data.postalCodes : [];
+                if (postalCodes.length === 0) {
+                    try {
+                        const locations = await getLocationsByCity(suggestion.data.city, suggestion.data.provinceState, suggestion.data.country);
+                        postalCodes = Array.from(new Set((locations || []).map(r => (r.postalZipCode || '').toUpperCase()).filter(Boolean)));
+                    } catch (e) {
+                        // ignore; we can still add city without codes
+                    }
+                }
+                setZoneForm(prev => {
+                    const nextCities = [...prev.cities, { ...suggestion.data, postalCodes }];
+                    const allCodes = Array.from(new Set(nextCities.flatMap(c => c.postalCodes || [])));
+                    return { ...prev, cities: nextCities, postalCodes: allCodes };
+                });
                 enqueueSnackbar(`Added ${suggestion.data.city} to zone`, { variant: 'success' });
             } else {
                 enqueueSnackbar(`${suggestion.data.city} is already in this zone`, { variant: 'warning' });
             }
+        } else if (suggestion.type === 'postal') {
+            // Add or attach a single postal code to the last selected city if present
+            const code = suggestion.data.postalCode || suggestion.data.fsa || suggestion.id;
+            setZoneForm(prev => {
+                const updated = [...prev.cities];
+                if (updated.length > 0) {
+                    const last = { ...updated[updated.length - 1] };
+                    const pcs = Array.isArray(last.postalCodes) ? [...last.postalCodes] : [];
+                    if (!pcs.includes(code)) pcs.push(code);
+                    last.postalCodes = pcs;
+                    updated[updated.length - 1] = last;
+                }
+                const allCodes = Array.from(new Set(updated.flatMap(c => c.postalCodes || [])));
+                return { ...prev, cities: updated, postalCodes: allCodes };
+            });
+            enqueueSnackbar(`Added postal code ${suggestion.displayText}`, { variant: 'success' });
         }
 
         setZoneCoverageSearch('');
         setZoneCoverageSuggestions([]);
     }, [zoneForm.cities, enqueueSnackbar]);
+
+    // Bulk add by pasted postal codes/FSAs/ZIPs
+    const handleBulkPostalAdd = useCallback(async () => {
+        if (!bulkPostalInput.trim()) return;
+        setProcessingBulk(true);
+        try {
+            const tokens = bulkPostalInput
+                .toUpperCase()
+                .replace(/[^A-Z0-9\s,\n]+/g, ' ')
+                .split(/[,\s\n]+/)
+                .filter(Boolean);
+
+            const fsas = new Set();
+            const zips = new Set();
+            for (const t of tokens) {
+                if (/^[A-Z][0-9][A-Z]/.test(t)) {
+                    fsas.add(t.slice(0, 3));
+                } else if (/^\d{5}$/.test(t)) {
+                    zips.add(t);
+                }
+            }
+
+            const additions = [];
+            // Process FSAs → cities with codes
+            for (const fsa of fsas) {
+                const result = await getCityByPostalCode(fsa);
+                if (result && result.city) {
+                    additions.push({
+                        city: result.city,
+                        provinceState: result.provinceState,
+                        country: result.country,
+                        postalCodes: Array.isArray(result.postalCodes) ? result.postalCodes : []
+                    });
+                }
+            }
+            // Process exact ZIPs → treat as single-code city additions
+            for (const zip of zips) {
+                const r = await getCityByPostalCode(zip);
+                if (r && r.city) {
+                    additions.push({
+                        city: r.city,
+                        provinceState: r.provinceState,
+                        country: r.country,
+                        postalCodes: r.postalZipCode ? [r.postalZipCode] : []
+                    });
+                }
+            }
+
+            if (additions.length === 0) {
+                enqueueSnackbar('No valid postal codes found', { variant: 'warning' });
+                return;
+            }
+
+            setZoneForm(prev => {
+                const existingKeys = new Set((prev.cities || []).map(c => `${c.city}|${c.provinceState}|${c.country}`));
+                const nextCities = [...prev.cities];
+                for (const add of additions) {
+                    const key = `${add.city}|${add.provinceState}|${add.country}`;
+                    const idx = nextCities.findIndex(c => `${c.city}|${c.provinceState}|${c.country}` === key);
+                    if (idx === -1) {
+                        nextCities.push({
+                            id: key.toLowerCase(),
+                            searchKey: key.toLowerCase(),
+                            ...add
+                        });
+                    } else {
+                        const merged = new Set([...(nextCities[idx].postalCodes || []), ...(add.postalCodes || [])]);
+                        nextCities[idx] = { ...nextCities[idx], postalCodes: Array.from(merged) };
+                    }
+                }
+                const allCodes = Array.from(new Set(nextCities.flatMap(c => c.postalCodes || [])));
+                return { ...prev, cities: nextCities, postalCodes: allCodes };
+            });
+            enqueueSnackbar('Added cities from postal codes', { variant: 'success' });
+            setBulkPostalInput('');
+        } catch (e) {
+            enqueueSnackbar('Failed to process postal codes', { variant: 'error' });
+        } finally {
+            setProcessingBulk(false);
+        }
+    }, [bulkPostalInput, getCityByPostalCode, enqueueSnackbar]);
 
     // Handle removing zone coverage
     const handleRemoveZoneCoverage = useCallback((item, type) => {
@@ -591,6 +746,77 @@ const CarrierZoneDialog = ({
                                 )}
                             </Box>
                         </Box>
+
+                        {/* Bulk postal paste */}
+                        <Box sx={{ mb: 2 }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1, color: '#374151' }}>
+                                Paste Postal/ZIP Codes (FSA or 5‑digit ZIP)
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                <TextField
+                                    fullWidth
+                                    multiline
+                                    minRows={2}
+                                    size="small"
+                                    placeholder="e.g. M5V, M4C, L1S, 90210, 10001..."
+                                    value={bulkPostalInput}
+                                    onChange={(e) => setBulkPostalInput(e.target.value)}
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                />
+                                <Button
+                                    onClick={handleBulkPostalAdd}
+                                    variant="outlined"
+                                    size="small"
+                                    disabled={processingBulk || !bulkPostalInput.trim()}
+                                    startIcon={processingBulk ? <CircularProgress size={14} /> : null}
+                                    sx={{ fontSize: '12px', whiteSpace: 'nowrap', height: 40 }}
+                                >
+                                    {processingBulk ? 'Processing…' : 'Add from Codes'}
+                                </Button>
+                            </Box>
+                        </Box>
+
+                        {/* Postal Codes in Zone */}
+                        {zoneForm.cities.some(c => Array.isArray(c.postalCodes) && c.postalCodes.length > 0) && (
+                            <Box sx={{ mb: 2 }}>
+                                <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1, color: '#374151' }}>
+                                    Postal Codes in Zone
+                                </Typography>
+                                <Box sx={{
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    gap: 0.5,
+                                    minHeight: '80px',
+                                    maxHeight: '150px',
+                                    overflowY: 'auto',
+                                    p: 1,
+                                    border: '1px solid #e5e7eb',
+                                    borderRadius: 1,
+                                    bgcolor: '#f8fafc'
+                                }}>
+                                    {zoneForm.cities.flatMap((c) => (c.postalCodes || []).map((pc) => ({ city: c.city, code: pc }))).map((item) => (
+                                        <Chip
+                                            key={`${item.city}-${item.code}`}
+                                            label={`${item.code} (${item.city})`
+                                            }
+                                            size="small"
+                                            onDelete={() => {
+                                                setZoneForm(prev => ({
+                                                    ...prev,
+                                                    cities: prev.cities.map(c =>
+                                                        c.postalCodes?.includes(item.code)
+                                                            ? { ...c, postalCodes: c.postalCodes.filter(code => code !== item.code) }
+                                                            : c
+                                                    )
+                                                }));
+                                            }}
+                                            sx={{ fontSize: '11px' }}
+                                        />
+                                    ))}
+                                </Box>
+                            </Box>
+                        )}
 
                         {/* Zone Summary - Only show when there's actual content */}
                         {(zoneForm.cities.length > 0 || zoneForm.postalCodes.length > 0 || zoneForm.provinces.length > 0) && (

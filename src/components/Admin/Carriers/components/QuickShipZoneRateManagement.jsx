@@ -2271,6 +2271,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zone Name</TableCell>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Zone Code</TableCell>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Cities</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Postal/Zips</TableCell>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Created</TableCell>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
                                 </TableRow>
@@ -2291,6 +2292,21 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                                                 variant="outlined"
                                                 color="success"
                                             />
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            {(() => {
+                                                const postalCount = Array.isArray(zone.cities)
+                                                    ? zone.cities.reduce((sum, c) => sum + (Array.isArray(c.postalCodes) ? c.postalCodes.length : 0), 0)
+                                                    : 0;
+                                                return (
+                                                    <Chip
+                                                        label={postalCount}
+                                                        size="small"
+                                                        variant="outlined"
+                                                        color="secondary"
+                                                    />
+                                                );
+                                            })()}
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px' }}>
                                             {zone.createdAt ? (() => {
@@ -3408,10 +3424,7 @@ const QuickShipZoneRateManagement = ({ carrierId, carrierName, isOpen, onClose }
                         setCustomZoneDialogOpen(false);
                         setEditingZone(null);
 
-                        enqueueSnackbar(
-                            existingZoneIndex !== -1 ? 'Custom zone updated successfully' : 'Custom zone created successfully',
-                            { variant: 'success' }
-                        );
+                        // Toast already shown inside CarrierZoneDialog; avoid duplicate here
                     } catch (error) {
                         console.error('Error saving custom zone:', error);
                         enqueueSnackbar('Failed to save custom zone', { variant: 'error' });

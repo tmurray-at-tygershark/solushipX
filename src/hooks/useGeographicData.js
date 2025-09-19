@@ -175,18 +175,46 @@ export const useGeographicData = () => {
         if (!postalCode) return null;
         
         try {
-            const locationsQuery = query(
-                collection(db, 'geoLocations'),
-                where('postalZipCode', '==', postalCode.toUpperCase()),
-                limit(1)
-            );
+            const code = postalCode.toUpperCase().replace(/\s+/g, '');
+            // Exact 5-digit ZIP
+            if (/^\d{5}$/.test(code)) {
+                const locationsQuery = query(
+                    collection(db, 'geoLocations'),
+                    where('postalZipCode', '==', code),
+                    limit(1)
+                );
+                const snap = await getDocs(locationsQuery);
+                if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+                return null;
+            }
 
-            const querySnapshot = await getDocs(locationsQuery);
-            if (!querySnapshot.empty) {
-                return {
-                    id: querySnapshot.docs[0].id,
-                    ...querySnapshot.docs[0].data()
-                };
+            // Canadian FSA (first 3 chars) → range query on postalZipCode starting with FSA
+            if (/^[A-Z]\d[A-Z]$/.test(code.slice(0,3))) {
+                const fsa = code.slice(0,3);
+                const start = fsa;
+                const end = fsa + '\uf8ff';
+                const fsaQuery = query(
+                    collection(db, 'geoLocations'),
+                    where('postalZipCode', '>=', start),
+                    where('postalZipCode', '<=', end),
+                    orderBy('postalZipCode'),
+                    limit(200)
+                );
+                const snap = await getDocs(fsaQuery);
+                if (!snap.empty) {
+                    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    // Use the most common city/province among results
+                    const byKey = new Map();
+                    docs.forEach(r => {
+                        const k = `${r.city}|${r.provinceState}|${r.country}`;
+                        byKey.set(k, (byKey.get(k) || 0) + 1);
+                    });
+                    const topKey = Array.from(byKey.entries()).sort((a,b) => b[1]-a[1])[0][0];
+                    const [city, provinceState, country] = topKey.split('|');
+                    const codes = Array.from(new Set(docs.map(r => (r.postalZipCode || '').toUpperCase()).filter(Boolean)));
+                    return { city, provinceState, country, fsa, postalCodes: codes };
+                }
+                return null;
             }
             return null;
         } catch (err) {
